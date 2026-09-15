@@ -30,6 +30,7 @@ from app.sources.base import (
     SearchQuery,
     SourceCapabilities,
     SourceName,
+    classify_response,
     classify_transport_error,
 )
 
@@ -137,6 +138,18 @@ class IndeedAdapter(JobSource):
             )
 
         rows = frame_rows(frame)
+        if not rows:
+            # JobSpy swallows a board block (429/403) and returns an empty
+            # frame. An empty frame is NOT a clean success — classify it with
+            # the ledger's own vocabulary so the run can never report `done`
+            # on zero rows (CR-01).
+            _, note = classify_response(status_code=None, parsed_items=0)
+            return FetchResult(
+                source=NAME,
+                status="partial",
+                requests_used=1,
+                error=note,
+            )
         return FetchResult(
             source=NAME,
             items=[map_jobspy_row(row, source=NAME) for row in rows],

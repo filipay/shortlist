@@ -8,6 +8,7 @@ removed.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
 import pytest
@@ -27,9 +28,25 @@ from app.sources.base import (
     FetchBudget,
     FetchResult,
     JobSource,
+    RawListing,
     SearchQuery,
 )
 from app.sources.linkedin import CAPABILITIES
+
+
+def _one_listing(source: str) -> RawListing:
+    """A genuinely successful fetch returns at least one row (CR-01)."""
+    return RawListing(
+        source=source,  # type: ignore[arg-type]
+        source_listing_id=f"{source}-1",
+        source_url=f"https://{source}.example.com/jobs/1",
+        direct_url=None,
+        title="Engineer",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        posted_at=date(2026, 9, 1),
+    )
 
 
 class StubLinkedIn(JobSource):
@@ -42,7 +59,12 @@ class StubLinkedIn(JobSource):
         return "ok"
 
     async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
-        return FetchResult(source=self.name, items=[], status="ok", requests_used=1)
+        return FetchResult(
+            source=self.name,
+            items=[_one_listing(self.name)],
+            status="ok",
+            requests_used=1,
+        )
 
 
 class StubIndeed(JobSource):
@@ -55,7 +77,12 @@ class StubIndeed(JobSource):
         return "ok"
 
     async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
-        return FetchResult(source=self.name, items=[], status="ok", requests_used=1)
+        return FetchResult(
+            source=self.name,
+            items=[_one_listing(self.name)],
+            status="ok",
+            requests_used=1,
+        )
 
 
 async def test_ensure_registered_sources_inserts_the_registry_and_is_idempotent(

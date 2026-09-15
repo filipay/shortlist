@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+from datetime import date
 from typing import Literal
 
 import pytest
@@ -13,13 +14,34 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Run, Source
 from app.sources import registry
-from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
+from app.sources.base import (
+    FetchBudget,
+    FetchResult,
+    JobSource,
+    RawListing,
+    SearchQuery,
+)
 from app.sources.linkedin import CAPABILITIES
 
 TERMINAL = {"done", "partial", "failed"}
 
 #: A gate the test can hold open so the run stays observably "running".
 FETCH_GATE: dict[str, asyncio.Event] = {}
+
+
+def _one_listing(source: str = "linkedin") -> RawListing:
+    """A genuinely successful fetch returns at least one row (CR-01)."""
+    return RawListing(
+        source=source,  # type: ignore[arg-type]
+        source_listing_id=f"{source}-1",
+        source_url=f"https://{source}.example.com/jobs/1",
+        direct_url=None,
+        title="Engineer",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        posted_at=date(2026, 9, 1),
+    )
 
 
 class GatedLinkedIn(JobSource):
@@ -35,7 +57,12 @@ class GatedLinkedIn(JobSource):
         gate = FETCH_GATE.get("fetch")
         if gate is not None:
             await gate.wait()
-        return FetchResult(source=self.name, items=[], status="ok", requests_used=1)
+        return FetchResult(
+            source=self.name,
+            items=[_one_listing()],
+            status="ok",
+            requests_used=1,
+        )
 
 
 async def _register_source(

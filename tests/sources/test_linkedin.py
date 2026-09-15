@@ -149,6 +149,25 @@ async def test_fetch_returns_mapped_items() -> None:
     assert transport.calls[0]["deadline_s"] > 0
 
 
+async def test_an_empty_frame_is_not_reported_as_ok() -> None:
+    """CR-01: JobSpy turns a real block into an empty frame — not a success.
+
+    The `FetchResult` status and its recorded reason must agree with the
+    ledger's classification of the same zero-row outcome.
+    """
+    from app.sources.base import classify_response
+
+    adapter = LinkedInAdapter(transport=FakeTransport(rows=[]))
+
+    result = await adapter.fetch(SearchQuery(keywords="engineer"), _budget())
+
+    _, ledger_note = classify_response(status_code=None, parsed_items=0)
+    assert result.status != "ok"
+    assert result.status == "partial"
+    assert result.items == []
+    assert result.error == ledger_note, "adapter status and ledger verdict disagree"
+
+
 # --- totality (R1) ------------------------------------------------------------
 async def test_transport_failure_returns_error_result_and_never_raises() -> None:
     adapter = LinkedInAdapter(transport=FakeTransport(error=RuntimeError("boom")))

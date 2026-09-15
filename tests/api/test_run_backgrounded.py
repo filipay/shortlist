@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import date
 from typing import Literal
 
 import pytest
@@ -12,13 +13,34 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Run, Source
 from app.sources import registry
-from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
+from app.sources.base import (
+    FetchBudget,
+    FetchResult,
+    JobSource,
+    RawListing,
+    SearchQuery,
+)
 from app.sources.linkedin import CAPABILITIES
 
 TERMINAL = {"done", "partial", "failed"}
 
 #: Long enough to observe the in-flight state comfortably, short enough for CI.
 SLOW_DELAY_SECONDS = 1.0
+
+
+def _one_listing() -> RawListing:
+    """A genuinely successful fetch returns at least one row (CR-01)."""
+    return RawListing(
+        source="linkedin",
+        source_listing_id="linkedin-1",
+        source_url="https://linkedin.example.com/jobs/1",
+        direct_url=None,
+        title="Engineer",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        posted_at=date(2026, 9, 1),
+    )
 
 
 class SlowLinkedIn(JobSource):
@@ -32,7 +54,12 @@ class SlowLinkedIn(JobSource):
 
     async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
         await asyncio.sleep(SLOW_DELAY_SECONDS)
-        return FetchResult(source=self.name, items=[], status="ok", requests_used=1)
+        return FetchResult(
+            source=self.name,
+            items=[_one_listing()],
+            status="ok",
+            requests_used=1,
+        )
 
 
 async def _register_source(

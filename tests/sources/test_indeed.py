@@ -133,6 +133,20 @@ async def test_indeed_adapter_maps_fixture_items() -> None:
     assert transport.calls[0]["kwargs"]["site_name"] == "indeed"
 
 
+async def test_an_empty_frame_is_not_reported_as_ok() -> None:
+    """CR-01: a zero-row frame is classified, never reported as a clean success."""
+    from app.sources.base import classify_response
+
+    adapter = IndeedAdapter(transport=FakeTransport(rows=[]))
+
+    result = await adapter.fetch(SearchQuery(keywords="engineer"), _budget())
+
+    _, ledger_note = classify_response(status_code=None, parsed_items=0)
+    assert result.status == "partial", "an empty frame must not look like a success"
+    assert result.items == []
+    assert result.error == ledger_note
+
+
 # --- the Ireland guard --------------------------------------------------------
 def test_country_indeed_is_pinned_to_ireland() -> None:
     adapter = IndeedAdapter(transport=FakeTransport())

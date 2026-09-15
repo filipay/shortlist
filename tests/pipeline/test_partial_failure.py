@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -18,6 +20,7 @@ from app.sources.base import (
     SearchQuery,
     SourceCapabilities,
 )
+from app.sources.linkedin import LinkedInAdapter
 
 CAPABILITIES = SourceCapabilities(
     supports_salary=False,
@@ -163,3 +166,68 @@ async def test_a_run_that_resolved_no_sources_is_not_a_clean_success(
     fragment = (await client.get(f"/runs/{run_id}/status")).text
     assert "No sources ran" in fragment
     assert "healthy source" not in fragment
+
+
+# --- CR-01: a zero-row frame must never be a clean, empty `done` run -----------
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "listings"
+
+
+class _FrameTransport:
+    """The JobSpy transport boundary, scripted: returns a frame's rows."""
+
+    def __init__(self, rows: list[dict] | None = None) -> None:
+        self._rows = list(rows or [])
+
+    def budget_allows(self, budget: FetchBudget, *, source: str, requests_needed: int) -> bool:
+        return True
+
+    async def run_scrape(self, *, site: str, kwargs: dict, deadline_s: float) -> list[dict]:
+        return list(self._rows)
+
+
+async def test_a_zero_row_frame_is_not_a_done_run(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """CR-01: JobSpy swallows a board block into an EMPTY frame. That is not `done`.
+
+    Reachable in production: the library catches its own 429/403 and returns an
+    empty result, so a blocked board previously reported a clean, empty run.
+    """
+    await _register_sources(session_factory, "linkedin")
+    # The REAL adapter over a transport that returns zero rows (a blocked board).
+    adapter = LinkedInAdapter(transport=_FrameTransport())
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status != "done", "a zero-row frame must not be a clean success"
+    assert run.status == "partial"
+    assert (run.source_counts_json or {})["linkedin"]["fetched"] == 0
+
+    errors = run.errors_json or []
+    assert any(
+        entry["source"] == "linkedin" and entry.get("error") for entry in errors
+    ), "a zero-row frame must record a machine-readable reason"
+
+
+async def test_a_fetch_with_rows_is_still_a_done_run(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The behaviour that is currently correct must stay correct."""
+    await _register_sources(session_factory, "linkedin")
+    rows = json.loads((FIXTURES / "linkedin_page1.json").read_text(encoding="utf-8"))
+    adapter = LinkedInAdapter(transport=_FrameTransport(rows))
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status == "done"
+    assert (run.source_counts_json or {})["linkedin"]["fetched"] == 2
+    assert await _count(session_factory, ListingSource) == 2

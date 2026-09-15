@@ -27,6 +27,7 @@ from app.sources.base import (
     SearchQuery,
     SourceCapabilities,
     SourceName,
+    classify_response,
     classify_transport_error,
 )
 
@@ -142,6 +143,19 @@ class LinkedInAdapter(JobSource):
             )
 
         rows = frame_rows(frame)
+        if not rows:
+            # JobSpy is deliberately total at the scraper level: it swallows a
+            # board block (429/403) and returns an *empty* frame. An empty frame
+            # is therefore NOT a clean success. Classify it with the same
+            # vocabulary the ledger uses so the run can never report `done` on
+            # zero rows, and so the FetchResult and the ledger agree.
+            _, note = classify_response(status_code=None, parsed_items=0)
+            return FetchResult(
+                source=NAME,
+                status="partial",
+                requests_used=1,
+                error=note,
+            )
         return FetchResult(
             source=NAME,
             items=[map_jobspy_row(row) for row in rows],
