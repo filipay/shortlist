@@ -275,3 +275,63 @@ async def test_probe_returns_unreachable_on_a_non_200(
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
+
+
+# --- the no-credential prohibition --------------------------------------------
+CREDENTIAL_KEY_HINTS = (
+    "password",
+    "username",
+    "token",
+    "cookie",
+    "cookies",
+    "session",
+    "credential",
+    "login",
+    "api_key",
+)
+
+
+def test_country_indeed_is_passed_on_every_fetch_call() -> None:
+    """Not just built — actually handed to the transport on the call."""
+    import asyncio
+
+    transport = FakeTransport(rows=_load("indeed_page1.json"))
+    adapter = IndeedAdapter(transport=transport)
+
+    asyncio.run(adapter.fetch(SearchQuery(keywords="engineer"), _budget()))
+
+    assert transport.calls, "the transport must have been called"
+    assert transport.calls[0]["site"] == "indeed"
+    assert transport.calls[0]["kwargs"]["country_indeed"] == "ireland"
+
+
+def test_both_adapters_build_no_credential_bearing_kwargs() -> None:
+    from app.sources.linkedin import LinkedInAdapter
+
+    adapters = (
+        IndeedAdapter(transport=FakeTransport()),
+        LinkedInAdapter(transport=FakeTransport()),
+    )
+    for adapter in adapters:
+        kwargs = adapter.build_kwargs(SearchQuery(keywords="x"), _budget())
+        keys = {key.casefold() for key in kwargs}
+        offenders = [
+            key for key in keys if any(hint in key for hint in CREDENTIAL_KEY_HINTS)
+        ]
+        assert offenders == [], f"{adapter.name} builds a credential kwarg: {offenders}"
+
+
+def test_no_credential_material_anywhere_in_the_sources_package() -> None:
+    sources_dir = Path(indeed_module.__file__).resolve().parent
+    offenders: dict[str, list[str]] = {}
+    tokens = ("JOBSPY_CREDS", "LINKEDIN_USERNAME", "LINKEDIN_PASSWORD", "INDEED_EMAIL", "cookies=")
+
+    for path in sorted(sources_dir.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        found = [token for token in tokens if token.casefold() in text.casefold()]
+        if found:
+            offenders[path.name] = found
+
+    assert offenders == {}, (
+        f"a credentialed acquisition path reappeared: {offenders}"
+    )
