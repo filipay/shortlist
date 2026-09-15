@@ -26,7 +26,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **QUEUE-02**: Re-running a search never creates a duplicate row for the same listing on the same source
 - [ ] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
 - [ ] **QUEUE-04**: User can revert an incorrect merge
-- [ ] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
+- [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
 - [ ] **QUEUE-06**: User can full-text search the queue
 - [ ] **QUEUE-07**: Queue shows which listings are new since last visit and which look stale
 - [ ] **QUEUE-08**: User can save or hide a listing, and those actions are recorded as append-only events
@@ -187,7 +187,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-02 | Phase 1 | Pending |
 | QUEUE-03 | Phase 2 | Pending |
 | QUEUE-04 | Phase 2 | Pending |
-| QUEUE-05 | Phase 1 | Pending |
+| QUEUE-05 | Phase 1 | Complete |
 | QUEUE-06 | Phase 2 | Pending |
 | QUEUE-07 | Phase 2 | Pending |
 | QUEUE-08 | Phase 2 | Pending |

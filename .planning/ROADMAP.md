@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage are observable, and the probe yields a recorded verdict on whether LinkedIn/Indeed survive at personal scale (re-ranking Adzuna from hedge to primary if they do not).
   5. The app exposes no credential path anywhere (public logged-out pages only), every API route answers through the `current_user` seam, and the domain-import-discipline test passes.
 
-**Plans:** 1/7 plans executed
+**Plans:** 2/7 plans executed
 
 Plans:
 **Wave 1**
@@ -58,7 +58,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Migration 0001 acceptance checklist as assertions, PII-negative schema, FTS5 trigger proof
+- [x] 01-02-PLAN.md — Migration 0001 acceptance checklist as assertions, PII-negative schema, FTS5 trigger proof
 - [ ] 01-03-PLAN.md — LinkedIn ingest slice: adapter port, sanitise/normalise, two-key upsert, `run_pipeline()`, run trigger + poll
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -217,7 +217,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Walking Skeleton + Foundations | 1/7 | In Progress|  |
+| 1. Walking Skeleton + Foundations | 2/7 | In Progress|  |
 | 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |

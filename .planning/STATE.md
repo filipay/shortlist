@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-09-15T17:18:12.665Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-09-15T17:26:22.188Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: 8945024ecf3d1872826259c66ed5c1eb0b60e8dc
+state_head: 738d633128572e9bb0438d8f56fc45fd763b74bd
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 01 execution started
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 23 min | 3 tasks | 40 files |
+| Phase 01 P02 | 5 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ Recent decisions affecting current work:
 - [Phase 01]: The PRAGMA autocommit toggle is getattr-guarded: pysqlite needs it for foreign_keys=ON, but SQLAlchemy's aiosqlite adapter exposes no autocommit attribute
 - [Phase 01]: conftest uses a session-scoped migrated template DB plus a per-test file copy, so each test gets an empty migrated database without re-running alembic (full suite stays inside the 30s lane)
 - [Phase 01]: listing_sources.source keeps its FK to sources.name, so ingestion must register the source row first; foreign_keys=ON is genuinely enforced
+- [Phase 01]: Migration-contract tests introspect the migrated temp DB (PRAGMA/sqlite_master) and never the ORM metadata, so model/DDL drift fails the contract
+- [Phase 01]: The JSON-column set is asserted by exact equality against a per-table allow-list, so a new free-form blob (the realistic PII vector) fails the PII-negative test until added deliberately
+- [Phase 01]: Queue-ordering tie-break and content_hash stability/difference are delegated to plan 01-03 (queue read + app/domain/listing.py); tracked as human_judgment coverage here, schema half asserted
 
 ### Pending Todos
 
@@ -97,6 +101,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T17:18:12.613Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-09-15T17:26:22.150Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
