@@ -7,3 +7,4 @@ data/
 node_modules/
 .pytest_cache/
 pytest-of-*/
+*.egg-info/
