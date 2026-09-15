@@ -33,6 +33,48 @@ def _split_vcs_reference(ref: str) -> tuple[str, str, str]:
     return name.strip(), url, commit
 
 
+# Instructions the classic (non-BuildKit) builder understands. `docker compose
+# build` falls back to it when buildx is absent, so every logical Dockerfile line
+# must start with one of these.
+_CLASSIC_INSTRUCTIONS = {
+    "ADD",
+    "ARG",
+    "CMD",
+    "COPY",
+    "ENTRYPOINT",
+    "ENV",
+    "EXPOSE",
+    "FROM",
+    "HEALTHCHECK",
+    "LABEL",
+    "ONBUILD",
+    "RUN",
+    "SHELL",
+    "STOPSIGNAL",
+    "USER",
+    "VOLUME",
+    "WORKDIR",
+}
+
+
+def _dockerfile_logical_lines() -> list[str]:
+    """Collapse the Dockerfile to logical lines, as the classic builder would."""
+    logical: list[str] = []
+    pending = ""
+    for raw_line in (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith("\\"):
+            pending += line[:-1].rstrip() + " "
+            continue
+        logical.append((pending + line).strip())
+        pending = ""
+    if pending:
+        logical.append(pending.strip())
+    return logical
+
+
 def test_compose_defines_exactly_one_service() -> None:
     services = _compose()["services"]
     assert list(services) == ["app"], f"expected only the app service, got {list(services)}"
@@ -100,6 +142,19 @@ def test_dockerfile_asserts_pinned_jobspy_revision() -> None:
     assert "direct_url.json" in text
     assert "commit_id" in text
     assert "python-jobspy" in text
+
+
+def test_dockerfile_has_no_heredoc_operator() -> None:
+    text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "<<" not in text, "BuildKit-only heredocs break the classic builder"
+
+
+def test_dockerfile_is_valid_for_the_classic_builder() -> None:
+    for logical in _dockerfile_logical_lines():
+        keyword = logical.split(maxsplit=1)[0].upper()
+        assert keyword in _CLASSIC_INSTRUCTIONS, (
+            f"unknown instruction for the classic builder: {logical!r}"
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -42,17 +42,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # wrong-revision or non-VCS install could pass silently; the `jobspy` vs
 # `python-jobspy` name collision previously surfaced as a misleading pip error
 # (candidate discarded as metadata-inconsistent, reported as "(unavailable)").
+# This is deliberately a SINGLE-LINE `python -c` and NOT a heredoc script:
+# heredocs are BuildKit-only, and `docker compose build` falls back to the classic
+# builder when buildx is absent, which would choke on the script body as if it
+# were Dockerfile instructions ("unknown instruction: ..."). Keep it a one-liner.
 ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
-RUN JOBSPY_SHA="$JOBSPY_SHA" python - <<'PY'
-import json, os, importlib.metadata as md
-
-sha = os.environ["JOBSPY_SHA"]
-meta = json.loads(md.distribution("python-jobspy").read_text("direct_url.json"))
-vcs = meta.get("vcs_info", {})
-assert vcs.get("vcs") == "git", f"python-jobspy is not a VCS install: {meta}"
-assert vcs.get("commit_id") == sha, f"wrong revision: {vcs.get('commit_id')} != {sha}"
-print("python-jobspy pinned at", sha)
-PY
+RUN JOBSPY_SHA="$JOBSPY_SHA" python -c "import importlib.metadata as md, json, os; vcs = json.loads(md.distribution('python-jobspy').read_text('direct_url.json')).get('vcs_info', {}); assert vcs.get('vcs') == 'git', 'python-jobspy is not a VCS install: %r' % (vcs,); assert vcs.get('commit_id') == os.environ['JOBSPY_SHA'], 'wrong revision: %r != %r' % (vcs.get('commit_id'), os.environ['JOBSPY_SHA']); print('python-jobspy pinned at', os.environ['JOBSPY_SHA'])"
 
 COPY alembic.ini ./
 COPY alembic ./alembic
