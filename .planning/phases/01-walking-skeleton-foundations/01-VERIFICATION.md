@@ -140,7 +140,7 @@ covered_files:
   - tests/test_import_discipline.py
   - tests/test_no_cdn.py
   - tests/test_no_credentials.py
-covered_digest: "v1:sha256:705959b4b84e83bfe8024f92137e8360af00133dbb533da9b8b6c21e3be50970"
+covered_digest: "v1:sha256:e977bb3a20dab9d61631653e0002cce5e84574e968ab15361ce9a4e870eb8a1c"
 behavior_unverified: 0
 overrides_applied: 2
 overrides:
