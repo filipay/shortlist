@@ -1,0 +1,5 @@
+.planning/research/.cache/
+__pycache__/
+.venv/
+*.pyc
+.env
