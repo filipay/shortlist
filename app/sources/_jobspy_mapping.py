@@ -21,8 +21,10 @@ from typing import Any
 
 from app.sources.base import RawListing
 
-#: The pinned JobSpy column contract. A *missing* expected column is schema
-#: drift (signal S6), so the set is versioned here rather than inferred.
+#: The pinned JobSpy column contract (source: `jobspy/util.py` `desired_order`). A
+#: *missing* expected column is schema drift (signal S6), so the set is versioned
+#: here rather than inferred — including the naukri tail, which S6 must be able to
+#: detect a rename/removal in.
 DESIRED_ORDER = (
     "id",
     "site",
@@ -52,6 +54,13 @@ DESIRED_ORDER = (
     "company_num_employees",
     "company_revenue",
     "company_description",
+    # naukri-specific fields (the `jobspy/util.py` `desired_order` tail)
+    "skills",
+    "experience_range",
+    "company_rating",
+    "company_reviews_count",
+    "vacancy_count",
+    "work_from_home_type",
 )
 
 #: Board fields that do not deserve a core column (R6). A board that does not
