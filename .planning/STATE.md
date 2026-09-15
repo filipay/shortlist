@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 1
+current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-15T16:37:08.112Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-09-15T17:18:12.665Z"
 last_activity: 2026-09-15
-last_activity_desc: Roadmap created from research (8 phases, 74/74 v1 requirements mapped)
-state_head: 88d92a42c349c762fd4ae670757c8dd0addbcb1a
+last_activity_desc: Phase 01 execution started
+state_head: 8945024ecf3d1872826259c66ed5c1eb0b60e8dc
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 7
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 1 — Walking Skeleton + Foundations
+**Current focus:** Phase 01 — Walking Skeleton + Foundations
 
 ## Current Position
 
-Phase: 1 (Walking Skeleton + Foundations) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-15 — Roadmap created from research (8 phases, 74/74 v1 requirements mapped)
+Last activity: 2026-09-15 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -54,6 +54,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 23 min | 3 tasks | 40 files |
 
 ## Accumulated Context
 
@@ -65,6 +70,10 @@ Recent decisions affecting current work:
 - [Roadmap]: Ranking (Phase 5) precedes tailoring (Phase 6) — tailoring consumes the requirement gaps ranking produces.
 - [Roadmap]: Phase 4 (CV fact store + LaTeX spike) runs **in parallel** with Phases 2–3; it is a shared prerequisite and the largest unquantified cost.
 - [Roadmap]: Scheduling is late (Phase 8) on purpose — a cron job over an unstable pipeline hides failures.
+- [Phase 01]: Alembic's sync engine now applies the app's PRAGMAs (WAL + synchronous=NORMAL), so the first migration lands in the D-17 configuration; this also cut migration wall-clock from ~16s to ~5s
+- [Phase 01]: The PRAGMA autocommit toggle is getattr-guarded: pysqlite needs it for foreign_keys=ON, but SQLAlchemy's aiosqlite adapter exposes no autocommit attribute
+- [Phase 01]: conftest uses a session-scoped migrated template DB plus a per-test file copy, so each test gets an empty migrated database without re-running alembic (full suite stays inside the 30s lane)
+- [Phase 01]: listing_sources.source keeps its FK to sources.name, so ingestion must register the source row first; foreign_keys=ON is genuinely enforced
 
 ### Pending Todos
 
@@ -88,6 +97,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T15:45:18.566Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-walking-skeleton-foundations/01-CONTEXT.md
+Last session: 2026-09-15T17:18:12.613Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None

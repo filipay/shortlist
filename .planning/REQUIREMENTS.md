@@ -22,7 +22,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Queue (QUEUE)
 
-- [ ] **QUEUE-01**: User can browse a persisted queue of listings that survives restarts
+- [x] **QUEUE-01**: User can browse a persisted queue of listings that survives restarts
 - [ ] **QUEUE-02**: Re-running a search never creates a duplicate row for the same listing on the same source
 - [ ] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
 - [ ] **QUEUE-04**: User can revert an incorrect merge
@@ -183,7 +183,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRC-08 | Phase 1 | Pending |
 | SRC-09 | Phase 1 | Pending |
 | SRC-10 | Phase 1 | Pending |
-| QUEUE-01 | Phase 1 | Pending |
+| QUEUE-01 | Phase 1 | Complete |
 | QUEUE-02 | Phase 1 | Pending |
 | QUEUE-03 | Phase 2 | Pending |
 | QUEUE-04 | Phase 2 | Pending |
@@ -249,6 +249,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PLAT-06 | Phase 8 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 74 total
 - Mapped to phases: 74 ✓ (Phase 1: 19, Phase 2: 15, Phase 3: 2, Phase 4: 6, Phase 5: 11, Phase 6: 9, Phase 7: 7, Phase 8: 5)
 - Unmapped: 0 ✓
