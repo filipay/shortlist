@@ -24,7 +24,7 @@ skeleton keeps walking.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Walking Skeleton + Foundations** - A scraped listing exists in the DB, is browsable, and the stack runs locally; the scraper-survival probe is answered
+- [x] **Phase 1: Walking Skeleton + Foundations** - A scraped listing exists in the DB, is browsable, and the stack runs locally; the scraper-survival probe is answered (completed 2026-09-15)
 - [ ] **Phase 2: Clean, Filtered, Queryable Queue** - No duplicates; hard rules applied with recorded reasons; runs observable
 - [ ] **Phase 3: LLM Port + Structured Output** - Any schema-constrained call works end to end through opencode, with the contract pinned
 - [ ] **Phase 4: CV Fact Store + LaTeX Compile Spike** - The structured CV reproduces the base CV and Tectonic compiles the real `.tex` (runs in parallel with Phases 2–3)
@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage are observable, and the probe yields a recorded verdict on whether LinkedIn/Indeed survive at personal scale (re-ranking Adzuna from hedge to primary if they do not).
   5. The app exposes no credential path anywhere (public logged-out pages only), every API route answers through the `current_user` seam, and the domain-import-discipline test passes.
 
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
@@ -217,7 +217,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Walking Skeleton + Foundations | 7/7 | In Progress|  |
+| 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
