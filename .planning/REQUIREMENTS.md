@@ -173,13 +173,86 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmap creation) | — | — |
+| SRC-01 | Phase 1 | Pending |
+| SRC-02 | Phase 1 | Pending |
+| SRC-03 | Phase 1 | Pending |
+| SRC-04 | Phase 1 | Pending |
+| SRC-05 | Phase 1 | Pending |
+| SRC-06 | Phase 1 | Pending |
+| SRC-07 | Phase 1 | Pending |
+| SRC-08 | Phase 1 | Pending |
+| SRC-09 | Phase 1 | Pending |
+| SRC-10 | Phase 1 | Pending |
+| QUEUE-01 | Phase 1 | Pending |
+| QUEUE-02 | Phase 1 | Pending |
+| QUEUE-03 | Phase 2 | Pending |
+| QUEUE-04 | Phase 2 | Pending |
+| QUEUE-05 | Phase 1 | Pending |
+| QUEUE-06 | Phase 2 | Pending |
+| QUEUE-07 | Phase 2 | Pending |
+| QUEUE-08 | Phase 2 | Pending |
+| QUEUE-09 | Phase 2 | Pending |
+| CRIT-01 | Phase 2 | Pending |
+| CRIT-02 | Phase 2 | Pending |
+| CRIT-03 | Phase 2 | Pending |
+| FILT-01 | Phase 2 | Pending |
+| FILT-02 | Phase 2 | Pending |
+| FILT-03 | Phase 2 | Pending |
+| FILT-04 | Phase 2 | Pending |
+| RANK-01 | Phase 5 | Pending |
+| RANK-02 | Phase 5 | Pending |
+| RANK-03 | Phase 5 | Pending |
+| RANK-04 | Phase 5 | Pending |
+| RANK-05 | Phase 5 | Pending |
+| RANK-06 | Phase 5 | Pending |
+| RANK-07 | Phase 5 | Pending |
+| RANK-08 | Phase 5 | Pending |
+| CV-01 | Phase 4 | Pending |
+| CV-02 | Phase 4 | Pending |
+| CV-03 | Phase 4 | Pending |
+| CV-04 | Phase 4 | Pending |
+| CV-05 | Phase 4 | Pending |
+| CV-06 | Phase 4 | Pending |
+| TAIL-01 | Phase 6 | Pending |
+| TAIL-02 | Phase 6 | Pending |
+| TAIL-03 | Phase 6 | Pending |
+| TAIL-04 | Phase 6 | Pending |
+| TAIL-05 | Phase 6 | Pending |
+| TAIL-06 | Phase 6 | Pending |
+| TAIL-07 | Phase 6 | Pending |
+| TAIL-08 | Phase 6 | Pending |
+| APPLY-01 | Phase 7 | Pending |
+| APPLY-02 | Phase 7 | Pending |
+| APPLY-03 | Phase 7 | Pending |
+| APPLY-04 | Phase 7 | Pending |
+| APPLY-05 | Phase 7 | Pending |
+| APPLY-06 | Phase 7 | Pending |
+| RUN-01 | Phase 1 | Pending |
+| RUN-02 | Phase 1 | Pending |
+| RUN-03 | Phase 2 | Pending |
+| RUN-04 | Phase 2 | Pending |
+| RUN-05 | Phase 8 | Pending |
+| RUN-06 | Phase 8 | Pending |
+| RUN-07 | Phase 8 | Pending |
+| UI-01 | Phase 5 | Pending |
+| UI-02 | Phase 5 | Pending |
+| UI-03 | Phase 5 | Pending |
+| UI-04 | Phase 7 | Pending |
+| UI-05 | Phase 6 | Pending |
+| UI-06 | Phase 8 | Pending |
+| UI-07 | Phase 1 | Pending |
+| PLAT-01 | Phase 1 | Pending |
+| PLAT-02 | Phase 3 | Pending |
+| PLAT-03 | Phase 1 | Pending |
+| PLAT-04 | Phase 1 | Pending |
+| PLAT-05 | Phase 3 | Pending |
+| PLAT-06 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 74 total
-- Mapped to phases: 0 — pending roadmap
-- Unmapped: 74 ⚠️ (expected at this stage)
+- Mapped to phases: 74 ✓ (Phase 1: 19, Phase 2: 15, Phase 3: 2, Phase 4: 6, Phase 5: 11, Phase 6: 9, Phase 7: 7, Phase 8: 5)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-15*
-*Last updated: 2026-09-15 after initial definition*
+*Last updated: 2026-09-15 after roadmap creation — 74/74 v1 requirements mapped*
