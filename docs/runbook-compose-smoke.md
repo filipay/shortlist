@@ -59,7 +59,7 @@ Override the target with `BASE_URL=http://host:port` and the wait budget with
 |---|---|
 | `/health` non-200 | The app itself is down — check `docker compose logs app` |
 | `"db": "unreachable"` | The SQLite file/volume is not writable; check the `./data` mount and its permissions |
-| Queue empty after a run that reported `done` | The scrape returned nothing — a *survival* result, not a compose failure. Check `runs.source_counts_json` and `source_request_log`; the run may have been blocked (`status: partial` naming the degraded board) |
+| Queue empty after a run | No enabled sources ran, or the sources returned no matching listings. Both are *results*, not a compose failure. A run that resolved no sources reports `status: partial` with the `no enabled sources` reason in `runs.errors_json`; a blocked board reports `partial` naming the degraded board. Check `runs.source_counts_json` and `source_request_log`. Scrape survival is measured by `scripts/run-probe.sh`, not by this smoke |
 | Listings gone after `docker compose restart` | Persistence is broken: the volume is not the configured one, or the backup/restore lost the WAL sidecar (M8) |
 | App fails to start with opencode stopped | D-08 regression: nothing in `docker compose up` may depend on an LLM backend |
 

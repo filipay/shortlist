@@ -135,3 +135,31 @@ async def test_no_exception_propagates_when_a_board_is_blocked(
     assert isinstance(run_id, int)
     # Every source failed, yet the queue is untouched and no exception escaped.
     assert await _count(session_factory, ListingSource) == 0
+
+
+async def test_a_run_that_resolved_no_sources_is_not_a_clean_success(
+    session_factory: async_sessionmaker[AsyncSession],
+    client,
+) -> None:
+    """Zero enabled sources fetched nothing — `done` would be a false success."""
+    # No `sources` rows: `_resolve_adapters` resolves an empty adapter list.
+    run_id = await run_pipeline("manual", None, session_factory)
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status == "partial", "an empty run must not report a clean success"
+    assert run.status != "done"
+    assert run.finished_at is not None
+
+    errors = run.errors_json or []
+    assert any(
+        entry.get("source") == "*" and "no enabled sources" in (entry.get("error") or "")
+        for entry in errors
+    ), "the empty run must record a machine-readable reason in errors_json"
+
+    # The status fragment renders that reason, not the healthy-source sentence.
+    fragment = (await client.get(f"/runs/{run_id}/status")).text
+    assert "No sources ran" in fragment
+    assert "healthy source" not in fragment

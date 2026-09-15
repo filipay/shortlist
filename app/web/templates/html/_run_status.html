@@ -17,10 +17,18 @@
   {% endif %}
 
   {% if run.status == "partial" %}
+  {% set no_sources = (run.errors_json or []) | selectattr("source", "equalto", "*") | map(attribute="error") | list %}
+  {% if no_sources %}
+  <p class="run-degraded" id="run-degraded">
+    No sources ran: {{ no_sources[0] }} — check that the `sources` rows are
+    seeded (see docs/probes/README.md).
+  </p>
+  {% else %}
   <p class="run-degraded" id="run-degraded">
     Not every source completed. See the per-source status above — the healthy
     source's listings are still in the queue.
   </p>
+  {% endif %}
   {% elif run.status == "failed" %}
   <p class="run-failed" id="run-failed">The run failed before any source reported.</p>
   {% endif %}

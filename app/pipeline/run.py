@@ -38,6 +38,12 @@ log = structlog.get_logger(__name__)
 MANUAL = "manual"
 TERMINAL_STATUSES = frozenset({"done", "partial", "failed"})
 
+#: Recorded in `runs.errors_json` under source `*` when a run resolves zero
+#: adapters. It stays `partial`, never `done`: nothing ran, so a clean badge would
+#: be a false success. The `runs.status` CHECK permits only
+#: running/done/failed/partial, so no new status value is introduced.
+NO_SOURCES_REASON = "no enabled sources resolved from the adapter registry"
+
 
 def default_query() -> SearchQuery:
     """The Phase-1 search intent, with every limit read from settings (PLAT-04).
@@ -255,6 +261,14 @@ async def run_pipeline(
     try:
         selected = await _resolve_adapters(session_factory, adapters)
         results = await _fetch_all(selected, query or default_query())
+        if not selected:
+            # Zero adapters resolved: the run fetched nothing, so `done` would be a
+            # false success — the badge reads clean while the queue stays empty (and
+            # the operator would read it as a scrape-survival result). The reason is
+            # machine-readable in `errors_json`, in the same shape as a source error.
+            errors.append(
+                {"source": "*", "status": "partial", "error": NO_SOURCES_REASON}
+            )
         for result in results:
             source_counts[result.source] = await _persist_result(
                 session_factory, result, resolved_run_id
@@ -267,9 +281,10 @@ async def run_pipeline(
                         "error": result.error,
                     }
                 )
-        # A run is only `done` when every board was fully healthy. A `partial`
-        # that renders like a clean success is a trust failure (Pitfall 10).
-        status = "done" if all(r.status == "ok" for r in results) else "partial"
+        # A run is only `done` when it actually ran and every board was fully
+        # healthy. A `partial` that renders like a clean success is a trust failure
+        # (Pitfall 10) — and so is `done` for a run that resolved no sources.
+        status = "done" if results and all(r.status == "ok" for r in results) else "partial"
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
@@ -294,6 +309,7 @@ async def run_pipeline(
 
 __all__ = [
     "MANUAL",
+    "NO_SOURCES_REASON",
     "TERMINAL_STATUSES",
     "build_budget",
     "default_query",
