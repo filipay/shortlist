@@ -1,0 +1,27 @@
+<div id="run-status"
+     hx-get="/runs/{{ run.id }}/status"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML">
+  <p class="run-badge run-status-{{ run.status }}">
+    Run #{{ run.id }} — {{ run.status }}
+  </p>
+
+  {% if sources %}
+  <ul class="run-sources">
+    {% for name, counts in sources.items() %}
+    <li class="run-source run-source-{{ name }}">
+      {{ name }}: {{ counts.status }}{% if counts.fetched is defined %} — {{ counts.fetched }} fetched{% endif %}{% if counts.created is defined %}, {{ counts.created }} new{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if run.status == "partial" %}
+  <p class="run-degraded" id="run-degraded">
+    Not every source completed. See the per-source status above — the healthy
+    source's listings are still in the queue.
+  </p>
+  {% elif run.status == "failed" %}
+  <p class="run-failed" id="run-failed">The run failed before any source reported.</p>
+  {% endif %}
+</div>

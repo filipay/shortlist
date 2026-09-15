@@ -167,23 +167,32 @@ async def run_pipeline(
     *,
     adapters: Sequence[JobSource] | None = None,
     query: SearchQuery | None = None,
+    run_id: int | None = None,
 ) -> int:
     """Run one pipeline pass and return its `runs.id`.
+
+    `run_id` lets a caller that already created (and committed) the `runs` row —
+    so it could answer a request with a run id immediately — hand that row to the
+    pipeline instead of the pipeline creating a second one. Phase 8's scheduler
+    simply omits it and the pipeline creates its own row.
 
     `adapters` is an explicit injection seam for tests and for callers that
     already resolved the enabled sources. Never awaited inside a request handler.
     """
-    async with session_factory() as session:
-        run = Run(
-            search_id=search_id,
-            trigger=trigger,
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        session.add(run)
-        await session.commit()
-        await session.refresh(run)
-        run_id = run.id
+    if run_id is None:
+        async with session_factory() as session:
+            run = Run(
+                search_id=search_id,
+                trigger=trigger,
+                status="running",
+                started_at=datetime.now(UTC),
+            )
+            session.add(run)
+            await session.commit()
+            await session.refresh(run)
+            resolved_run_id = int(run.id)
+    else:
+        resolved_run_id = run_id
 
     source_counts: dict[str, Any] = {}
     errors: list[dict[str, Any]] = []
@@ -193,7 +202,7 @@ async def run_pipeline(
         results = await _fetch_all(selected, query or DEFAULT_QUERY)
         for result in results:
             source_counts[result.source] = await _persist_result(
-                session_factory, result, run_id
+                session_factory, result, resolved_run_id
             )
             if result.status != "ok":
                 errors.append(
@@ -212,16 +221,20 @@ async def run_pipeline(
         status = "failed"
 
     await _finish(
-        session_factory, run_id, status=status, source_counts=source_counts, errors=errors
+        session_factory,
+        resolved_run_id,
+        status=status,
+        source_counts=source_counts,
+        errors=errors,
     )
     log.info(
         "pipeline.finished",
-        run_id=run_id,
+        run_id=resolved_run_id,
         trigger=trigger,
         status=status,
         sources=sorted(source_counts),
     )
-    return run_id
+    return resolved_run_id
 
 
 __all__ = [

@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -87,8 +87,13 @@ async def db_session(
 async def client(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[AsyncClient]:
-    """An httpx client over the ASGI app, with `get_session` pointed at the temp DB."""
-    from app.db.session import get_session
+    """An httpx client over the ASGI app, pointed at the temp DB.
+
+    Both the request-scoped session and the *background-task* session factory are
+    overridden, so a `POST /runs` pipeline writes to the temp database rather
+    than the configured `/data/jobsearch.db`.
+    """
+    from app.db.session import get_session, get_session_factory
     from app.main import create_app
 
     app = create_app()
@@ -98,9 +103,24 @@ async def client(
             yield session
 
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         yield http
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def registry_snapshot() -> Iterator[None]:
+    """Swap the adapter registry for one test, then restore it exactly."""
+    from app.sources import registry
+
+    saved = registry.all_adapters()
+    try:
+        yield
+    finally:
+        registry.clear()
+        for adapter_cls in saved.values():
+            registry.register(adapter_cls)

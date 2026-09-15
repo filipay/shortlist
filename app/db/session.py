@@ -57,3 +57,13 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """FastAPI dependency yielding a request-scoped session."""
     async with async_session_maker() as session:
         yield session
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """The factory a *background* task should use.
+
+    A request-scoped session cannot outlive its response, so the run trigger
+    schedules the pipeline with a factory rather than the request session. It is
+    a dependency (not a module global read) so tests can point it at the temp DB.
+    """
+    return async_session_maker

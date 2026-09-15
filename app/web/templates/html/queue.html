@@ -3,6 +3,17 @@
 {% block title %}Queue · Job Search Copilot{% endblock %}
 
 {% block content %}
+<section id="run-control">
+  <button type="button"
+          id="run-search-now"
+          hx-post="/runs"
+          hx-target="#run-status-slot"
+          hx-swap="innerHTML">
+    Run search now
+  </button>
+  <div id="run-status-slot"></div>
+</section>
+
 <section id="queue">
   <h2>Queue</h2>
   <p class="queue-count" id="queue-count">{{ count }} listing{% if count != 1 %}s{% endif %}</p>

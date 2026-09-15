@@ -14,6 +14,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api import health as health_routes
+from app.api import runs as run_routes
 from app.web import routes as web_routes
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -35,6 +37,8 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(web_routes.router)
+    app.include_router(run_routes.router)
+    app.include_router(health_routes.router)
     return app
 
 
