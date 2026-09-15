@@ -52,12 +52,16 @@ async def sanitize_listing(
         description=description.text,
     )
 
-    # Counts only — the removed value is never logged (Pitfall 7).
-    if report.emails_removed or report.phones_removed or report.truncated:
+    # Counts only — the removed value is never logged (Pitfall 7). Echoing the
+    # removed span into a log line *is* the persistence path this control exists
+    # to close, so only the aggregate count crosses the boundary.
+    removed_pii = report.emails_removed + report.phones_removed
+    if removed_pii or report.truncated or report.instruction_like:
         log.info(
             "ingest.sanitize",
             stage=STAGE_NAME,
             source=listing.source,
+            pii_removed=removed_pii,
             emails_removed=report.emails_removed,
             phones_removed=report.phones_removed,
             truncated=report.truncated,

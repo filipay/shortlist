@@ -8,6 +8,15 @@ Phase-2 task; over-reaching here is as wrong as under-reaching.
 PII is **dropped, never hashed** (a hashed phone number is still personal data
 that serves no product purpose), and the removed value is never returned or
 logged — only a count.
+
+**Truncation unit (the SRC-08 contract).** `max_chars` counts **Python `str`
+characters** (Unicode code points) — not bytes and not grapheme clusters. A
+multi-byte description of `max_chars + 1` code points therefore yields exactly
+`max_chars` code points, and its UTF-8 encoding is legitimately longer than
+`max_chars` bytes. Slicing bytes would split a character mid-sequence and raise;
+segmenting grapheme clusters would require a dependency this phase deliberately
+does not take. The contract is stated in `sanitize_text`'s docstring and pinned
+by a multi-byte test (`tests/domain/test_sanitize_edge.py`).
 """
 
 from __future__ import annotations
@@ -63,9 +72,21 @@ class SanitizeReport:
 
 
 @dataclass(frozen=True)
-class SanitizeResult:
+class SanitisedText:
+    """One sanitised field: the cleaned text plus the counts that describe it.
+
+    Deliberately *only* counts. There is no field on this type able to carry the
+    removed value, so a caller cannot accidentally persist or log the PII the
+    sanitiser just dropped.
+    """
+
     text: str
     report: SanitizeReport
+
+
+#: The plan's alternate spelling, retained so callers written against plan 01-03
+#: keep importing without a churn-only rename.
+SanitizeResult = SanitisedText
 
 
 def strip_html(value: str) -> tuple[str, bool]:
@@ -104,14 +125,21 @@ def looks_like_instructions(value: str) -> bool:
     return any(marker in lowered for marker in INSTRUCTION_MARKERS)
 
 
-def sanitize_text(value: str | None, *, max_chars: int) -> SanitizeResult:
+def sanitize_text(value: str | None, *, max_chars: int) -> SanitisedText:
     """The full Phase-1 treatment for one untrusted field.
 
-    `max_chars` is supplied by the caller (the ingest stage reads it from settings)
-    so this module stays free of configuration and I/O.
+    `max_chars` is supplied by the caller (the ingest stage reads it from
+    settings) so this module stays free of configuration and I/O.
+
+    `max_chars` counts **Python characters (code points)**, not bytes and not
+    grapheme clusters: truncation is a plain ``text[:max_chars]`` slice, so the
+    result is *exactly* `max_chars` characters whenever the input is longer. The
+    function is total (a `None` or empty input yields `""`) and deterministic —
+    there is no dict iteration order, locale or timestamp anywhere in the path,
+    so sanitising the same input twice returns equal output.
     """
     if not value:
-        return SanitizeResult("", SanitizeReport())
+        return SanitisedText("", SanitizeReport())
 
     text, html_removed = strip_html(value)
     text, emails, phones = strip_pii(text)
@@ -119,9 +147,12 @@ def sanitize_text(value: str | None, *, max_chars: int) -> SanitizeResult:
 
     truncated = len(text) > max_chars
     if truncated:
-        text = text[:max_chars].rstrip()
+        # Exactly `max_chars` characters. Never `.rstrip()` (which would return
+        # fewer than the documented limit) and never a byte slice (which would
+        # split a multi-byte character and raise).
+        text = text[:max_chars]
 
-    return SanitizeResult(
+    return SanitisedText(
         text,
         SanitizeReport(
             emails_removed=emails,
@@ -133,7 +164,7 @@ def sanitize_text(value: str | None, *, max_chars: int) -> SanitizeResult:
     )
 
 
-def sanitize_short_field(value: str | None, *, max_chars: int) -> SanitizeResult:
+def sanitize_short_field(value: str | None, *, max_chars: int) -> SanitisedText:
     """Sanitise a short field (title, company, location) without over-truncating."""
     return sanitize_text(value, max_chars=max_chars)
 
@@ -142,6 +173,7 @@ __all__ = [
     "INSTRUCTION_MARKERS",
     "SanitizeReport",
     "SanitizeResult",
+    "SanitisedText",
     "collapse_whitespace",
     "looks_like_instructions",
     "sanitize_short_field",
