@@ -1066,39 +1066,50 @@ def annualise_salary(minimum, maximum, interval, currency):  # memo: Ireland ⇒
 
 **If this table were empty** it would mean every claim in this research had been verified — it is not empty, and A2 (the `/config/providers` response shape) is the one item that should be resolved *before* the discovery-parser task is written, not during it.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Every question below carries an inline resolution naming where its disposition lives. Questions with
+> a disposition in a plan name the plan and task; the two operator-run dispositions name the explicit
+> human-action gate. None is left open.
 
 1. **How many probe runs does the Phase-1 verdict require, and what if fewer are possible?**
    - What we know: the verdict's count-delta and fill-rate signals need a baseline **and** at least one prior run; honesty requires an observation window rather than a single sample.
    - What's unclear: whether the operator will actually run the probe on ≥3 distinct days inside the phase's calendar.
    - **Recommendation:** the plan must contain the runbook as a **task with a dated verdict document as its deliverable**, requiring **≥3 runs on ≥3 distinct days** where possible. If the window cannot be met, the verdict is written **PROVISIONAL**, states the run count, and the Adzuna decision remains deferred to Phase 8 (which the roadmap already provides for). Do **not** let a single run masquerade as a measurement.
+   - **RESOLVED:** plan **01-07 task 2** — a `checkpoint:human-action` operator task — requires **≥3 runs on ≥3 distinct days** and a dated `docs/probes/YYYY-MM-DD-scraper-survival.md`. A thinner window yields **PROVISIONAL** with the actual run count stated, and the Adzuna decision stays deferred to Phase 8. The requirement is enforced by the task's `<verification>` block, not by prose.
 
 2. **Does the FTS5 index get populated correctly when the table and triggers are created *after* rows already exist?**
    - What we know: sqlite.org states explicitly that "creating the triggers does not copy existing rows from the content table into the FTS index", and that `rebuild` is the remedy.
    - What's unclear: whether Phase 1's migration ordering can ever hit this (0001 runs before any rows exist, so presumably not) — but a later migration or a test fixture that seeds data before creating the index could.
    - **Recommendation:** always create the FTS table and triggers in the same migration as `listings` (0001, before any data), and note the `INSERT INTO listing_fts(listing_fts) VALUES('rebuild')` remedy in the migration comment for future migrations. Add a test that inserts a listing *through the ORM* and asserts it is findable via `MATCH`.
+   - **RESOLVED:** the FTS5 table and all three triggers ship **together in migration 0001 before any rows exist** (plan 01-01), the `INSERT INTO listing_fts(listing_fts) VALUES('rebuild')` remedy is recorded in the migration comment, and plan 01-02's `tests/db/test_fts_triggers.py` round-trips insert/update/delete through `MATCH`.
 
 3. **Is the in-process `RunState` registry needed at all, given `runs` is in the database?**
    - What we know: `runs` is the durable, observable state; the UI polls it.
    - What's unclear: whether a shared in-memory object adds anything. It carries the risk of a **module-level mutable cache** — the exact pattern M6 flags as a future cross-user leak, and it would be the first thing a multi-user migration has to unpick.
    - **Recommendation:** **default to the database as the single source of truth for run state** and treat any in-memory registry as a *lazily-created, explicitly keyed* structure (or omit it). If a registry is used, key it by `run_id` and never let it hold listing or CV content.
+   - **RESOLVED:** the **database is the single source of truth**; no in-memory `RunState` registry is created. Plan 01-03's `run_pipeline()` writes and updates the `runs` row and the UI polls it through `GET /runs/{id}/status`.
 
 4. **Does `probe()` belong on the `JobSource` ABC or in `app/probe/`?**
    - What we know: ARCHITECTURE §5.1 puts `async def probe(self)` on the ABC, which makes per-board knowledge (the known-stable URL, the expected marker) live in the adapter — where the other board specifics already are.
    - What's unclear: whether the *signal computation* (S1–S6) should also live there. It should not: it is board-agnostic arithmetic over persisted rows.
    - **Recommendation:** `probe()` on the adapter (board knowledge), the S1–S6 computation in `app/probe/survival.py` (board-agnostic), and `source_request_log` written by the transport. This keeps the ABC small and the maths testable without a board.
+   - **RESOLVED:** `probe()` lives on the adapter (plan 01-03 LinkedIn, plan 01-04 Indeed); the S1–S6 maths lives in `app/probe/survival.py` (plan 01-07); `source_request_log` is written by `_jobspy_transport.py` (plans 01-03 and 01-07).
 
 5. **What does the UI show when one board is `blocked` and the other is `ok`?**
    - What we know: SRC-05 forbids aborting the run; D-13 requires the health strip; the degradation semantics are explicitly the planner's discretion.
    - **Recommendation:** the run badge reads **`partial`** (not "failed"), names the degraded source, and states what the healthy source delivered; the health strip shows the degraded source's `probe()` status and last successful run. Treat "partial that looks identical to ok" as a defect, not a cosmetic choice.
+   - **RESOLVED:** the run badge reads **`partial`**, names the degraded source and states what the healthy source delivered — plan 01-03 task 3 (`app/web/templates/html/_run_status.html` plus the run status set by `run_pipeline()`), with the `partial` status asserted by `tests/pipeline/test_partial_failure.py`.
 
 6. **Should `linkedin_fetch_description` be exercised at all in Phase 1?**
    - What we know: it is the O(n) pass that also yields `job_url_direct` for LinkedIn (useful for Tier-2a dedup in Phase 2), and it "significantly increases the risk of rate limiting".
    - **Recommendation:** default it **off** in Phase 1 (`probe_max_detail_fetches = 0`), implement `fetch_details()` as a working but unbudgeted-by-default path, and let the Phase-2 dedup measurement decide whether to enable it. Enabling it during the survival measurement would confound the very measurement it is meant to inform.
+   - **RESOLVED:** default **off** — `probe_max_detail_fetches = 0` in `Settings` (plan 01-01), with `fetch_details()` implemented but invoked only when the budget allows it (plan 01-03, LinkedIn adapter). Plan 02's dedup measurement decides whether to enable it.
 
 7. **Where do the vendored JS/CSS artefacts live in git?**
    - What we know: UI-07 requires local assets; D-14 builds Tailwind at image build.
    - **Recommendation:** commit the built `app.css` (so the repo is runnable without Node) and the two vendored JS files; keep the npm install + CLI build in the Dockerfile so the build is reproducible. Document that editing templates requires re-running the CLI.
+   - **RESOLVED:** the built `app.css`, `htmx.min.js` and `alpine.min.js` are **committed** under `static/vendor/` (plan 01-01 task 2) so the repo runs without Node, while the npm install and CLI build stay in the Dockerfile for reproducibility; `tests/test_no_cdn.py` (plan 01-05) pins the vendored set.
 
 ## Environment Availability
 

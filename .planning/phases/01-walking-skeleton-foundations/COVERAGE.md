@@ -31,7 +31,7 @@
 | capability | decision | reason |
 |---|---|---|
 | Rung 1 — polite pacing / jitter / UA | INTEGRATE | always on; part of the transport + config envelope (D-02) |
-| Rung 2 — TLS/JA3 impersonation | INTEGRATE (implicit) | already built into JobSpy's `tls-client` path on LinkedIn; no separate `curl_cffi` adapter is written in Phase 1 |
+| Rung 2 — TLS/JA3 impersonation | INTEGRATE | already built into JobSpy's `tls-client` path on LinkedIn, so no separate `curl_cffi` adapter is written in Phase 1 — the capability is covered without new code |
 | Rung 3 — stealth browser (`invisible-playwright`) | OPT-OUT | contingency only; Phase 8 escalation if a board requires JS |
 | Rung 4 — residential proxies | OPT-OUT | paid spend; gated on the Phase 1 probe verdict |
 | Rung 5 — Adzuna aggregator | OPT-OUT | SRC-11 is v2; promotion from hedge to primary is decided at **Phase 8** against the recorded Phase 1 probe condition (D-04) |
@@ -56,7 +56,8 @@
 
 | capability | decision | reason |
 |---|---|---|
-| SQLite FTS5 `MATCH` query surface | INTEGRATE (schema) / OPT-OUT (queries) | table + triggers ship in 0001; the query surface is Phase 2 (QUEUE-06) |
+| SQLite FTS5 table + trigger maintenance | INTEGRATE | the external-content virtual table and its three triggers ship in migration 0001 (plans 01-01 and 01-02) |
+| SQLite FTS5 `MATCH` query surface | OPT-OUT | the query API is Phase 2 (QUEUE-06); the table ships now so Phase 2 needs no migration |
 | `JobSource.fetch_details()` second pass | INTEGRATE | contract ships; budget default-off in Phase 1 |
 | `probe()` liveness surface | INTEGRATE | SRC-07 |
 | Survival measurement S1–S6 | INTEGRATE | the phase's research flag; verdict is a phase gate |
