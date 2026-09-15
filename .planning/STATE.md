@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-09-15T18:27:14.950Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-09-15T18:52:25.645Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: 3b9948b309028e07fc162d8fc652b43514d2061f
+state_head: 6b1083441373a21ac6fff2c74952fcab7b42cb41
 progress:
   total_phases: 8
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 01 execution started
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 15 min | 3 tasks | 34 files |
 | Phase 01 P04 | 8min | 2 tasks | 12 files |
 | Phase 01 P05 | 22 min | 2 tasks | 11 files |
+| Phase 01 P06 | 22 min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,14 @@ Recent decisions affecting current work:
 - [Phase 01]: PLAT-04 fix (Rule 2): DEFAULT_QUERY, which hard-coded results_wanted=50 and location='Ireland' in app/pipeline, became default_query() reading settings.probe_results_wanted and the new settings.probe_query_location; no distinctive threshold literal remains in app/pipeline, which the literal-absence scan now enforces
 - [Phase 01]: SanitizeResult was renamed to SanitisedText (the plan's contract name) with SanitizeResult kept as an import-compatible alias; the stage keeps the name sanitize_listing rather than gaining a British-spelling duplicate, and a new test asserts no adapter imports the sanitiser so the single named stage cannot silently diverge
 - [Phase 01]: No credential path exists under app/: the only AsyncClient call sites pass headers only, and app/config.py's opencode_server_password is the LLM-backend secret rather than a portal credential — so the raw-token scan stays narrow (LINKEDIN_PASSWORD, INDEED_EMAIL, cookies=, CookieJar, ...) instead of flagging bare PASSWORD
+- [Phase 01]: probe_all() resolves sources in three documented steps — an explicit names list, else the enabled sources rows when a session_factory is given (the /health path), else every registered adapter — and skips an enabled row with no adapter rather than reporting it; only a freshly probed source is written back, so last_probe_at keeps meaning 'when the probe ran' and a cache hit costs no write
+- [Phase 01]: The /health body renames 01-03's 'database' key to 'db' (the plan's shape) and keeps the app's own status independent of the LLM backend (D-08: an unreachable opencode is reported inside the opencode object, not as a degraded app); one consumer assertion in tests/api/test_run_backgrounded.py was updated
+- [Phase 01]: Discovery redaction is a type-level property: ProviderModel has exactly provider_id and model_id with extra='forbid' (so feeding it a raw provider entry raises rather than dropping the secret), parse_providers() is pure and copies only identifiers, and the sentinel scan covers capture_logs, a caplog bridge, stdout, vars(backend) and every table
+- [Phase 01]: 01-05's no-credentials guard was refined: bare 'auth' is scoped out of the keyword-name vocabulary because httpx takes a config-supplied credential as auth= (the allowed local opencode password, D-07), while an auth-named env read, a portal kwarg (username/password/token/cookie/credentials) and a login()/sign_in() call still fail — a new control test pins that the carve-out cannot widen
+- [Phase 01]: tests/conftest.py now overrides get_llm_backend() with an offline stub, so no default-lane test opens a socket; the queue route reads persisted health only and never probes a board (the live probe belongs to TTL-cached /health), and get_llm_backend() lives in app/llm/__init__.py as the overridable seam
+- [Phase 01]: source_repo computes fill-rate live over the latest run's normalised records (a blank description counts as empty, 1 of 2 not 2 of 2); field_fill_baseline_json and baseline_recorded_at remain plan 01-07's record_baseline() — the key_link in the plan names that column, but the baseline is S2's signal work
+- [Phase 01]: RESIDUAL for plan 01-07: the adapter probe() asserts status, minimum body length and the absence of stop signals, but not a POSITIVE structural marker (3 of the 4 RESEARCH signals). Choosing a marker needs a real page to inspect, so it is recorded as an explicit human_judgment coverage entry rather than guessed into app/sources
+- [Phase 01]: app/db/repositories/source_repo.py was created in task 1 (the task's own action requires the probe write path through the source repository) and extended in task 3 with SourceHealth + get_source_health(); probe_all persists through a lazy import so the probe module imports with or without the repo
 
 ### Pending Todos
 
@@ -119,6 +128,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T18:27:14.914Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-09-15T18:52:25.607Z
+Stopped at: Completed 01-06-PLAN.md
 Resume file: None
