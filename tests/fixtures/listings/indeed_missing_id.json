@@ -8,7 +8,7 @@
     "company": "Initech",
     "location": "Remote, Ireland",
     "date_posted": "2026-09-03",
-    "job_type": ["fulltime"],
+    "job_type": "fulltime",
     "salary_source": null,
     "interval": null,
     "min_amount": null,
@@ -18,7 +18,7 @@
     "job_level": null,
     "job_function": null,
     "listing_type": null,
-    "emails": ["PII-CANARY-EMAIL-VALUE"],
+    "emails": "PII-CANARY-EMAIL-VALUE",
     "description": "Own the API.",
     "company_industry": null,
     "company_url": null,
@@ -27,6 +27,12 @@
     "company_addresses": null,
     "company_num_employees": null,
     "company_revenue": null,
-    "company_description": null
+    "company_description": null,
+    "skills": null,
+    "experience_range": null,
+    "company_rating": null,
+    "company_reviews_count": null,
+    "vacancy_count": null,
+    "work_from_home_type": null
   }
 ]
