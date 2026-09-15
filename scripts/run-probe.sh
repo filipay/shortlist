@@ -64,9 +64,21 @@ mkdir -p "$(dirname "$PROBE_DB")"
 
 step() { printf '\n== %s\n' "$1"; }
 
+is_nonneg_int() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 step "effective envelope"
-read -r MAX_REQUESTS MAX_RESULTS MAX_DETAIL <<EOF
-$("$PYTHON" - <<'PY'
+# Read the configured envelope with the chosen interpreter. Capture stdout,
+# stderr and exit status separately: an interpreter that cannot import
+# app.config (e.g. a .venv built for another platform whose compiled
+# pydantic_core cannot load) would otherwise yield empty values and fail later
+# with a cryptic `[: : integer expected`, then carry on to the live lane.
+envelope_err="$(mktemp)"
+if envelope_out="$("$PYTHON" - 2>"$envelope_err" <<'PY'
 from app.config import settings
 
 print(
@@ -75,8 +87,32 @@ print(
     settings.probe_max_detail_fetches,
 )
 PY
-)
+)"; then
+  probe_status=0
+else
+  probe_status=$?
+fi
+envelope_error="$(cat "$envelope_err")"
+rm -f "$envelope_err"
+
+read -r MAX_REQUESTS MAX_RESULTS MAX_DETAIL <<EOF
+$envelope_out
 EOF
+
+if [ "$probe_status" -ne 0 ] \
+  || ! is_nonneg_int "$MAX_REQUESTS" \
+  || ! is_nonneg_int "$MAX_RESULTS" \
+  || ! is_nonneg_int "$MAX_DETAIL"; then
+  printf '%s\n' \
+    "run-probe: cannot determine the probe envelope — unusable interpreter '$PYTHON'." \
+    "  interpreter: $PYTHON" \
+    "  error: ${envelope_error:-<no output on stderr>}" \
+    "  remedy: build a venv for THIS platform:" \
+    "    python3.13 -m venv .venv && .venv/bin/pip install -e '.[dev]'" \
+    "  or point PYTHON= at an interpreter that has the project's dependencies." >&2
+  exit 2
+fi
+
 echo "probe_max_requests=$MAX_REQUESTS probe_max_results=$MAX_RESULTS probe_max_detail_fetches=$MAX_DETAIL"
 
 if [ "$CONFIRMED" -ne 1 ]; then

@@ -32,6 +32,23 @@ the recorded baseline or a trailing average. JobSpy's description-salary extract
 is USA-only, so an Irish search is structurally low on `salary_*`; a target there
 would fail forever and mean nothing.
 
+## Precondition: the interpreter must match the host platform
+
+> **The interpreter used for a probe run must have the project's dependencies
+> compiled for the host platform.** A venv built inside a musl container (such as
+> this sandbox) cannot be reused on a glibc host: native extensions fail to load,
+> e.g. `ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'`.
+> `scripts/run-probe.sh` fails fast with exit 2 and the underlying import error
+> rather than running the live lane with an empty envelope.
+
+Build the venv for the host you are running on, or point `PYTHON=` at an
+interpreter that already has the dependencies:
+
+```bash
+python3.13 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+PYTHON=/path/to/such/python bash scripts/run-probe.sh
+```
+
 ## Commands
 
 ```bash
