@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind CSS 4 source configuration (D-14).
+ *
+ * The CLI scans the Jinja templates for class names and emits the compiled
+ * stylesheet to `static/vendor/app.css`, which is committed so the repo runs
+ * without a Node toolchain. The same build runs in the Dockerfile for
+ * reproducibility; editing a template means re-running the CLI.
+ */
+@source "../../app/web/templates";

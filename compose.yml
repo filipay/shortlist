@@ -1,0 +1,21 @@
+# Local-only deployment (PLAT-01).
+#
+# Deliberately absent: an `opencode` service, a `depends_on` on one, and any
+# published 4096 port. The opencode server is external and user-managed (D-05);
+# nothing in `docker compose up` may depend on an LLM backend being reachable
+# (D-08). `extra_hosts` makes the default OPENCODE_BASE_URL work on Linux.
+services:
+  app:
+    build: .
+    ports: ["8000:8000"] # v1 is local-only; do not expose beyond the host
+    volumes:
+      - ./data:/data # jobsearch.db (+ -wal, -shm) — back up the WAL too (M8)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - OPENCODE_BASE_URL=${OPENCODE_BASE_URL:-http://host.docker.internal:4096}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-deepseek-v4.1-flash}
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-} # from an uncommitted .env
+      - DATABASE_URL=sqlite+aiosqlite:////data/jobsearch.db
+      - DATABASE_URL_SYNC=sqlite:////data/jobsearch.db # Alembic uses this
+    command: ["./entrypoint.sh"]

@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 *.pyc
 .env
+data/
+node_modules/
+.pytest_cache/
+pytest-of-*/

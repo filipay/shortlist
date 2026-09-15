@@ -32,6 +32,9 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.7",
+    # Test-only: tests/test_deploy_manifest.py parses compose.yml. Declared
+    # explicitly rather than relied on transitively via uvicorn[standard].
+    "pyyaml==6.0.3",
 ]
 
 [tool.setuptools.packages.find]
