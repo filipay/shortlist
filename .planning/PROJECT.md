@@ -127,6 +127,7 @@ can act on. Every other feature is downstream of that.
 | No auth in v1 | Keeps first implementation small; Authentik OAuth is an explicit later feature | — Pending |
 | Python-first stack | Best ecosystem fit for scraping, LLM orchestration, LaTeX compilation, and scheduling | — Pending |
 | Docker for local deployment | One-command access locally, and a path to hosted deployment without repackaging | — Pending |
+| Conditional greenfield — confirmed by the Resume-Matcher spike | Prior art (Resume-Matcher, 28.4k★, Apache-2.0) covers the CV half but breaks three of the four differentiators: HTML→Chromium output (its "LaTeX" is a React/CSS theme), no opencode-compatible LLM path, and no ingestion. Its anti-fabrication policy is repair-not-block — the opposite of ours. Verdict: pattern-copy | ✓ Good |
 | Never fabricate CV content | Ethical hard line; tailoring is reorder/re-weight/suggest/flag only | — Pending |
 
 ## Evolution
@@ -147,4 +148,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-15 after initialization*
+*Last updated: 2026-09-15 after project research and the Resume-Matcher reuse spike (D9 closed: pattern-copy, greenfield confirmed)*
