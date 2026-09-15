@@ -231,3 +231,33 @@ async def test_a_fetch_with_rows_is_still_a_done_run(
     assert run.status == "done"
     assert (run.source_counts_json or {})["linkedin"]["fetched"] == 2
     assert await _count(session_factory, ListingSource) == 2
+
+
+# --- WR-01: a run whose every item failed to persist is not a clean success ---
+
+
+async def test_a_run_whose_every_item_failed_to_persist_is_not_done(
+    session_factory: async_sessionmaker[AsyncSession],
+    client,
+) -> None:
+    """`listing_sources.source` is an FK to `sources.name`, so an adapter with no
+    `sources` row has every item rejected. The run must not report `done`, and the
+    per-source `failed` count must be visible in the fragment."""
+    # `adzuna` is deliberately NOT registered in the `sources` table.
+    adapter = StubAdapter("adzuna", "ok", [_raw("adzuna", 1)])
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status == "partial", "every item failed to persist — not a clean success"
+
+    counts = run.source_counts_json or {}
+    assert counts["adzuna"]["failed"] == 1
+    assert counts["adzuna"]["created"] == 0
+    assert counts["adzuna"]["fetched"] == 1
+
+    fragment = (await client.get(f"/runs/{run_id}/status")).text
+    assert "1 failed" in fragment, "the persist failure must be rendered, not hidden"

@@ -10,7 +10,7 @@
   <ul class="run-sources">
     {% for name, counts in sources.items() %}
     <li class="run-source run-source-{{ name }}">
-      {{ name }}: {{ counts.status }}{% if counts.fetched is defined %} — {{ counts.fetched }} fetched{% endif %}{% if counts.created is defined %}, {{ counts.created }} new{% endif %}
+      {{ name }}: {{ counts.status }}{% if counts.fetched is defined %} — {{ counts.fetched }} fetched{% endif %}{% if counts.created is defined %}, {{ counts.created }} new{% endif %}{% if counts.failed %} — {{ counts.failed }} failed{% endif %}
     </li>
     {% endfor %}
   </ul>

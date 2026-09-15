@@ -281,10 +281,21 @@ async def run_pipeline(
                         "error": result.error,
                     }
                 )
-        # A run is only `done` when it actually ran and every board was fully
-        # healthy. A `partial` that renders like a clean success is a trust failure
-        # (Pitfall 10) — and so is `done` for a run that resolved no sources.
-        status = "done" if results and all(r.status == "ok" for r in results) else "partial"
+        # A run is only `done` when it actually ran, every board was fully
+        # healthy, AND every fetched item persisted. A `partial` that renders
+        # like a clean success is a trust failure (Pitfall 10) — and so is
+        # `done` for a run that resolved no sources, or whose every item was
+        # rejected on write (e.g. an FK to `sources.name`).
+        persisted_failures = sum(
+            int(counts.get("failed", 0)) for counts in source_counts.values()
+        )
+        status = (
+            "done"
+            if results
+            and all(r.status == "ok" for r in results)
+            and persisted_failures == 0
+            else "partial"
+        )
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
