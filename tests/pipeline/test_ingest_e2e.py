@@ -140,3 +140,29 @@ async def test_sanitise_stage_ran_and_dropped_the_email_canary(
     assert "PII-CANARY-EMAIL-VALUE" not in joined
     assert "PII-CANARY-EMAIL-VALUE" not in repr(events)
     assert any("Build the thing" in (text or "") for text in descriptions)
+
+
+@pytest.mark.usefixtures("fixture_registry")
+async def test_queue_order_is_deterministic_when_first_seen_at_is_equal(
+    session_factory: async_sessionmaker[AsyncSession],
+    client,
+) -> None:
+    """Both fixture items are persisted with the SAME `first_seen_at`, so the
+    id-descending tie-break is the only thing that can order them — and two
+    identical requests must render byte-identically."""
+    import re
+
+    registry.register(FixtureLinkedIn)
+    await _register_source(session_factory, "linkedin")
+
+    await run_pipeline("manual", None, session_factory)
+
+    first = await client.get("/")
+    second = await client.get("/")
+
+    assert first.text == second.text, "identical requests must produce identical output"
+
+    titles = re.findall(r'<td class="listing-title">([^<]+)</td>', first.text)
+    assert titles == ["Platform Engineer", "Senior Python Engineer"], (
+        "expected id-descending order as the tie-break on equal first_seen_at"
+    )
