@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Literal
 
@@ -93,6 +94,40 @@ async def test_post_runs_returns_202_and_creates_a_running_row(
     terminal = await _wait_for_terminal(session_factory, run.id)
     assert terminal.status == "done"
     assert terminal.finished_at is not None
+
+
+#: Source of truth: scripts/compose-smoke.sh reads the run id out of the
+#: `POST /runs` response body with exactly this pattern. If either side changes,
+#: this test (and the smoke) must change together — that is the point of pinning it.
+COMPOSE_SMOKE_RUN_ID_REGEX = r'hx-get="/runs/(\d+)/status"'
+
+
+@pytest.mark.usefixtures("registry_snapshot")
+async def test_post_runs_response_carries_the_id_compose_smoke_reads(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The smoke's literal regex must extract the real run id from the real body."""
+    registry.register(GatedLinkedIn)
+    await _register_source(session_factory)
+    gate = asyncio.Event()
+    FETCH_GATE["fetch"] = gate
+
+    try:
+        response = await client.post("/runs")
+
+        assert response.status_code == 202
+        match = re.search(COMPOSE_SMOKE_RUN_ID_REGEX, response.text)
+        assert match is not None, (
+            "compose-smoke.sh could not read a run id from the POST /runs response"
+        )
+        run = await _latest_run(session_factory)
+        assert run is not None
+        assert match.group(1) == str(run.id)
+    finally:
+        gate.set()
+        FETCH_GATE.pop("fetch", None)
+
+    await _wait_for_terminal(session_factory, run.id)
 
 
 async def test_queue_page_shows_the_trigger_control_and_the_count(client) -> None:

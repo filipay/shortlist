@@ -66,24 +66,21 @@ OPENCODE_STATE="$(printf '%s' "$HEALTH_BODY" | "$PYTHON" -c 'import json,sys; pr
 echo "opencode reachable: $OPENCODE_STATE (either value is acceptable; the stack must boot without it)"
 
 step "triggering one run"
-curl -fsS -X POST "$BASE_URL/runs" >/dev/null || fail "POST /runs did not answer"
+# The 202 response IS the polling fragment and carries the run id, so read it from
+# there. Re-fetching `/` cannot work: the queue route renders a bare
+# `<div id="run-status-slot"></div>` and never includes the fragment.
+RUN_BODY="$(curl -fsS -X POST "$BASE_URL/runs")" || fail "POST /runs did not answer"
 
-RUN_ID="$(BASE_URL="$BASE_URL" "$PYTHON" - <<'PY'
+RUN_ID="$(RUN_BODY="$RUN_BODY" "$PYTHON" - <<'PY'
 import os
 import re
-import subprocess
 
-body = subprocess.run(
-    ["curl", "-fsS", f"{os.environ['BASE_URL']}/"],
-    capture_output=True,
-    text=True,
-    check=True,
-).stdout
+body = os.environ["RUN_BODY"]
 match = re.search(r'hx-get="/runs/(\d+)/status"', body)
 print(match.group(1) if match else "")
 PY
 )"
-[ -n "$RUN_ID" ] || fail "could not read a run id from the queue page"
+[ -n "$RUN_ID" ] || fail "could not read a run id from the POST /runs response"
 
 step "waiting for run $RUN_ID to finish"
 deadline=$((SECONDS + RUN_TIMEOUT_SECONDS))
