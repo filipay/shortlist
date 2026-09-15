@@ -431,7 +431,13 @@ def classify_block_vs_parse(
         status_code=status_code, parsed_items=parsed_items, stop_signal=stop_signal
     )
     side = "fetch-side" if note.startswith("fetch-side") else "parse-side"
-    if status in BLOCKED_STATUSES and stop_signal is None:
+    if status == "error" and stop_signal is None:
+        ok, note, side = (
+            False,
+            f"fetch-side: transport error (FetchResult.status={status!r})",
+            "fetch-side",
+        )
+    elif status in BLOCKED_STATUSES and stop_signal is None:
         ok, note, side = False, f"fetch-side: FetchResult.status={status!r}", "fetch-side"
     return SignalResult(
         "S5",

@@ -197,6 +197,7 @@ async def _persist_result(
                     run_id=run_id,
                     result_status=result.status,
                     parsed_items=len(result.items),
+                    error=result.error,
                     now=now,
                 )
                 if result.status == "ok" and result.items:

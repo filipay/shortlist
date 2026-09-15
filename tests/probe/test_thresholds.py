@@ -289,6 +289,14 @@ def test_s5_classifies_a_blocked_result_status_as_fetch_side() -> None:
     assert result.observed == "fetch-side"
 
 
+def test_s5_classifies_a_transport_error_status_as_fetch_side() -> None:
+    """WR-04: `error` is a fetch-side failure, consistent with the ledger."""
+    result = classify_block_vs_parse(status_code=None, parsed_items=0, status="error")
+
+    assert result.observed == "fetch-side"
+    assert result.status == "warn"
+
+
 # --- S6 schema drift ----------------------------------------------------------
 
 
@@ -535,6 +543,54 @@ async def test_a_blocked_result_is_recorded_as_fetch_side(
     assert row.kind == "search"
     assert row.ok is False
     assert row.note.startswith("fetch-side")
+
+
+async def test_a_transport_error_is_recorded_as_fetch_side(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-04: a raised transport failure is fetch-side, not a parse-side miss."""
+    async with session_factory() as session:
+        session.add(Source(name="linkedin", display_name="LinkedIn"))
+        await session.commit()
+
+    async with session_factory() as session:
+        outcome = await record_fetch_outcome(
+            session,
+            source="linkedin",
+            run_id=None,
+            result_status="error",
+            parsed_items=0,
+            error="connection reset by peer",
+        )
+        await session.commit()
+
+    assert outcome.ok is False
+    assert outcome.note.startswith("fetch-side"), (
+        "a connection reset must not be recorded as a parse-side miss"
+    )
+    assert "connection reset by peer" in outcome.note
+
+
+async def test_a_zero_row_partial_is_still_recorded_as_parse_side(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """CR-01 consistency: an empty frame with no transport error is parse-side."""
+    async with session_factory() as session:
+        session.add(Source(name="linkedin", display_name="LinkedIn"))
+        await session.commit()
+
+    async with session_factory() as session:
+        outcome = await record_fetch_outcome(
+            session,
+            source="linkedin",
+            run_id=None,
+            result_status="partial",
+            parsed_items=0,
+        )
+        await session.commit()
+
+    assert outcome.ok is False
+    assert outcome.note.startswith("parse-side")
 
 
 async def test_record_baseline_writes_once_and_never_overwrites(

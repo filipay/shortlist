@@ -147,6 +147,7 @@ def classify_response(
     status_code: int | None,
     parsed_items: int,
     stop_signal: str | None = None,
+    transport_error: str | None = None,
 ) -> tuple[bool, str]:
     """Classify one completed request as fetch-side or parse-side (signal S5).
 
@@ -154,6 +155,10 @@ def classify_response(
     *parse* problem (a valid page, no matching rows) need opposite fixes and both
     present as empty data. A `blocked`/`rate_limited` outcome with a plausible body
     is the silent-breakage case and must classify as fetch-side.
+
+    A raised transport failure (a connection reset, a timeout) is also fetch-side:
+    `transport_error` carries its message, so a fetch failure is never
+    misrecorded as a parse miss. It takes precedence over the other evidence.
 
     Lives here rather than in the transport so the survival signals can use it
     without importing `jobspy` (the transport module is the only `jobspy` importer
@@ -163,6 +168,8 @@ def classify_response(
     production case: the classification then rests on the stop signal and the
     parsed row count, and the note says so rather than implying a 200.
     """
+    if transport_error:
+        return False, f"fetch-side: transport error: {transport_error}"
     if stop_signal:
         return (
             False,

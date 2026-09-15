@@ -71,6 +71,7 @@ async def record_fetch_outcome(
     result_status: str,
     parsed_items: int,
     kind: str = "search",
+    error: str | None = None,
     now: datetime | None = None,
 ) -> RequestOutcome:
     """Write ONE `source_request_log` row for one outbound request.
@@ -78,10 +79,23 @@ async def record_fetch_outcome(
     Called by the pipeline, which is the layer that owns a session and the run id,
     on the transport's behalf. Classifies fetch-side versus parse-side so a block
     and a parse miss are distinguishable later (S5).
+
+    The side must match the actual failure kind: a `blocked`/`rate_limited` result
+    is a stop signal, and an `error` result is a transport failure. Both are
+    fetch-side — recording either as `parse-side: no rows` would send the operator
+    after the wrong remediation.
     """
-    stop_signal = result_status if result_status in ("blocked", "rate_limited") else None
+    stop_signal = (
+        result_status if result_status in ("blocked", "rate_limited") else None
+    )
+    transport_error: str | None = None
+    if result_status == "error":
+        transport_error = error or "the request raised before returning"
     ok, note = classify_response(
-        status_code=None, parsed_items=parsed_items, stop_signal=stop_signal
+        status_code=None,
+        parsed_items=parsed_items,
+        stop_signal=stop_signal,
+        transport_error=transport_error,
     )
     await record_source_request(
         session,
