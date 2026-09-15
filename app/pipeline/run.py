@@ -62,8 +62,11 @@ async def _resolve_adapters(
 
     resolved: list[JobSource] = []
     for row in rows:
-        adapter_cls = registry.get(row.name)
-        if adapter_cls is None:
+        try:
+            adapter_cls = registry.get(row.name)
+        except registry.UnknownAdapterError:
+            # An enabled `sources` row with no implementation degrades that board
+            # only — it must never abort the run.
             log.warning("pipeline.unknown_source", source=row.name)
             continue
         resolved.append(adapter_cls())

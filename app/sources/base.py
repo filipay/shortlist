@@ -21,9 +21,9 @@ R7 adapters are keyed by `name` in the registry, resolved from the `sources`
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 SourceName = Literal["linkedin", "indeed", "adzuna", "glassdoor", "google"]
 
@@ -72,6 +72,9 @@ class SearchQuery:
     salary_floor: int | None = None
     seniority: tuple[str, ...] = ()
     hours_old: int | None = None
+    #: "Easy apply only". Exists so the LinkedIn {hours_old, easy_apply}
+    #: exclusivity is expressible at all — the board silently honours only one.
+    easy_apply: bool | None = None
     offset: int = 0
     results_wanted: int = 50
 
@@ -160,37 +163,110 @@ class JobSource(ABC):
         return {}
 
 
+@dataclass(frozen=True)
+class CapabilityWarning:
+    """A requested filter a board cannot honour, recorded rather than dropped."""
+
+    source: str
+    filter_name: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class CompiledQuery:
+    """A `SearchQuery` that the board can actually execute, plus its warnings."""
+
+    query: SearchQuery
+    warnings: tuple[CapabilityWarning, ...] = ()
+
+
+def _filter_is_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (tuple, list, set, frozenset, dict)):
+        return len(value) > 0
+    return True
+
+
+def compile_query_for_source(
+    query: SearchQuery, capabilities: SourceCapabilities, *, source: str
+) -> CompiledQuery:
+    """Compile one board-agnostic query against a board's declared capabilities (R3).
+
+    Silently dropping a filter would corrupt the "why is this in my queue?" story:
+    the user would believe a filter was applied when it was not. Every dropped or
+    unrepresentable filter therefore becomes a `CapabilityWarning` naming the
+    source and the filter.
+
+    `exclusive_filter_groups` are enforced: at most one member of each group
+    survives, chosen deterministically (alphabetically first), and every dropped
+    sibling is warned about.
+
+    Warnings are ordered by `(source, filter_name)` so identical inputs always
+    produce identical run records.
+    """
+    warnings: list[CapabilityWarning] = []
+    updates: dict[str, Any] = {}
+
+    # 1. Filters this board cannot express at all.
+    if query.salary_floor is not None and not capabilities.supports_salary_min_filter:
+        warnings.append(
+            CapabilityWarning(
+                source, "salary_floor", "the board has no salary-minimum filter"
+            )
+        )
+        updates["salary_floor"] = None
+
+    if query.seniority and not capabilities.supports_seniority:
+        warnings.append(
+            CapabilityWarning(source, "seniority", "the board has no seniority filter")
+        )
+        updates["seniority"] = ()
+
+    if query.remote_only is not None and not capabilities.supports_remote_flag:
+        warnings.append(
+            CapabilityWarning(source, "remote_only", "the board has no remote filter")
+        )
+        updates["remote_only"] = None
+
+    # 2. Mutually exclusive groups: keep the alphabetically-first, warn the rest.
+    for group in capabilities.exclusive_filter_groups:
+        present = sorted(
+            name
+            for name in group
+            if hasattr(query, name) and _filter_is_present(getattr(query, name))
+        )
+        for dropped in present[1:]:
+            warnings.append(
+                CapabilityWarning(
+                    source,
+                    dropped,
+                    f"mutually exclusive with {present[0]} upstream; it would be ignored",
+                )
+            )
+            updates[dropped] = None
+
+    compiled = replace(query, **updates) if updates else query
+    ordered = tuple(sorted(warnings, key=lambda item: (item.source, item.filter_name)))
+    return CompiledQuery(query=compiled, warnings=ordered)
+
+
 def capability_warnings(
     capabilities: SourceCapabilities, query: SearchQuery
 ) -> list[str]:
-    """Warn about filters this board cannot honour (R3) — never silently ignore."""
-    warnings: list[str] = []
-    if query.salary_floor is not None and not capabilities.supports_salary_min_filter:
-        warnings.append(
-            f"salary_floor is not pushed to {capabilities!r}; apply it as a local rule"
-        )
-    if query.hours_old is not None and query.remote_only is not None:
-        for group in capabilities.exclusive_filter_groups:
-            if {"hours_old", "easy_apply"} <= group:
-                warnings.append(
-                    "hours_old and easy_apply are mutually exclusive upstream; "
-                    "only one will take effect"
-                )
-    if query.seniority and not capabilities.supports_seniority:
-        warnings.append("seniority filtering is not supported by this board")
-    if (
-        capabilities.max_results_per_query is not None
-        and query.results_wanted > capabilities.max_results_per_query
-    ):
-        warnings.append(
-            f"results_wanted exceeds the board cap of "
-            f"{capabilities.max_results_per_query}"
-        )
-    return warnings
+    """Backwards-compatible plain-text view of `compile_query_for_source`'s warnings."""
+    return [
+        f"{warning.filter_name}: {warning.reason}"
+        for warning in compile_query_for_source(
+            query, capabilities, source=""
+        ).warnings
+    ]
 
 
 __all__ = [
     "BLOCK_SIGNALS",
+    "CapabilityWarning",
+    "CompiledQuery",
     "FetchBudget",
     "FetchResult",
     "FetchStatus",
@@ -201,4 +277,5 @@ __all__ = [
     "SourceName",
     "capability_warnings",
     "classify_transport_error",
+    "compile_query_for_source",
 ]
