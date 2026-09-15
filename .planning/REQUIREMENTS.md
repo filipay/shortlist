@@ -9,11 +9,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Sources (SRC)
 
-- [ ] **SRC-01**: User can run a search against LinkedIn and receive normalised listings
+- [x] **SRC-01**: User can run a search against LinkedIn and receive normalised listings
 - [ ] **SRC-02**: User can run a search against Indeed and receive normalised listings
 - [ ] **SRC-03**: Every source produces one normalised listing shape (title, company, location, salary, apply URL, description, posted date, source)
 - [ ] **SRC-04**: User can add a new job source by implementing one adapter interface and registering it, with no changes to the core pipeline
-- [ ] **SRC-05**: A failing or timing-out source returns a partial result instead of aborting the run
+- [x] **SRC-05**: A failing or timing-out source returns a partial result instead of aborting the run
 - [ ] **SRC-06**: The system reads public logged-out pages only — no credential path exists anywhere in the codebase
 - [ ] **SRC-07**: User can see per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage
 - [ ] **SRC-08**: Untrusted listing text is sanitised at the ingest boundary so it cannot inject into prompts, templates, or the database
@@ -23,7 +23,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Queue (QUEUE)
 
 - [x] **QUEUE-01**: User can browse a persisted queue of listings that survives restarts
-- [ ] **QUEUE-02**: Re-running a search never creates a duplicate row for the same listing on the same source
+- [x] **QUEUE-02**: Re-running a search never creates a duplicate row for the same listing on the same source
 - [ ] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
 - [ ] **QUEUE-04**: User can revert an incorrect merge
 - [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
@@ -87,8 +87,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Runs (RUN)
 
-- [ ] **RUN-01**: User can trigger a search run manually from the UI
-- [ ] **RUN-02**: Runs execute in the background without freezing the UI
+- [x] **RUN-01**: User can trigger a search run manually from the UI
+- [x] **RUN-02**: Runs execute in the background without freezing the UI
 - [ ] **RUN-03**: Every run records what it did, what it found, and — when the queue is empty — why
 - [ ] **RUN-04**: User can see run history
 - [ ] **RUN-05**: User can schedule recurring runs
@@ -173,18 +173,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRC-01 | Phase 1 | Pending |
+| SRC-01 | Phase 1 | Complete |
 | SRC-02 | Phase 1 | Pending |
 | SRC-03 | Phase 1 | Pending |
 | SRC-04 | Phase 1 | Pending |
-| SRC-05 | Phase 1 | Pending |
+| SRC-05 | Phase 1 | Complete |
 | SRC-06 | Phase 1 | Pending |
 | SRC-07 | Phase 1 | Pending |
 | SRC-08 | Phase 1 | Pending |
 | SRC-09 | Phase 1 | Pending |
 | SRC-10 | Phase 1 | Pending |
 | QUEUE-01 | Phase 1 | Complete |
-| QUEUE-02 | Phase 1 | Pending |
+| QUEUE-02 | Phase 1 | Complete |
 | QUEUE-03 | Phase 2 | Pending |
 | QUEUE-04 | Phase 2 | Pending |
 | QUEUE-05 | Phase 1 | Complete |
@@ -227,8 +227,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APPLY-04 | Phase 7 | Pending |
 | APPLY-05 | Phase 7 | Pending |
 | APPLY-06 | Phase 7 | Pending |
-| RUN-01 | Phase 1 | Pending |
-| RUN-02 | Phase 1 | Pending |
+| RUN-01 | Phase 1 | Complete |
+| RUN-02 | Phase 1 | Complete |
 | RUN-03 | Phase 2 | Pending |
 | RUN-04 | Phase 2 | Pending |
 | RUN-05 | Phase 8 | Pending |

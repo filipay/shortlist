@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-09-15T17:26:22.188Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-15T17:48:23.081Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: 738d633128572e9bb0438d8f56fc45fd763b74bd
+state_head: 3af6467b1fd2e21212f0a925ab25e6040b1c221c
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 01 execution started
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 01 P01 | 23 min | 3 tasks | 40 files |
 | Phase 01 P02 | 5 min | 2 tasks | 3 files |
+| Phase 01 P03 | 15 min | 3 tasks | 34 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,10 @@ Recent decisions affecting current work:
 - [Phase 01]: Migration-contract tests introspect the migrated temp DB (PRAGMA/sqlite_master) and never the ORM metadata, so model/DDL drift fails the contract
 - [Phase 01]: The JSON-column set is asserted by exact equality against a per-table allow-list, so a new free-form blob (the realistic PII vector) fails the PII-negative test until added deliberately
 - [Phase 01]: Queue-ordering tie-break and content_hash stability/difference are delegated to plan 01-03 (queue read + app/domain/listing.py); tracked as human_judgment coverage here, schema half asserted
+- [Phase 01]: One runs row per trigger: POST /runs commits the row and passes run_id to run_pipeline, which updates it; without this both created a row and the polled run never terminated
+- [Phase 01]: The JobSpy transport keeps its top-level import (one-importer grep holds) but is loaded lazily via an injectable factory, because tls_client cannot load libresolv.so.2 in the sandbox; production behaviour is unchanged
+- [Phase 01]: Persistence is SAVEPOINT-per-item: listing_sources.source is a live FK, so a failed insert could otherwise commit an orphan listings row
+- [Phase 01]: FINDING for plan 01-05: FastAPI 0.141.1 include_router yields _IncludedRouter objects with no .dependant, so a naive app.routes walk finds zero APIRoutes and a test_auth_seam.py written that way passes vacuously; recurse via original_router.routes
 
 ### Pending Todos
 
@@ -101,6 +106,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T17:26:22.150Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-09-15T17:48:23.040Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
