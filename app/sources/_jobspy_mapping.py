@@ -15,6 +15,7 @@ scraper's native toolchain.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime
 from typing import Any
 
@@ -60,6 +61,69 @@ EXTRA_FIELDS = ("job_level", "job_function", "listing_type", "company_industry")
 #: Columns that must NEVER be mapped. Read into no variable, present on no
 #: dataclass, stored in no column.
 DROP_FIELDS = ("emails",)
+
+#: The naukri tail of `desired_order` (`skills` … `work_from_home_type`) is part of
+#: the pinned S6 column contract but is deliberately NOT mapped into a core field
+#: or `source_extras`: those fields are board-specific, carry no PII, and no Phase-1
+#: consumer needs them. They are listed here so the omission is explicit rather
+#: than an accident of the contract's length. Unlike `DROP_FIELDS`, this is not a
+#: safety rule — only `emails` is forbidden to read.
+UNMAPPED_FIELDS = (
+    "skills",
+    "experience_range",
+    "company_rating",
+    "company_reviews_count",
+    "vacancy_count",
+    "work_from_home_type",
+)
+
+
+class UnsupportedFrameError(TypeError):
+    """`run_scrape` returned something that cannot be turned into rows.
+
+    Raised rather than returning `[]`: a silent-empty conversion is exactly what
+    turned a full page of scraped jobs into one empty listing.
+    """
+
+
+def frame_rows(frame: Any) -> list[Any]:
+    """Turn whatever `run_scrape` returns into mappable rows.
+
+    JobSpy returns a pandas **DataFrame**, and iterating a DataFrame yields its
+    *column labels* (`"id"`, `"site"`, `"title"`, …) — not its rows. The old
+    `list(frame)` therefore produced one empty `RawListing` per column, an identical
+    `content_hash` for every row, and a whole page collapsed into one listing.
+
+    This is the single, explicit conversion point:
+
+    - a DataFrame → ``frame.to_dict(orient="records")``, so each row is a dict keyed
+      by column name;
+    - an empty/`None` frame → ``[]``;
+    - a list/iterable of dicts or pandas Series (the test doubles) → its rows,
+      unchanged;
+    - anything else → `UnsupportedFrameError`, so the silent-empty path cannot
+      return.
+    """
+    if frame is None:
+        return []
+
+    # A DataFrame (or any tabular object) exposes `columns` and `to_dict`. A pandas
+    # Series does not have `columns`, so a Series row is never mistaken for a frame.
+    if hasattr(frame, "columns") and callable(getattr(frame, "to_dict", None)):
+        records = frame.to_dict(orient="records")
+        return list(records) if records else []
+
+    if isinstance(frame, (list, tuple)):
+        return list(frame)
+
+    # Any other non-string, non-mapping iterable is an iterable of rows.
+    if isinstance(frame, Iterable) and not isinstance(frame, (str, bytes, Mapping)):
+        return list(frame)
+
+    raise UnsupportedFrameError(
+        f"run_scrape returned {type(frame).__name__!r}, which cannot be turned into "
+        "job rows; expected a pandas DataFrame or an iterable of row mappings"
+    )
 
 
 def _is_missing(value: Any) -> bool:
@@ -122,7 +186,12 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
         return ()
     if isinstance(value, (list, tuple, set)):
         return tuple(str(item) for item in value if not _is_missing(item))
-    return (str(value),)
+    # JobSpy flattens `job_type` to a comma-joined string before building the
+    # DataFrame (`", ".join(job_type.value[0] ...)`), so split it back into elements.
+    text = str(value)
+    if ", " in text:
+        return tuple(part for part in (token.strip() for token in text.split(", ")) if part)
+    return (text,)
 
 
 def _read(row: Any, key: str) -> Any:
@@ -162,4 +231,12 @@ def map_jobspy_row(row: Any, *, source: str) -> RawListing:
     )
 
 
-__all__ = ["DESIRED_ORDER", "DROP_FIELDS", "EXTRA_FIELDS", "map_jobspy_row"]
+__all__ = [
+    "DESIRED_ORDER",
+    "DROP_FIELDS",
+    "EXTRA_FIELDS",
+    "UNMAPPED_FIELDS",
+    "UnsupportedFrameError",
+    "frame_rows",
+    "map_jobspy_row",
+]

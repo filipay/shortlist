@@ -16,6 +16,7 @@ from app.sources._jobspy_mapping import (
     DESIRED_ORDER,  # noqa: F401  (re-exported for existing callers)
     DROP_FIELDS,  # noqa: F401
     EXTRA_FIELDS,  # noqa: F401
+    frame_rows,
 )
 from app.sources._jobspy_mapping import map_jobspy_row as _map_jobspy_row
 from app.sources.base import (
@@ -140,7 +141,7 @@ class LinkedInAdapter(JobSource):
                 error=str(exc),
             )
 
-        rows = list(frame) if frame is not None else []
+        rows = frame_rows(frame)
         return FetchResult(
             source=NAME,
             items=[map_jobspy_row(row) for row in rows],

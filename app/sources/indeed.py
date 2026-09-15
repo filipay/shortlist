@@ -21,7 +21,7 @@ from typing import Any, Literal
 import httpx
 
 from app.config import settings
-from app.sources._jobspy_mapping import map_jobspy_row
+from app.sources._jobspy_mapping import frame_rows, map_jobspy_row
 from app.sources.base import (
     FetchBudget,
     FetchResult,
@@ -136,7 +136,7 @@ class IndeedAdapter(JobSource):
                 error=str(exc),
             )
 
-        rows = list(frame) if frame is not None else []
+        rows = frame_rows(frame)
         return FetchResult(
             source=NAME,
             items=[map_jobspy_row(row, source=NAME) for row in rows],
