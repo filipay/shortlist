@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-search-copilot"
+version = "0.1.0"
+description = "A local, self-hosted job-search pipeline"
+requires-python = ">=3.13"
+
+# Exact pins only (D-17 / PLAT-04). No floating ranges: the resolved artefact
+# set is the reviewable supply-chain surface.
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.53.0",
+    "sqlalchemy==2.0.53",
+    "alembic==1.20.0",
+    "aiosqlite==0.22.1",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "jinja2==3.1.6",
+    "httpx==0.28.1",
+    "tenacity==9.1.4",
+    "structlog==26.1.0",
+    # Acquisition: install JobSpy from git at a PINNED FULL SHA, never PyPI.
+    # PyPI's python-jobspy 1.1.82 predates the pinned LinkedIn date-parsing fix.
+    "jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.7",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "live: contacts a live third-party board or the opencode server; operator-run only, never in CI",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom is a call in an argument default.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+    "fastapi.Cookie",
+]

@@ -1,0 +1,17 @@
+# Runtime pins consumed by the Dockerfile. Mirrors [project].dependencies in
+# pyproject.toml exactly (D-17). Dev-only tools (pytest, ruff) are intentionally
+# absent — they are not installed into the runtime image.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.53
+alembic==1.20.0
+aiosqlite==0.22.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
+jinja2==3.1.6
+httpx==0.28.1
+tenacity==9.1.4
+structlog==26.1.0
+
+# Acquisition — from git at the pinned FULL SHA, never the stale PyPI release.
+jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1
