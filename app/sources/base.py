@@ -142,6 +142,44 @@ def classify_transport_error(exc: BaseException) -> FetchStatus:
     return "error"
 
 
+def classify_response(
+    *,
+    status_code: int | None,
+    parsed_items: int,
+    stop_signal: str | None = None,
+) -> tuple[bool, str]:
+    """Classify one completed request as fetch-side or parse-side (signal S5).
+
+    A *fetch* problem (403, 429, a stop signal, a suspiciously empty body) and a
+    *parse* problem (a valid page, no matching rows) need opposite fixes and both
+    present as empty data. A `blocked`/`rate_limited` outcome with a plausible body
+    is the silent-breakage case and must classify as fetch-side.
+
+    Lives here rather than in the transport so the survival signals can use it
+    without importing `jobspy` (the transport module is the only `jobspy` importer
+    and cannot be loaded without its native toolchain).
+
+    JobSpy does not surface the HTTP status, so `status_code=None` is the normal
+    production case: the classification then rests on the stop signal and the
+    parsed row count, and the note says so rather than implying a 200.
+    """
+    if stop_signal:
+        return (
+            False,
+            f"fetch-side: stop signal {stop_signal!r}; recorded and stopped, never retried",
+        )
+    if status_code in (401, 403):
+        return False, f"fetch-side: blocked with HTTP {status_code}"
+    if status_code == 429:
+        return False, "fetch-side: rate limited (HTTP 429)"
+    if status_code is not None and status_code >= 500:
+        return False, f"fetch-side: upstream error (HTTP {status_code})"
+    if parsed_items == 0:
+        return False, "parse-side: the request returned no rows"
+    where = f"HTTP {status_code}" if status_code is not None else "no observable status"
+    return True, f"ok: {where} returned {parsed_items} rows"
+
+
 class JobSource(ABC):
     """The ONLY surface the pipeline depends on. One instance per board."""
 
@@ -276,6 +314,7 @@ __all__ = [
     "SourceCapabilities",
     "SourceName",
     "capability_warnings",
+    "classify_response",
     "classify_transport_error",
     "compile_query_for_source",
 ]

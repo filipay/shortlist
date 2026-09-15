@@ -44,6 +44,9 @@ include = ["app*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+# The `live` lane contacts real job boards and must never run by default; the
+# operator selects it explicitly with `pytest -m live` (see scripts/run-probe.sh).
+addopts = "-m 'not live'"
 markers = [
     "live: contacts a live third-party board or the opencode server; operator-run only, never in CI",
 ]

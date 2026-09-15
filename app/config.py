@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     probe_count_fail_drop_pct: int = 50
     probe_count_trailing_runs: int = 5
     probe_freshness_fail_runs: int = 3
+    #: Arming rule for S3: below this many prior runs a count delta is noise, not a
+    #: signal (RESEARCH §S3 — "require ≥2 prior runs before the signal is armed").
+    probe_min_runs_before_arming: int = 2
+
+    # --- Adzuna promotion condition (D-04 / P-1..P-5) -------------------------
+    # Every boundary the verdict document cites lives here, so Phase 8 can
+    # re-evaluate the condition by code instead of re-reading prose.
+    probe_promotion_window_runs: int = 5
+    probe_promotion_blocked_runs: int = 3
+    probe_promotion_consecutive_runs: int = 2
 
 
 settings = Settings()

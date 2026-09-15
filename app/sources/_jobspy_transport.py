@@ -26,10 +26,18 @@ from datetime import UTC, datetime
 from typing import Any
 
 import jobspy
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import SourceRequestLog
-from app.sources.base import FetchBudget, FetchStatus, classify_transport_error
+from app.sources._ledger import (  # noqa: F401  (re-exported below)
+    RequestOutcome,
+    record_fetch_outcome,
+    record_source_request,
+)
+from app.sources.base import (
+    FetchBudget,
+    FetchStatus,
+    classify_response,  # noqa: F401  (re-exported below)
+    classify_transport_error,
+)
 
 #: UI-protection guard used when a caller does not supply a shorter deadline.
 DEFAULT_DEADLINE_SECONDS = 180.0
@@ -80,60 +88,13 @@ def classify_failure(exc: BaseException) -> tuple[FetchStatus, str]:
     return status, f"fetch-side: {type(exc).__name__}: {exc}"
 
 
-def classify_response(*, status_code: int | None, parsed_items: int) -> tuple[bool, str]:
-    """Classify a completed request as fetch-side or parse-side (S5).
-
-    A `blocked`/`rate_limited` status with a plausible body is the silent-breakage
-    case and must be classified as fetch-side, not as "nothing matched".
-    """
-    if status_code is None:
-        return False, "fetch-side: no status code recorded"
-    if status_code in (401, 403):
-        return False, f"fetch-side: blocked with HTTP {status_code}"
-    if status_code == 429:
-        return False, "fetch-side: rate limited (HTTP 429)"
-    if status_code >= 500:
-        return False, f"fetch-side: upstream error (HTTP {status_code})"
-    if parsed_items == 0:
-        return True, f"parse-side: HTTP {status_code} returned no rows"
-    return True, f"ok: HTTP {status_code} returned {parsed_items} rows"
-
-
-async def record_source_request(
-    session: AsyncSession,
-    *,
-    source: str,
-    kind: str,
-    status_code: int | None = None,
-    ok: bool | None = None,
-    note: str | None = None,
-    run_id: int | None = None,
-    occurred_at: datetime | None = None,
-) -> SourceRequestLog:
-    """Append one row to the politeness/quota ledger (D-03(b)).
-
-    The probe verdict must be derivable from these rows, so every outbound
-    request is recorded — success, block or error.
-    """
-    row = SourceRequestLog(
-        source=source,
-        run_id=run_id,
-        occurred_at=occurred_at or datetime.now(UTC),
-        kind=kind,
-        status_code=status_code,
-        ok=ok,
-        note=note,
-    )
-    session.add(row)
-    await session.flush()
-    return row
-
-
 __all__ = [
     "DEFAULT_DEADLINE_SECONDS",
+    "RequestOutcome",
     "budget_allows",
     "classify_failure",
     "classify_response",
+    "record_fetch_outcome",
     "record_source_request",
     "remaining_seconds",
     "run_scrape",

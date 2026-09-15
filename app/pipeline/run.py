@@ -24,7 +24,13 @@ from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.ingest.sanitize import sanitize_listing
 from app.pipeline.stages import normalise_listing
+from app.probe.survival import (
+    compute_fill_rates,
+    fill_rate_record_from_raw,
+    record_baseline,
+)
 from app.sources import registry
+from app.sources._ledger import record_fetch_outcome
 from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
 
 log = structlog.get_logger(__name__)
@@ -143,6 +149,39 @@ async def _persist_result(
                 created += 1
             else:
                 updated += 1
+
+        # The politeness ledger and the S2 baseline anchor. Both go through a
+        # SAVEPOINT: a bookkeeping failure must not abort a run whose listings
+        # already persisted (R1), and it must not poison the outer transaction.
+        try:
+            async with session.begin_nested():
+                # One row per outbound request (D-03's ledger). Written even when
+                # the board returned no rows, because a parse-side miss is exactly
+                # what must be visible later.
+                await record_fetch_outcome(
+                    session,
+                    source=result.source,
+                    run_id=run_id,
+                    result_status=result.status,
+                    parsed_items=len(result.items),
+                    now=now,
+                )
+                if result.status == "ok" and result.items:
+                    # Recorded once, on the first successful run per source; never
+                    # overwritten, so the anchor S2 compares against survives.
+                    await record_baseline(
+                        session,
+                        source=result.source,
+                        fill_rates=compute_fill_rates(
+                            [fill_rate_record_from_raw(item) for item in result.items]
+                        ),
+                        now=now,
+                    )
+        except Exception as exc:  # noqa: BLE001 — bookkeeping is not the payload
+            log.warning(
+                "pipeline.ledger_failed", source=result.source, error=type(exc).__name__
+            )
+
         await session.commit()
 
     return {
