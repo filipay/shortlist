@@ -1,0 +1,32 @@
+[
+  {
+    "id": null,
+    "site": "linkedin",
+    "job_url": "https://ie.linkedin.com/jobs/view/backend-engineer-at-initech-0000",
+    "job_url_direct": null,
+    "title": "Backend Engineer",
+    "company": "Initech",
+    "location": "Remote, Ireland",
+    "date_posted": "2026-09-03",
+    "job_type": ["fulltime"],
+    "salary_source": null,
+    "interval": null,
+    "min_amount": null,
+    "max_amount": null,
+    "currency": null,
+    "is_remote": true,
+    "job_level": null,
+    "job_function": null,
+    "listing_type": "full-time",
+    "emails": ["PII-CANARY-EMAIL-VALUE"],
+    "description": "Own the API.",
+    "company_industry": null,
+    "company_url": null,
+    "company_logo": null,
+    "company_url_direct": null,
+    "company_addresses": null,
+    "company_num_employees": null,
+    "company_revenue": null,
+    "company_description": null
+  }
+]

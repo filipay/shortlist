@@ -1,0 +1,32 @@
+[
+  {
+    "id": "5550001112",
+    "site": "linkedin",
+    "job_url": "https://ie.linkedin.com/jobs/view/data-engineer-at-hooli-5550001112",
+    "job_url_direct": null,
+    "title": "Data Engineer",
+    "company": "Hooli",
+    "location": "Galway, County Galway, Ireland",
+    "date_posted": "2026-09-04",
+    "job_type": ["fulltime"],
+    "salary_source": null,
+    "interval": null,
+    "min_amount": null,
+    "max_amount": null,
+    "currency": null,
+    "is_remote": null,
+    "job_level": null,
+    "job_function": null,
+    "listing_type": "full-time",
+    "emails": ["PII-CANARY-EMAIL-VALUE"],
+    "description": null,
+    "company_industry": null,
+    "company_url": null,
+    "company_logo": null,
+    "company_url_direct": null,
+    "company_addresses": null,
+    "company_num_employees": null,
+    "company_revenue": null,
+    "company_description": null
+  }
+]
