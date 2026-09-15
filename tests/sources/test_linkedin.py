@@ -135,6 +135,33 @@ def test_build_kwargs_targets_linkedin_and_respects_the_budget() -> None:
     assert kwargs["linkedin_fetch_description"] is False
 
 
+def test_build_kwargs_forwards_the_declared_linkedin_filters() -> None:
+    """WR-03: the filters the board declares are executed, never dropped."""
+    adapter = LinkedInAdapter(transport=FakeTransport())
+
+    with_hours = adapter.build_kwargs(
+        SearchQuery(keywords="python", hours_old=24), _budget()
+    )
+    assert with_hours["hours_old"] == 24
+    assert "easy_apply" not in with_hours
+
+    with_easy = adapter.build_kwargs(
+        SearchQuery(keywords="python", easy_apply=True), _budget()
+    )
+    assert with_easy["easy_apply"] is True
+    assert "hours_old" not in with_easy
+
+
+def test_build_kwargs_omits_the_optional_filters_when_unset() -> None:
+    """Behaviour is unchanged when no such filter is set (the current default)."""
+    adapter = LinkedInAdapter(transport=FakeTransport())
+
+    kwargs = adapter.build_kwargs(SearchQuery(keywords="python"), _budget())
+
+    assert "hours_old" not in kwargs
+    assert "easy_apply" not in kwargs
+
+
 async def test_fetch_returns_mapped_items() -> None:
     rows = _load("linkedin_page1.json")
     transport = FakeTransport(rows=rows)

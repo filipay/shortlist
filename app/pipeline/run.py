@@ -31,7 +31,13 @@ from app.probe.survival import (
 )
 from app.sources import registry
 from app.sources._ledger import record_fetch_outcome
-from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
+from app.sources.base import (
+    FetchBudget,
+    FetchResult,
+    JobSource,
+    SearchQuery,
+    compile_query_for_source,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -98,22 +104,43 @@ async def _resolve_adapters(
     return resolved
 
 
-async def _fetch_one(adapter: JobSource, query: SearchQuery) -> FetchResult:
-    """A board's failure degrades the run; it never propagates (R1)."""
+async def _fetch_one(
+    adapter: JobSource, query: SearchQuery
+) -> tuple[FetchResult, list[dict[str, Any]]]:
+    """A board's failure degrades the run; it never propagates (R1).
+
+    The query is compiled against the board's declared capabilities BEFORE the
+    fetch (R3/SRC-09): a filter the board cannot honour becomes a recorded
+    warning rather than being dropped silently, and the adapter executes the
+    compiled query. When nothing must be dropped the compiled query is the
+    caller's query unchanged, so today's `default_query()` is unaffected.
+    """
+    compiled = compile_query_for_source(query, adapter.capabilities, source=adapter.name)
+    warnings: list[dict[str, Any]] = [
+        {
+            "source": adapter.name,
+            "status": "warning",
+            "error": f"filter not applied: {warning.filter_name} — {warning.reason}",
+        }
+        for warning in compiled.warnings
+    ]
     try:
-        return await adapter.fetch(query, build_budget())
+        result = await adapter.fetch(compiled.query, build_budget())
     except Exception as exc:  # noqa: BLE001 — belt and braces around R1
         log.warning("pipeline.fetch_failed", source=adapter.name, error=str(exc))
-        return FetchResult(source=adapter.name, status="error", error=str(exc))
+        result = FetchResult(source=adapter.name, status="error", error=str(exc))
+    return result, warnings
 
 
 async def _fetch_all(
     adapters: Sequence[JobSource], query: SearchQuery
-) -> list[FetchResult]:
+) -> list[tuple[FetchResult, list[dict[str, Any]]]]:
     """Fan out concurrently — one call per board, one budget each."""
     if not adapters:
         return []
-    return list(await asyncio.gather(*(_fetch_one(adapter, query) for adapter in adapters)))
+    return list(
+        await asyncio.gather(*(_fetch_one(adapter, query) for adapter in adapters))
+    )
 
 
 async def _persist_result(
@@ -260,7 +287,7 @@ async def run_pipeline(
 
     try:
         selected = await _resolve_adapters(session_factory, adapters)
-        results = await _fetch_all(selected, query or default_query())
+        fetched = await _fetch_all(selected, query or default_query())
         if not selected:
             # Zero adapters resolved: the run fetched nothing, so `done` would be a
             # false success — the badge reads clean while the queue stays empty (and
@@ -269,7 +296,13 @@ async def run_pipeline(
             errors.append(
                 {"source": "*", "status": "partial", "error": NO_SOURCES_REASON}
             )
-        for result in results:
+        results: list[FetchResult] = []
+        for result, capability_warnings in fetched:
+            # A filter the board cannot honour is recorded, never silently dropped
+            # (SRC-09/T-01-18). It is a warning, not a run failure: the fetch itself
+            # may still be healthy.
+            errors.extend(capability_warnings)
+            results.append(result)
             source_counts[result.source] = await _persist_result(
                 session_factory, result, resolved_run_id
             )

@@ -96,8 +96,13 @@ class LinkedInAdapter(JobSource):
 
         `linkedin_fetch_description` is pinned False: the detail pass is O(n)
         extra requests and is a separate, budgeted call in Phase 1 (R4).
+
+        `hours_old` and `easy_apply` are forwarded when set (JobSpy consumes
+        both). The board silently honours only ONE of the pair, so the run path
+        must arbitrate the exclusivity through `compile_query_for_source` before
+        calling this — a surviving filter is executed, never dropped silently.
         """
-        return dict(
+        kwargs = dict(
             site_name="linkedin",
             search_term=query.keywords,
             location=query.location,
@@ -108,6 +113,11 @@ class LinkedInAdapter(JobSource):
             offset=query.offset,
             verbose=0,
         )
+        if query.hours_old is not None:
+            kwargs["hours_old"] = query.hours_old
+        if query.easy_apply is not None:
+            kwargs["easy_apply"] = query.easy_apply
+        return kwargs
 
     async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
         """Search-shaped, bounded and total: never raises for a source failure."""

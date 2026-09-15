@@ -43,11 +43,14 @@ class StubAdapter(JobSource):
         self.name = name  # type: ignore[assignment]
         self._status = status
         self._items = list(items or [])
+        #: The query the adapter was actually handed (post capability compile).
+        self.last_query: SearchQuery | None = None
 
     async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
         return "ok" if self._status == "ok" else "degraded"
 
     async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
+        self.last_query = query
         return FetchResult(
             source=self.name,  # type: ignore[arg-type]
             items=self._items,
@@ -261,3 +264,34 @@ async def test_a_run_whose_every_item_failed_to_persist_is_not_done(
 
     fragment = (await client.get(f"/runs/{run_id}/status")).text
     assert "1 failed" in fragment, "the persist failure must be rendered, not hidden"
+
+
+# --- WR-03: the run path consults the adapter's capabilities (R3/SRC-09) ------
+
+
+async def test_a_filter_the_board_cannot_honour_is_recorded_not_dropped(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """SRC-09/T-01-18: a dropped filter must be a recorded warning, not silence."""
+    await _register_sources(session_factory, "linkedin")
+    adapter = StubAdapter("linkedin", "ok", [_raw("linkedin", 1)])
+    query = SearchQuery(keywords="engineer", salary_floor=70000, seniority=("senior",))
+
+    run_id = await run_pipeline(
+        "manual", None, session_factory, adapters=[adapter], query=query
+    )
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    # A warning is recorded, not a run failure: the fetch itself is healthy.
+    assert run.status == "done"
+    recorded = " ".join(entry.get("error") or "" for entry in (run.errors_json or []))
+    assert "salary_floor" in recorded, "an unsupported filter must be recorded"
+    assert "seniority" in recorded, "an unsupported filter must be recorded"
+
+    # The unsupported filters are stripped from the query the adapter executes.
+    assert adapter.last_query is not None
+    assert adapter.last_query.salary_floor is None
+    assert adapter.last_query.seniority == ()
