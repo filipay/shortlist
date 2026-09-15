@@ -45,7 +45,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Re-running a search never creates a duplicate row for the same listing on the same source.
   4. Per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage are observable, and the probe yields a recorded verdict on whether LinkedIn/Indeed survive at personal scale (re-ranking Adzuna from hedge to primary if they do not).
   5. The app exposes no credential path anywhere (public logged-out pages only), every API route answers through the `current_user` seam, and the domain-import-discipline test passes.
-**Plans**: TBD
+**Plans:** 7 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Walking skeleton: migrate, boot, browse; the one-way migration 0001 and the deployment path
+- [ ] 01-02-PLAN.md — Migration 0001 acceptance checklist as assertions, PII-negative schema, FTS5 trigger proof
+- [ ] 01-03-PLAN.md — LinkedIn ingest slice: adapter port, sanitise/normalise, two-key upsert, `run_pipeline()`, run trigger + poll
+- [ ] 01-04-PLAN.md — Indeed adapter with the Ireland guard, adapter extensibility proof, capability warnings, domain import discipline
+- [ ] 01-05-PLAN.md — Sanitise hardening (PII/HTML/truncation) + no-credential, no-CDN, auth-seam, config guards
+- [ ] 01-06-PLAN.md — Cached liveness probe, boot-tolerant `/health`, per-source health strip, opencode discovery redaction
+- [ ] 01-07-PLAN.md — Survival signals S1–S6 + Adzuna condition, the dated probe verdict, and the operator compose smoke
 
 **Migration 0001 acceptance checklist (non-backfillable — `ARCHITECTURE.md` §9.4 / `PITFALLS.md` P8).** These fields describe the past and cannot be invented later; this checklist is the Phase 1 schema contract:
   1. `listings.first_seen_at`, `last_seen_at`, `content_hash` all `NOT NULL`
@@ -171,7 +180,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Walking Skeleton + Foundations | 0/0 | Not started | - |
+| 1. Walking Skeleton + Foundations | 0/7 | Planned | - |
 | 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
