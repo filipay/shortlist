@@ -92,7 +92,7 @@ async def test_handler_returns_before_the_pipeline_finishes(
     health = await client.get("/health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
-    assert health.json()["database"] == "ok"
+    assert health.json()["db"] == "ok"
 
     terminal = await _wait_for_terminal(session_factory, run.id)
     assert terminal.status == "done"

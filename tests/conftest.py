@@ -3,6 +3,10 @@
 The schema is created by running **`alembic upgrade head`** against a real temp
 file (never `:memory:` — WAL and FTS5 behaviour differ, and never
 `Base.metadata.create_all`, which would not exercise the migration).
+
+The default lane is offline: the app's LLM backend dependency is overridden with a
+stub that never opens a socket. `/health` and the queue page must be honest about
+an unreachable backend (D-08), and a test must never reach a live opencode server.
 """
 
 from __future__ import annotations
@@ -19,7 +23,25 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.llm import get_llm_backend
+from app.llm.base import DiscoveryResult, ProbeOutcome
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+class OfflineLLMBackend:
+    """Stands in for `OpenCodeServerBackend` without touching the network.
+
+    "Unreachable" is the honest default here: it is the state the app must boot and
+    serve in (D-08), and it keeps the health strip deterministic.
+    """
+
+    async def health(self) -> ProbeOutcome:
+        return ProbeOutcome(reachable=False, error="offline-test-lane")
+
+    async def discover_models(self) -> DiscoveryResult:
+        return DiscoveryResult(reachable=False, error="offline-test-lane")
+
 
 
 def _run_alembic_upgrade(db_path: Path) -> None:
@@ -91,7 +113,8 @@ async def client(
 
     Both the request-scoped session and the *background-task* session factory are
     overridden, so a `POST /runs` pipeline writes to the temp database rather
-    than the configured `/data/jobsearch.db`.
+    than the configured `/data/jobsearch.db`. The LLM backend is overridden with
+    the offline stub so no test in the default lane opens a socket.
     """
     from app.db.session import get_session, get_session_factory
     from app.main import create_app
@@ -104,6 +127,7 @@ async def client(
 
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_llm_backend] = OfflineLLMBackend
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
