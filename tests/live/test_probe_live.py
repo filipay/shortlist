@@ -53,8 +53,9 @@ async def test_one_bounded_probe_run_per_board_respects_the_envelope() -> None:
 
     names = await _enabled_sources()
     assert names, (
-        "no enabled sources rows — insert one per board before probing "
-        "(see docs/probes/README.md)"
+        "no enabled sources rows — they are seeded automatically from the adapter "
+        "registry at app boot and by scripts/run-probe.sh; run the probe through "
+        "that script (see docs/probes/README.md)"
     )
 
     adapters = [registry.get(name)() for name in names]

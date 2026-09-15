@@ -11,20 +11,35 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import structlog
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api import health as health_routes
 from app.api import runs as run_routes
+from app.db.repositories import source_repo
+from app.db.session import async_session_maker
 from app.web import routes as web_routes
+
+log = structlog.get_logger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # The engine is created at import time and connects lazily; there is nothing
-    # to fail hard here and no external service is contacted.
+    # Seed the `sources` allow-list from the adapter registry. Without it a freshly
+    # migrated database has no enabled rows and every run resolves zero adapters.
+    # It must not hard-fail boot (D-08): a seeding failure is logged and the app
+    # still serves, exactly like an unreachable opencode server.
+    try:
+        async with async_session_maker() as session:
+            inserted = await source_repo.ensure_registered_sources(session)
+            await session.commit()
+        if inserted:
+            log.info("startup.sources_seeded", sources=inserted)
+    except Exception as exc:  # noqa: BLE001 — boot must not depend on the seeding
+        log.warning("startup.sources_seed_failed", error=type(exc).__name__)
     yield
 
 

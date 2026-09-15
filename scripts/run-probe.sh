@@ -145,6 +145,30 @@ step "migrating the probe database"
 "$PYTHON" -m alembic upgrade head >/dev/null
 echo "database ready at $PROBE_DB"
 
+step "registering the source allow-list"
+# This lane never boots the FastAPI app, so seed the `sources` rows here (the app's
+# lifespan does it at boot). Idempotent: a re-run inserts nothing.
+if ! "$PYTHON" - <<'PY'
+import asyncio
+
+from app.db.repositories.source_repo import ensure_registered_sources
+from app.db.session import async_session_maker
+
+
+async def main() -> None:
+    async with async_session_maker() as session:
+        inserted = await ensure_registered_sources(session)
+        await session.commit()
+    print("sources registered:", ", ".join(inserted) if inserted else "already present")
+
+
+asyncio.run(main())
+PY
+then
+  echo "run-probe: cannot register the source allow-list in $PROBE_DB (see error above)" >&2
+  exit 2
+fi
+
 step "running one bounded probe (live lane)"
 "$PYTHON" -m pytest -q -m live
 

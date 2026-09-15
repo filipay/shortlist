@@ -4,7 +4,9 @@ The pipeline owns the ingest side of the `sources` table. What Phase 1 needs fro
 it beyond that is small and split by concern: which sources are enabled and the
 write path for a probe result (`last_probe_at`, `health`), then the read model
 SRC-07 / D-13 requires the UI strip to render — last success, listings returned
-and per-field fill-rate.
+and per-field fill-rate. `ensure_registered_sources` seeds the enabled set from the
+adapter registry, so a freshly migrated database is usable without hand-inserted
+rows.
 
 Nothing here imports `app.probe`: the status vocabulary is validated locally and
 enforced by the `ck_sources_health` CHECK constraint.
@@ -24,9 +26,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Listing, ListingSource, Run, Source
+from app.sources import registry
 
 #: Mirrors `ck_sources_health` on the `sources` table.
 VALID_HEALTH: frozenset[str] = frozenset({"ok", "degraded", "unreachable"})
@@ -127,6 +131,49 @@ async def enabled_source_names(session: AsyncSession) -> list[str]:
     return list(rows)
 
 
+def _display_name(name: str) -> str:
+    """A deterministic human label for a registered adapter.
+
+    `JobSource` exposes only `name` and `capabilities`, so there is no
+    `display_name` to read; `name.title()` is the convention the tests already use.
+    """
+    return name.title()
+
+
+async def ensure_registered_sources(session: AsyncSession) -> list[str]:
+    """Seed one `sources` row per registered adapter, idempotently.
+
+    The `sources` table is the run-time allow-list (`enabled_source_names`, and the
+    pipeline's `_resolve_adapters`), but nothing in production ever created its rows
+    — a freshly migrated database had zero enabled sources, so every run resolved
+    zero adapters. The registry (`app/sources/registry.py`) is the code-level source
+    of truth, so this inserts exactly its adapters, each `enabled=True` (the registry
+    is the truth and `enabled` has no other writer in v1).
+
+    Safe to call on every boot: a name already present is skipped and a racing
+    insert (`uq_sources_name`) is swallowed by a SAVEPOINT, so a re-run inserts
+    nothing. Returns the names inserted this call. The caller owns the commit, like
+    every other function in this module.
+    """
+    existing = set(
+        (await session.execute(select(Source.name))).scalars().all()
+    )
+    missing = [name for name in registry.all_adapters() if name not in existing]
+    if not missing:
+        return []
+
+    try:
+        async with session.begin_nested():
+            session.add_all(
+                Source(name=name, display_name=_display_name(name), enabled=True)
+                for name in missing
+            )
+    except IntegrityError:
+        # A concurrent seeder won the race; the rows now exist, which is the goal.
+        return []
+    return missing
+
+
 async def record_probe_result(
     session: AsyncSession,
     *,
@@ -218,6 +265,7 @@ __all__ = [
     "VALID_HEALTH",
     "SourceHealth",
     "enabled_source_names",
+    "ensure_registered_sources",
     "get_source_health",
     "record_probe_result",
 ]

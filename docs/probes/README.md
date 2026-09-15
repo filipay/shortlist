@@ -49,6 +49,19 @@ python3.13 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 PYTHON=/path/to/such/python bash scripts/run-probe.sh
 ```
 
+## The source allow-list is seeded automatically
+
+The `sources` table is the run-time allow-list, and its rows are seeded from the
+adapter registry (`app/sources/registry.py`) — **you never insert them by hand**:
+
+- at app boot, the FastAPI lifespan inserts one row per registered adapter;
+- `scripts/run-probe.sh` does the same after the migration and before the live
+  lane, so the probe (which never boots the app) also has its rows.
+
+Every registered adapter is inserted `enabled=True`, and the step is idempotent
+(a second call inserts nothing). If the table were empty, every run would resolve
+zero adapters and fetch nothing.
+
 ## Commands
 
 ```bash
