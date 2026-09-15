@@ -98,6 +98,24 @@ class StubIndeed(JobSource):
         return FetchResult(source=self.name, items=[], status="ok")
 
 
+#: `source -> probe invocation count`, so the TTL cache is asserted end to end.
+PROBE_CALLS: dict[str, int] = {}
+
+
+class CountingIndeed(JobSource):
+    """A registered adapter that counts how often its probe is invoked."""
+
+    name = "indeed"
+    capabilities = CAPABILITIES
+
+    async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
+        PROBE_CALLS[self.name] = PROBE_CALLS.get(self.name, 0) + 1
+        return "ok"
+
+    async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
+        return FetchResult(source=self.name, items=[], status="ok")
+
+
 @dataclass
 class HealthEnv:
     client: AsyncClient
@@ -316,6 +334,25 @@ async def test_health_records_the_probe_result_on_the_sources_row(
     assert row is not None
     assert row.health == "degraded"
     assert row.last_probe_at is not None
+
+
+@pytest.mark.usefixtures("registry_snapshot")
+async def test_repeated_health_loads_probe_each_source_once(
+    health_env: HealthEnv,
+) -> None:
+    """The TTL cache is what stops a page load from hammering a board (T-01-31)."""
+    PROBE_CALLS.clear()
+    registry.clear()
+    registry.register(CountingIndeed)
+    async with health_env.session_factory() as session:
+        session.add(Source(name="indeed", display_name="Indeed"))
+        await session.commit()
+
+    responses = [await health_env.client.get("/health") for _ in range(3)]
+
+    assert [response.status_code for response in responses] == [200, 200, 200]
+    assert responses[0].json()["sources"]["indeed"]["probe"] == "ok"
+    assert PROBE_CALLS == {"indeed": 1}, "a repeated /health load re-probed the board"
 
 
 async def test_health_answers_promptly_while_a_run_is_in_flight(
