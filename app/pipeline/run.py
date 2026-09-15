@@ -32,8 +32,21 @@ log = structlog.get_logger(__name__)
 MANUAL = "manual"
 TERMINAL_STATUSES = frozenset({"done", "partial", "failed"})
 
-#: Phase 1 has no criteria UI, so a run uses one documented default query.
-DEFAULT_QUERY = SearchQuery(keywords="software engineer", location="Ireland", results_wanted=50)
+
+def default_query() -> SearchQuery:
+    """The Phase-1 search intent, with every limit read from settings (PLAT-04).
+
+    This is deliberately a function rather than a module constant: a constant
+    would freeze the ban-risk envelope at import time and silently ignore an
+    operator override, which is the exact "threshold as a constant" failure
+    `probe_*` exists to prevent. Only the keywords are literals — they are a
+    product string, not a limit.
+    """
+    return SearchQuery(
+        keywords="software engineer",
+        location=settings.probe_query_location,
+        results_wanted=settings.probe_results_wanted,
+    )
 
 
 def build_budget(*, now: datetime | None = None) -> FetchBudget:
@@ -202,7 +215,7 @@ async def run_pipeline(
 
     try:
         selected = await _resolve_adapters(session_factory, adapters)
-        results = await _fetch_all(selected, query or DEFAULT_QUERY)
+        results = await _fetch_all(selected, query or default_query())
         for result in results:
             source_counts[result.source] = await _persist_result(
                 session_factory, result, resolved_run_id
@@ -241,9 +254,9 @@ async def run_pipeline(
 
 
 __all__ = [
-    "DEFAULT_QUERY",
     "MANUAL",
     "TERMINAL_STATUSES",
     "build_budget",
+    "default_query",
     "run_pipeline",
 ]

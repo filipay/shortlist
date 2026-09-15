@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     probe_deadline_seconds: int = 180
     probe_results_wanted: int = 50
     probe_country_indeed: str = "ireland"
+    #: Human-readable location term for the default Phase-1 query. Kept here, not
+    #: as a literal in `app/pipeline`, so the search location is adjustable without
+    #: a code change (PLAT-04).
+    probe_query_location: str = "Ireland"
     probe_cache_ttl_seconds: int = 300
 
     # --- Survival signal thresholds (S2/S3/S4) -------------------------------
