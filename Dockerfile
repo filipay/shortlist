@@ -38,6 +38,22 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Fail the build unless JobSpy came from the pinned git commit. Without this a
+# wrong-revision or non-VCS install could pass silently; the `jobspy` vs
+# `python-jobspy` name collision previously surfaced as a misleading pip error
+# (candidate discarded as metadata-inconsistent, reported as "(unavailable)").
+ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
+RUN JOBSPY_SHA="$JOBSPY_SHA" python - <<'PY'
+import json, os, importlib.metadata as md
+
+sha = os.environ["JOBSPY_SHA"]
+meta = json.loads(md.distribution("python-jobspy").read_text("direct_url.json"))
+vcs = meta.get("vcs_info", {})
+assert vcs.get("vcs") == "git", f"python-jobspy is not a VCS install: {meta}"
+assert vcs.get("commit_id") == sha, f"wrong revision: {vcs.get('commit_id')} != {sha}"
+print("python-jobspy pinned at", sha)
+PY
+
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app

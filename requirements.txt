@@ -14,4 +14,7 @@ tenacity==9.1.4
 structlog==26.1.0
 
 # Acquisition — from git at the pinned FULL SHA, never the stale PyPI release.
-jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1
+# Note: the distribution is named `python-jobspy`, NOT `jobspy` (the PyPI `jobspy`
+# name is an unrelated project). Naming the wrong distribution makes pip report a
+# misleading "(unavailable)" error after discarding the metadata-inconsistent sdist.
+python-jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1
