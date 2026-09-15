@@ -1,0 +1,137 @@
+"""SRC-05 — one board blocked, the other healthy: the run degrades, never aborts."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Literal
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.db.models import Listing, ListingSource, Run, Source
+from app.pipeline.run import run_pipeline
+from app.sources.base import (
+    FetchBudget,
+    FetchResult,
+    JobSource,
+    RawListing,
+    SearchQuery,
+    SourceCapabilities,
+)
+
+CAPABILITIES = SourceCapabilities(
+    supports_salary=False,
+    supports_salary_min_filter=False,
+    supports_remote_flag=True,
+    supports_seniority=False,
+    supports_full_description_in_search=False,
+    requires_second_pass_for_description=False,
+    supports_offset_paging=True,
+    max_results_per_query=1000,
+)
+
+
+class StubAdapter(JobSource):
+    """A total adapter with a scripted outcome — no network, no jobspy."""
+
+    capabilities = CAPABILITIES
+
+    def __init__(self, name: str, status: str, items: list[RawListing] | None = None) -> None:
+        self.name = name  # type: ignore[assignment]
+        self._status = status
+        self._items = list(items or [])
+
+    async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
+        return "ok" if self._status == "ok" else "degraded"
+
+    async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
+        return FetchResult(
+            source=self.name,  # type: ignore[arg-type]
+            items=self._items,
+            status=self._status,  # type: ignore[arg-type]
+            requests_used=1,
+            error=None if self._status == "ok" else "blocked by test",
+        )
+
+
+def _raw(source: str, index: int) -> RawListing:
+    return RawListing(
+        source=source,  # type: ignore[arg-type]
+        source_listing_id=f"{source}-{index}",
+        source_url=f"https://{source}.example.com/jobs/{index}",
+        direct_url=None,
+        title=f"Engineer {index}",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        posted_at=date(2026, 9, 1),
+    )
+
+
+async def _count(session_factory: async_sessionmaker[AsyncSession], table: type) -> int:
+    async with session_factory() as session:
+        return await session.scalar(select(func.count()).select_from(table)) or 0
+
+
+async def _register_sources(
+    session_factory: async_sessionmaker[AsyncSession], *names: str
+) -> None:
+    """`listing_sources.source` is a live FK to `sources.name`, so the row must exist."""
+    async with session_factory() as session:
+        for name in names:
+            session.add(Source(name=name, display_name=name.title()))
+        await session.commit()
+
+
+async def test_a_blocked_board_degrades_the_run_but_keeps_the_healthy_queue(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    healthy = StubAdapter("linkedin", "ok", [_raw("linkedin", 1), _raw("linkedin", 2)])
+    blocked = StubAdapter("indeed", "blocked")
+    await _register_sources(session_factory, "linkedin", "indeed")
+
+    run_id = await run_pipeline(
+        "manual", None, session_factory, adapters=[healthy, blocked]
+    )
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status == "partial", "a blocked board must not look like a clean success"
+    assert run.finished_at is not None
+
+    # The healthy board's items are persisted: one failure cannot empty the queue.
+    assert await _count(session_factory, ListingSource) == 2
+    assert await _count(session_factory, Listing) == 2
+
+    counts = run.source_counts_json or {}
+    assert counts["linkedin"]["status"] == "ok"
+    assert counts["indeed"]["status"] == "blocked"
+    assert counts["indeed"]["fetched"] == 0
+
+    errors = run.errors_json or []
+    assert any(entry["source"] == "indeed" for entry in errors)
+
+
+async def test_no_exception_propagates_when_a_board_is_blocked(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    blocked = StubAdapter("indeed", "blocked")
+    rate_limited = StubAdapter("glassdoor", "rate_limited")
+    await _register_sources(session_factory, "indeed", "glassdoor")
+
+    # The call must return normally — a source failure is data, not an exception.
+    run_id = await run_pipeline(
+        "manual", None, session_factory, adapters=[blocked, rate_limited]
+    )
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.status == "partial"
+    assert run.finished_at is not None
+    assert isinstance(run_id, int)
+    # Every source failed, yet the queue is untouched and no exception escaped.
+    assert await _count(session_factory, ListingSource) == 0

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Listing, ListingSource
+from app.db.models import Company, Listing, ListingSource
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,33 @@ _LISTING_FIELDS = (
 )
 
 
+async def _resolve_company_id(
+    session: AsyncSession, *, norm: Any, now: datetime
+) -> int | None:
+    """Maintain the `companies` dedup anchor and return its id.
+
+    `name_norm` is the unique anchor; the first spelling seen wins for `name`.
+    Done in the same transaction as the listing so a listing can never point at a
+    company that was not committed.
+    """
+    company_norm = _value(norm, "company_norm")
+    if not company_norm:
+        return None
+
+    company = await session.scalar(
+        select(Company).where(Company.name_norm == company_norm)
+    )
+    if company is None:
+        company = Company(
+            name=_value(norm, "company_name") or company_norm,
+            name_norm=company_norm,
+            created_at=now,
+        )
+        session.add(company)
+        await session.flush()
+    return company.id
+
+
 async def upsert_listing(session: AsyncSession, *, norm: Any, now: datetime) -> int:
     """Maintain the canonical ``listings`` row, keyed by ``canonical_url``.
 
@@ -97,6 +124,10 @@ async def upsert_listing(session: AsyncSession, *, norm: Any, now: datetime) -> 
             value = _value(norm, field)
             if value is not None:
                 setattr(row, field, value)
+
+    company_id = await _resolve_company_id(session, norm=norm, now=now)
+    if company_id is not None:
+        row.company_id = company_id
 
     await session.flush()
     return row.id
