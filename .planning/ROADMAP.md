@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage are observable, and the probe yields a recorded verdict on whether LinkedIn/Indeed survive at personal scale (re-ranking Adzuna from hedge to primary if they do not).
   5. The app exposes no credential path anywhere (public logged-out pages only), every API route answers through the `current_user` seam, and the domain-import-discipline test passes.
 
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 **Wave 1**
@@ -63,7 +63,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-04-PLAN.md — Indeed adapter with the Ireland guard, adapter extensibility proof, capability warnings, domain import discipline
+- [x] 01-04-PLAN.md — Indeed adapter with the Ireland guard, adapter extensibility proof, capability warnings, domain import discipline
 - [ ] 01-05-PLAN.md — Sanitise hardening (PII/HTML/truncation) + no-credential, no-CDN, auth-seam, config guards
 - [ ] 01-06-PLAN.md — Cached liveness probe, boot-tolerant `/health`, per-source health strip, opencode discovery redaction
 
@@ -217,7 +217,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Walking Skeleton + Foundations | 3/7 | In Progress|  |
+| 1. Walking Skeleton + Foundations | 4/7 | In Progress|  |
 | 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |

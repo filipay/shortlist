@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-15T17:48:23.081Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-09-15T18:05:40.261Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: 3af6467b1fd2e21212f0a925ab25e6040b1c221c
+state_head: c0145ee6748dd4fb6e490a8db66a95f32fcca72c
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 01 execution started
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 23 min | 3 tasks | 40 files |
 | Phase 01 P02 | 5 min | 2 tasks | 3 files |
 | Phase 01 P03 | 15 min | 3 tasks | 34 files |
+| Phase 01 P04 | 8min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,11 @@ Recent decisions affecting current work:
 - [Phase 01]: The JobSpy transport keeps its top-level import (one-importer grep holds) but is loaded lazily via an injectable factory, because tls_client cannot load libresolv.so.2 in the sandbox; production behaviour is unchanged
 - [Phase 01]: Persistence is SAVEPOINT-per-item: listing_sources.source is a live FK, so a failed insert could otherwise commit an orphan listings row
 - [Phase 01]: FINDING for plan 01-05: FastAPI 0.141.1 include_router yields _IncludedRouter objects with no .dependant, so a naive app.routes walk finds zero APIRoutes and a test_auth_seam.py written that way passes vacuously; recurse via original_router.routes
+- [Phase 01]: The JobSpy row mapper is board-agnostic and lives on its own (app/sources/_jobspy_mapping.py): Indeed importing app.sources.linkedin would have coupled two boards that are meant to be independently upgradable
+- [Phase 01]: The Indeed country guard is asserted at the transport boundary — that country_indeed reaches run_scrape — not merely that build_kwargs produces it
+- [Phase 01]: registry.get() fails loudly on an unknown source; the single consumer catches UnknownAdapterError so one bad sources row degrades one board only
+- [Phase 01]: Exclusive-filter-group resolution is alphabetical and documented rather than board-specific; the CapabilityWarning is the product value, not the drop
+- [Phase 01]: compile_query_for_source() + CapabilityWarning ship in Phase 1 and are consumed by the Phase-2 criteria compiler
 
 ### Pending Todos
 
@@ -106,6 +112,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T17:48:23.040Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-09-15T18:05:40.223Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

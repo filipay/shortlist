@@ -10,14 +10,14 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Sources (SRC)
 
 - [x] **SRC-01**: User can run a search against LinkedIn and receive normalised listings
-- [ ] **SRC-02**: User can run a search against Indeed and receive normalised listings
-- [ ] **SRC-03**: Every source produces one normalised listing shape (title, company, location, salary, apply URL, description, posted date, source)
-- [ ] **SRC-04**: User can add a new job source by implementing one adapter interface and registering it, with no changes to the core pipeline
+- [x] **SRC-02**: User can run a search against Indeed and receive normalised listings
+- [x] **SRC-03**: Every source produces one normalised listing shape (title, company, location, salary, apply URL, description, posted date, source)
+- [x] **SRC-04**: User can add a new job source by implementing one adapter interface and registering it, with no changes to the core pipeline
 - [x] **SRC-05**: A failing or timing-out source returns a partial result instead of aborting the run
 - [ ] **SRC-06**: The system reads public logged-out pages only — no credential path exists anywhere in the codebase
 - [ ] **SRC-07**: User can see per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage
 - [ ] **SRC-08**: Untrusted listing text is sanitised at the ingest boundary so it cannot inject into prompts, templates, or the database
-- [ ] **SRC-09**: Each source declares its capabilities, so an unsupported filter is reported rather than silently ignored
+- [x] **SRC-09**: Each source declares its capabilities, so an unsupported filter is reported rather than silently ignored
 - [ ] **SRC-10**: Third-party PII (e.g. recruiter emails) is stripped at the adapter boundary and never stored
 
 ### Queue (QUEUE)
@@ -174,14 +174,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SRC-01 | Phase 1 | Complete |
-| SRC-02 | Phase 1 | Pending |
-| SRC-03 | Phase 1 | Pending |
-| SRC-04 | Phase 1 | Pending |
+| SRC-02 | Phase 1 | Complete |
+| SRC-03 | Phase 1 | Complete |
+| SRC-04 | Phase 1 | Complete |
 | SRC-05 | Phase 1 | Complete |
 | SRC-06 | Phase 1 | Pending |
 | SRC-07 | Phase 1 | Pending |
 | SRC-08 | Phase 1 | Pending |
-| SRC-09 | Phase 1 | Pending |
+| SRC-09 | Phase 1 | Complete |
 | SRC-10 | Phase 1 | Pending |
 | QUEUE-01 | Phase 1 | Complete |
 | QUEUE-02 | Phase 1 | Complete |
