@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Per-source health (last success, listings returned, field fill-rate) and a probe that detects silent breakage are observable, and the probe yields a recorded verdict on whether LinkedIn/Indeed survive at personal scale (re-ranking Adzuna from hedge to primary if they do not).
   5. The app exposes no credential path anywhere (public logged-out pages only), every API route answers through the `current_user` seam, and the domain-import-discipline test passes.
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -69,7 +69,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-07-PLAN.md — Survival signals S1–S6 + Adzuna condition, the dated probe verdict, and the operator compose smoke
+- [x] 01-07-PLAN.md — Survival signals S1–S6 + Adzuna condition, the dated probe verdict, and the operator compose smoke
 
 **Migration 0001 acceptance checklist (non-backfillable — `ARCHITECTURE.md` §9.4 / `PITFALLS.md` P8).** These fields describe the past and cannot be invented later; this checklist is the Phase 1 schema contract:
 
@@ -217,7 +217,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Walking Skeleton + Foundations | 6/7 | In Progress|  |
+| 1. Walking Skeleton + Foundations | 7/7 | In Progress|  |
 | 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |

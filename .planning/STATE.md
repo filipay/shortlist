@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
-status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-09-15T18:52:25.645Z"
+status: verifying
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-09-15T21:07:09.248Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: 6b1083441373a21ac6fff2c74952fcab7b42cb41
+state_head: f6901533482611b868b86eb126b108a0c0e4fad7
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-15 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P04 | 8min | 2 tasks | 12 files |
 | Phase 01 P05 | 22 min | 2 tasks | 11 files |
 | Phase 01 P06 | 22 min | 3 tasks | 20 files |
+| Phase 01 P07 | 22 min | 3 tasks | 35 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,13 @@ Recent decisions affecting current work:
 - [Phase 01]: source_repo computes fill-rate live over the latest run's normalised records (a blank description counts as empty, 1 of 2 not 2 of 2); field_fill_baseline_json and baseline_recorded_at remain plan 01-07's record_baseline() — the key_link in the plan names that column, but the baseline is S2's signal work
 - [Phase 01]: RESIDUAL for plan 01-07: the adapter probe() asserts status, minimum body length and the absence of stop signals, but not a POSITIVE structural marker (3 of the 4 RESEARCH signals). Choosing a marker needs a real page to inspect, so it is recorded as an explicit human_judgment coverage entry rather than guessed into app/sources
 - [Phase 01]: app/db/repositories/source_repo.py was created in task 1 (the task's own action requires the probe write path through the source repository) and extended in task 3 with SourceHealth + get_source_health(); probe_all persists through a lazy import so the probe module imports with or without the repo
+- [Phase 01]: Every S1-S6 and P-1..P-5 boundary is read from Settings via thresholds(), and there is no absolute fill-rate target anywhere: every judgement is a delta against the recorded baseline or a trailing average, because JobSpy's description-salary extraction is USA-only so an Irish search is structurally low
+- [Phase 01]: The politeness ledger lives in app/sources/_ledger.py rather than inside _jobspy_transport.py, and classify_response moved to app/sources/base.py, because the transport imports jobspy (whose native TLS library cannot load in the sandbox) — a ledger there would be untestable and the survival signals could not classify a fetch outcome
+- [Phase 01]: The scraper-survival verdict is PROVISIONAL at 1 run on 1 distinct day, and its first run is explicitly marked non-representative because it predates the DataFrame-row fix (created 1/updated 33 is the bug signature); a single run is never presented as a measurement and the Adzuna decision stays deferred to Phase 8
+- [Phase 01]: probe() is not a reliable proxy for fetch(): in the same container session /health reported indeed unreachable and linkedin degraded at 21:02:36 while runs.id=1 had fetched 50 usable listings from EACH board at 21:02:01. The verdict is unaffected (it derives from runs + source_request_log) but the health badge can mislead and P-4 is unusable until resolved — recorded as WINDOWS #4, same family as #3
+- [Phase 01]: frame_rows() + UnsupportedFrameError is now the single explicit DataFrame-to-rows conversion point with no silent-empty fallback, after list(frame) was found to iterate COLUMN LABELS (every field None, one blank listing per board); DESIRED_ORDER was completed to the full jobspy.util.desired_order and pinned by a contract test
+- [Phase 01]: The pinned dependency is python-jobspy, not jobspy (the PyPI jobspy is an unrelated 2016 Redis package, and pip had been discarding the real candidate after a swallowed MetadataInconsistent), and the Dockerfile must stay classic-builder safe: no BuildKit heredocs, asserted by tests/test_deploy_manifest.py
+- [Phase 01]: ensure_registered_sources() seeds the sources allow-list from the adapter registry on app startup and before a probe run: nothing in production ever inserted a sources row, so enabled_source_names() was empty and a fresh deployment silently ingested nothing
 
 ### Pending Todos
 
@@ -128,6 +136,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T18:52:25.607Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-09-15T21:07:09.208Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None
