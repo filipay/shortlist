@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     opencode_base_url: str = "http://host.docker.internal:4096"
     opencode_model: str = "deepseek-v4.1-flash"
     opencode_server_password: str = ""
+    #: Bounded timeout for the health/discovery calls (T-01-32): a hung request
+    #: must not pin the single worker. Configuration, not a constant (PLAT-04).
+    opencode_timeout_seconds: float = 5.0
 
     # --- Ingest sanitise policy (C2) -----------------------------------------
     description_max_chars: int = 20000

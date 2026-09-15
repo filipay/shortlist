@@ -13,6 +13,14 @@ different trust boundary from a job-portal login — so a bare `PASSWORD` token
 would be a false positive. Planned plan 01-04's `tests/sources/test_indeed.py`
 covers the adapter-shaped kwargs; this file broadens the same claim across all of
 `app/` and adds the AST half.
+
+The same carve-out applies at one point in the identifier matching: `auth` (below)
+is evidence of a credential path in an *environment-variable name* or a
+*string-literal argument*, but not as a bare keyword-argument name — `httpx`
+takes a config-supplied credential as `auth=`, and that is exactly how
+`app/llm/opencode_server.py` passes the optional local opencode password (D-07).
+A portal credential still trips this guard through `username`, `password`,
+`token`, `cookie`, `credentials` or a `login()`/`sign_in()` call.
 """
 
 from __future__ import annotations
@@ -46,6 +54,14 @@ CREDENTIAL_PATTERNS: tuple[str, ...] = (
     "auth",
     "email",
     "phone",
+)
+
+#: The same vocabulary minus `auth`, for *keyword-argument names*. See the module
+#: docstring: `auth=` is how httpx takes a config-supplied credential and is not
+#: evidence of a job-portal (SRC-06) path, while a `login()`/`sign_in()` call is
+#: caught by `_authenticating_calls` and portal kwargs by the patterns below.
+CREDENTIAL_KWARG_PATTERNS: tuple[str, ...] = tuple(
+    pattern for pattern in CREDENTIAL_PATTERNS if pattern != "auth"
 )
 
 #: Callables whose keyword arguments are inspected: anything that could open a
@@ -161,9 +177,11 @@ def _authenticating_calls(tree: ast.AST) -> list[str]:
     return names
 
 
-def _credential_matches(values: Iterable[str]) -> list[str]:
+def _credential_matches(
+    values: Iterable[str], patterns: tuple[str, ...] = CREDENTIAL_PATTERNS
+) -> list[str]:
     return sorted(
-        {value for value in values if any(p in value.casefold() for p in CREDENTIAL_PATTERNS)}
+        {value for value in values if any(p in value.casefold() for p in patterns)}
     )
 
 
@@ -193,7 +211,7 @@ def test_no_credential_read_or_authenticated_session_under_app() -> None:
         for dotted, kwargs, literals in _session_calls(tree):
             found.extend(
                 f"{dotted}(... {name}=...)"
-                for name in _credential_matches(kwargs)
+                for name in _credential_matches(kwargs, CREDENTIAL_KWARG_PATTERNS)
             )
             found.extend(
                 f"{dotted}({value!r})" for value in _credential_matches(literals)
@@ -260,6 +278,28 @@ def test_the_token_scan_detects_a_cookie_jar() -> None:
     found = sorted({token for token in CREDENTIAL_TOKENS if token.casefold() in source.casefold()})
 
     assert found == ["CookieJar", "http.cookiejar"]
+
+
+def test_the_auth_kwarg_carve_out_is_narrow_and_deliberate() -> None:
+    """`auth=` is not flagged; the same token still is everywhere else.
+
+    `httpx.AsyncClient(auth=...)` is how the LLM backend takes its optional,
+    config-supplied password (D-07). Portal-shaped kwargs and an `auth`-named
+    environment read must still fail, so the carve-out cannot silently widen.
+    """
+    tree = ast.parse(
+        'httpx.AsyncClient(auth=auth)\n'
+        'client.login(username="u", password="p")\n'
+        'os.getenv("LINKEDIN_AUTH")'
+    )
+
+    kwargs = [name for _, names, _ in _session_calls(tree) for name in names]
+    assert _credential_matches(kwargs, CREDENTIAL_KWARG_PATTERNS) == [
+        "password",
+        "username",
+    ]
+    assert _credential_matches(kwargs) == ["auth", "password", "username"]
+    assert _credential_matches(_environment_reads(tree)) == ["LINKEDIN_AUTH"]
 
 
 if __name__ == "__main__":  # pragma: no cover
