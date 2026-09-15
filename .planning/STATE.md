@@ -3,11 +3,11 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Walking Skeleton + Foundations
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-15T18:05:40.261Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-15T18:27:14.950Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 01 execution started
-state_head: c0145ee6748dd4fb6e490a8db66a95f32fcca72c
+state_head: 3b9948b309028e07fc162d8fc652b43514d2061f
 progress:
   total_phases: 8
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 01 (Walking Skeleton + Foundations) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 01 execution started
 
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 5 min | 2 tasks | 3 files |
 | Phase 01 P03 | 15 min | 3 tasks | 34 files |
 | Phase 01 P04 | 8min | 2 tasks | 12 files |
+| Phase 01 P05 | 20 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,12 @@ Recent decisions affecting current work:
 - [Phase 01]: registry.get() fails loudly on an unknown source; the single consumer catches UnknownAdapterError so one bad sources row degrades one board only
 - [Phase 01]: Exclusive-filter-group resolution is alphabetical and documented rather than board-specific; the CapabilityWarning is the product value, not the drop
 - [Phase 01]: compile_query_for_source() + CapabilityWarning ship in Phase 1 and are consumed by the Phase-2 criteria compiler
+- [Phase 01]: Truncation is defined over Python characters (code points), not bytes and not grapheme clusters: sanitize_text slices to exactly max_chars and reports truncated=True; the contract is stated in the module and function docstrings and pinned by a multi-byte test (SRC-08)
+- [Phase 01]: The sanitise stage emits an aggregate pii_removed count and never the removed value; the PII tests assert against structlog capture_logs (the real event payload), a stdlib-backed caplog bridge and capsys, because structlog has no explicit configuration and its PrintLogger bypasses caplog by default
+- [Phase 01]: FastAPI 0.141.1 include_router appends _IncludedRouter wrappers with no .dependant and no .path; tests/test_auth_seam.py recurses through original_router.routes and proves it reached the four leaf routes before asserting Depends(current_user) — confirming the plan-01-04 finding and closing the vacuous-pass hazard
+- [Phase 01]: PLAT-04 fix (Rule 2): DEFAULT_QUERY, which hard-coded results_wanted=50 and location='Ireland' in app/pipeline, became default_query() reading settings.probe_results_wanted and the new settings.probe_query_location; no distinctive threshold literal remains in app/pipeline, which the literal-absence scan now enforces
+- [Phase 01]: SanitizeResult was renamed to SanitisedText (the plan's contract name) with SanitizeResult kept as an import-compatible alias; the stage keeps the name sanitize_listing rather than gaining a British-spelling duplicate, and a new test asserts no adapter imports the sanitiser so the single named stage cannot silently diverge
+- [Phase 01]: No credential path exists under app/: the only AsyncClient call sites pass headers only, and app/config.py's opencode_server_password is the LLM-backend secret rather than a portal credential — so the raw-token scan stays narrow (LINKEDIN_PASSWORD, INDEED_EMAIL, cookies=, CookieJar, ...) instead of flagging bare PASSWORD
 
 ### Pending Todos
 
@@ -112,6 +119,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T18:05:40.223Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-15T18:27:14.914Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
