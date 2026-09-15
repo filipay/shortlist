@@ -189,6 +189,11 @@ coverage:
     verification: []
     human_judgment: true
     rationale: "The in-flight responsiveness is proven with a stub adapter. The real-scrape residual is the operator probe run in plan 01-07 (a live board must never be contacted in CI)."
+
+# Metrics
+duration: 15min
+completed: 2026-09-15
+status: complete
 ---
 
 # Phase 01 Plan 03: LinkedIn ingest slice — port, sanitise, normalise, two-key upsert, run trigger
