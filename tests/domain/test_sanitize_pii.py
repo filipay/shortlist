@@ -14,8 +14,10 @@ injected into the stage (`caplog`), plus the true stdout via `capsys`.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import logging
+from pathlib import Path
 
 import pytest
 import structlog
@@ -167,6 +169,36 @@ def test_content_hash_still_distinguishes_real_edits() -> None:
     assert content_hash(description="Build the thing.", **common) != content_hash(
         description="Build a different thing entirely.", **common
     )
+
+
+# --- the stage is singular ----------------------------------------------------
+
+
+def test_the_ingest_stage_is_named() -> None:
+    assert sanitize_stage.STAGE_NAME == "sanitize"
+
+
+def test_no_adapter_sanitises_independently() -> None:
+    """One named stage — not a helper copied into each adapter, where two copies
+    of the same GDPR/injection control would silently diverge."""
+    sources_dir = Path(sanitize_stage.__file__).resolve().parents[1] / "sources"
+    offenders: list[str] = []
+
+    for path in sorted(sources_dir.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                imported = node.module or ""
+                if imported.startswith(("app.domain.sanitize", "app.ingest.sanitize")):
+                    offenders.append(path.name)
+            elif isinstance(node, ast.Import):
+                if any(
+                    alias.name.startswith(("app.domain.sanitize", "app.ingest.sanitize"))
+                    for alias in node.names
+                ):
+                    offenders.append(path.name)
+
+    assert offenders == [], f"an adapter sanitises independently: {sorted(set(offenders))}"
 
 
 if __name__ == "__main__":  # pragma: no cover
