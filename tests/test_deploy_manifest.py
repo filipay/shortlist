@@ -157,5 +157,46 @@ def test_dockerfile_is_valid_for_the_classic_builder() -> None:
         )
 
 
+def _compose_database_url_keys() -> list[str]:
+    app = _compose()["services"]["app"]
+    environment = app.get("environment", [])
+    if isinstance(environment, dict):
+        return [
+            str(key) for key in environment if str(key).startswith("DATABASE_URL")
+        ]
+    keys: list[str] = []
+    for entry in environment:
+        key = str(entry).split("=", 1)[0].strip()
+        if key.startswith("DATABASE_URL"):
+            keys.append(key)
+    return keys
+
+
+def test_compose_database_url_keys_are_real_settings_fields() -> None:
+    """WR-02: every `DATABASE_URL*` env key must map to a real `Settings` field.
+
+    `compose.yml` set `DATABASE_URL`, which maps to no field and is silently
+    discarded (`extra="ignore"`), so editing it to relocate the database would
+    have been a no-op that fell back to the default file.
+    """
+    from app.config import Settings
+
+    fields = {name.upper() for name in Settings.model_fields}
+    keys = _compose_database_url_keys()
+
+    assert keys, "expected at least one DATABASE_URL* key in compose.yml"
+    unknown = sorted(key for key in keys if key not in fields)
+    assert unknown == [], (
+        f"compose.yml sets DATABASE_URL* keys with no Settings field: {unknown}"
+    )
+
+
+def test_compose_sets_the_async_database_url_key() -> None:
+    assert "DATABASE_URL_ASYNC" in _compose_database_url_keys()
+    assert "DATABASE_URL" not in _compose_database_url_keys(), (
+        "the bare DATABASE_URL key is dead configuration"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(0)

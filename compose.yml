@@ -16,6 +16,6 @@ services:
       - OPENCODE_BASE_URL=${OPENCODE_BASE_URL:-http://host.docker.internal:4096}
       - OPENCODE_MODEL=${OPENCODE_MODEL:-deepseek-v4.1-flash}
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-} # from an uncommitted .env
-      - DATABASE_URL=sqlite+aiosqlite:////data/jobsearch.db
+      - DATABASE_URL_ASYNC=sqlite+aiosqlite:////data/jobsearch.db
       - DATABASE_URL_SYNC=sqlite:////data/jobsearch.db # Alembic uses this
     command: ["./entrypoint.sh"]
