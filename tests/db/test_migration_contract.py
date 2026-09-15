@@ -80,12 +80,24 @@ def test_listings_timestamps_not_null(migrated_db: Path) -> None:
     connection = _connect(migrated_db)
     try:
         columns = _table_info(connection, "listings")
+
+        for column in REQUIRED_LISTING_TIMESTAMPS:
+            assert column in columns, f"listings.{column} is missing"
+            assert columns[column]["notnull"] == 1, f"listings.{column} must be NOT NULL"
+
+        # content_hash is a fixed-width digest, not a free-form blob.
+        assert str(columns["content_hash"]["type"]).upper() == "VARCHAR(64)"
+
+        # No insert path can omit the past-describing columns: an INSERT that
+        # leaves them out must fail, so there is no nullable-by-omission window.
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO listings (canonical_url, title, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("https://example.com/omitted", "Omitted", "2026-09-15", "2026-09-15"),
+            )
     finally:
         connection.close()
-
-    for column in REQUIRED_LISTING_TIMESTAMPS:
-        assert column in columns, f"listings.{column} is missing"
-        assert columns[column]["notnull"] == 1, f"listings.{column} must be NOT NULL"
 
 
 # --- Item 2 -------------------------------------------------------------------
@@ -158,6 +170,14 @@ def test_applications_cv_artifact_id(migrated_db: Path) -> None:
         columns = _table_info(connection, "applications")
         assert "cv_artifact_id" in columns
         assert columns["cv_artifact_id"]["notnull"] == 0, "cv_artifact_id must be nullable"
+
+        foreign_keys = {
+            row["from"]: row["table"]
+            for row in connection.execute("PRAGMA foreign_key_list(applications)")
+        }
+        assert foreign_keys.get("cv_artifact_id") == "cv_artifacts", (
+            "applications.cv_artifact_id must be a FK to cv_artifacts"
+        )
 
         listing_id = _insert_listing(connection)
         connection.execute(
