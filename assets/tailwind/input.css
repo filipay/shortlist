@@ -726,46 +726,118 @@
     margin: 0.25rem 0;
   }
 
-  .search-create {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: 1rem;
-    padding: 1rem;
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    margin-bottom: 1.5rem;
+  /*
+   * Form layout. Every label and its control live in ONE `.field` container, so
+   * a grid/flex wrap can never put a label on one row and its control on the
+   * next. The previous markup made each label and each input a direct grid item
+   * of a wide `auto-fit` grid, which is what scattered the fields.
+   *
+   * `.field-grid` chooses a sensible number of columns (3 on a wide card, then
+   * 2, then 1) instead of as many full-width tracks as fit.
+   */
+
+  .form-group {
+    border: 0;
+    padding: 0;
+    margin: 0 0 1.25rem;
+    min-width: 0;
   }
 
-  .search-create label,
-  .search-edit label,
-  .rule-fields label,
-  .rule-edit-fields label {
+  .form-group:last-of-type {
+    margin-bottom: 0;
+  }
+
+  .form-group-title {
+    padding: 0;
+    margin: 0 0 0.75rem;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+
+  .field > label,
+  .field-label {
     display: block;
-    margin-bottom: 0.375rem;
+    margin: 0;
     font-size: 0.9rem;
     font-weight: 500;
   }
 
-  .search-create input,
-  .search-edit input,
-  .rule-fields input,
-  .rule-edit-fields input,
-  .search-create select,
-  .search-edit select,
-  .rule-fields select,
-  .rule-edit-fields select,
-  .search-create textarea,
-  .search-edit textarea,
-  .rule-fields textarea,
-  .rule-edit-fields textarea {
-    margin-bottom: 0.75rem;
+  .field > input,
+  .field > select,
+  .field > textarea {
+    margin: 0;
   }
 
-  .search-remote {
+  .field-note {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--color-muted);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  /* A checkbox control sits on the same line as its label-less siblings: the
+     row is given the height of a single-line input so the columns stay aligned. */
+  .field-check > label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    min-height: 2.5rem;
+  }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    min-height: 2.5rem;
+  }
+
+  .check-row label {
+    margin: 0;
+  }
+
+  /* The submit action is a footer band, not a grid cell: it is separated from
+     the fields and is only as wide as its own button. */
+  .form-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .rule-head {
+    max-width: 20rem;
+    margin-bottom: 1rem;
+  }
+
+  .search-create {
+    max-width: 52rem;
+    padding: 1.25rem;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 1.5rem;
   }
 
   .search-card {
@@ -869,9 +941,7 @@
   }
 
   .search-edit {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: 1rem;
+    max-width: 52rem;
     padding: 1rem;
     background-color: var(--color-surface);
     border-radius: var(--radius-md);
@@ -957,13 +1027,10 @@
 
   .rule-fields {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
     gap: 0.75rem 1rem;
+    max-width: 52rem;
     margin-bottom: 1rem;
-  }
-
-  .rule-fields label:has(input[type="checkbox"]) {
-    margin-top: 1.5rem;
   }
 
   .rule-help {
@@ -975,8 +1042,9 @@
 
   .rule-edit-fields {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
     gap: 0.75rem 1rem;
+    max-width: 52rem;
     margin-top: 0.75rem;
     padding: 1rem;
     background-color: var(--color-paper);
