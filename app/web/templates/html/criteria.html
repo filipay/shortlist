@@ -149,6 +149,7 @@
     <button type="button"
             class="rule-submit"
             hx-post="{{ action }}"
+            hx-include="closest .rule-form"
             hx-target="#criteria-list"
             hx-swap="innerHTML">
       Add rule
@@ -238,6 +239,7 @@
       <button type="button"
               class="rule-edit-save"
               hx-post="{{ action }}"
+              hx-include="closest .rule-edit"
               hx-target="#criteria-list"
               hx-swap="innerHTML">
         Save rule
