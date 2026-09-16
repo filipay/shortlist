@@ -216,3 +216,9 @@ None - no external service configuration required.
 ---
 *Phase: 02-clean-filtered-queryable-queue*
 *Completed: 2026-09-16*
+
+## Self-Check: PASSED
+
+- All created files exist on disk: `alembic/versions/0002_queue_filter_and_run_reason.py`, `tests/db/test_orm_drift.py`, `02-01-SUMMARY.md`, `deferred-items.md`.
+- All task + metadata commits exist: `26ba2a2`, `1d635a5`, `7a49fae`, `d9bf886`, `5542673`.
+- Plan-level verification re-run green: `tests/db` → `36 passed`; `tests/test_config.py tests/test_import_discipline.py` → `12 passed`; full suite → `321 passed, 2 deselected in 21.62s`.
