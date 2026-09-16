@@ -37,11 +37,20 @@ evidence: 2 real runs triggered; latest run #6 fetched=100. **6 live (un-reverte
 ### 2. Merge-rate band sanity check after a real run
 expected: After a real run, compare the observed merge rate on `/merges` against the 10–15% band from research and record why the chosen θ is or is not adjusted.
 why_human: The band comes from a different market/query shape; QUEUE-09 asks for the rate to be visible and windowed, which is machine-verified, but whether the observed rate is sane needs real data.
-result: investigated (2026-09-16) — the band comparison is NOT answerable from the current display; see G2
-evidence: `/merges` reports **0.0%** (latest run #6: 0 merges in its window / 100 fetched) while the
-  corpus holds **6 live merges**. A 0% headline for a corpus with six real merges cannot be compared
-  against a 10-15% band, so QUEUE-09's "visible, windowed merge rate" is *internally consistent* but
-  *unusable as a headline* in steady state. Root cause and the decision needed are recorded as G2.
+result: satisfied (2026-09-16) — band compared against the only defensible figure; G2(a) implemented
+evidence: `merge_rate()` is windowed to the latest run, so the per-run figures are 6/100 = **6.0%** on
+  run #5 (the run that did the merging) and 0/100 = **0.0%** on run #6 (steady state). Neither is a
+  meaningful "how much merging is happening" number, because all three runs re-fetch the SAME ~100
+  listings, so cross-source overlap is collapsed on the first run and every later run is structurally
+  0%. The only defensible figure is **distinct un-reverted merges over the distinct corpus:
+  6 / 104 = 5.8%** (7/104 = 6.7% once id=74 is absorbed by a post-fix rerun).
+  **Against the research band of 10-15%, the observed rate is BELOW the band.** The band does not
+  transfer to this market/query shape, which is exactly the caveat the research recorded (a different
+  market and query shape). Contributing factor: LinkedIn's field fill-rate shows
+  `description: 0.0`, so title/company carry nearly all the matching signal.
+  Verdict: the band is **not** an applicable target, the observed rate is sane for this corpus, and θ is
+  not the lever (see item 1). The page's per-run scope is now stated unmistakably (G2, decision (a)),
+  so a 0% can no longer be misread as a broken deduper.
 
 ### 3. Compose smoke of the running stack
 expected: `docker compose up` and browse the queue; confirm the migration to `0002` applies, the queue renders, and the run trigger works end to end.
@@ -69,14 +78,22 @@ evidence: During plan 02-02 execution the human answered the `blocking-human` ch
 ### 5. Judge whether the excluded-listing chip satisfies "which rule fired and why"
 expected: Under `Show excluded`, each rejected listing shows a chip `rule.kind (count)` (e.g. `exclude_keyword (2)`). Confirm this is sufficient, or require the firing rule id and the matched `detail_json` term (e.g. `crypto`) to be surfaced.
 why_human: The rule id and the persisted `listing_exclusions.detail_json` (the matched term/field) have no UI consumer; the chip names only the rule kind plus a per-rule count. This is a product-sufficiency judgment against SC2 / FILT-03 wording, not a machine-definable pass/fail.
-result: [pending]
+result: satisfied (2026-09-16) — kind + run-scoped count judged sufficient for now
+evidence: User decision: *"I think it's enough for now, we can add more."* So the chip stays as
+  `rule.kind (count)`. The underlying capability is present and tested — `detail_json` (the matched
+  term/field) is persisted on every exclusion and `rule_id` is available on `QueueRule` — so enriching
+  the chip later is a template + one repository read, not new plumbing. Note the count is deliberately
+  run-scoped and pinned by `test_the_chip_count_is_grouped_over_the_run_not_per_row`.
+  The related ask ("filter out specifics like remote: no or location: galway") is a different feature —
+  an ad-hoc browse-time filter over listing attributes, not chip content — and is captured as
+  **SEED-001** (`.planning/seeds/SEED-001-queue-filter-by-remote-and-location.md`) for a future phase.
 
 ## Summary
 
 total: 5
-passed: 3
-issues: 1
-pending: 1
+passed: 5
+issues: 0
+pending: 0
 skipped: 0
 blocked: 0
 
