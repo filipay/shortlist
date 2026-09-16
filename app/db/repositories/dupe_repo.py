@@ -52,7 +52,7 @@ def _is_blank(value: Any) -> bool:
     return value is None or value == ""
 
 
-def _candidate_facts(row: Listing) -> CandidateFacts:
+def _candidate_facts(row: Listing, *, sources: frozenset[str] = frozenset()) -> CandidateFacts:
     return CandidateFacts(
         listing_id=int(row.id),
         company_norm=row.company_norm,
@@ -61,6 +61,7 @@ def _candidate_facts(row: Listing) -> CandidateFacts:
         blocking_key=row.blocking_key,
         posted_at=row.posted_at,
         first_seen_at=row.first_seen_at,
+        sources=sources,
     )
 
 
@@ -77,6 +78,11 @@ async def candidates_for_block(
     that keeps this cheap is the company itself: the block is the number of roles
     that one company posted, not the corpus (T-02-12). A group of one is dropped
     by `candidate_merges` before any scoring happens.
+
+    The candidate's `sources` come from **one** further indexed read over
+    `ix_listing_sources_listing_id` for the whole block — the same batch-enrichment
+    shape `list_merges` uses. A per-candidate query would be N+1 over the block, so
+    provenance is loaded in a single `WHERE listing_id IN (...)`.
 
     `posted_window_days` is accepted for one call shape with the stage, but the
     window is deliberately **not applied here**: it is a *pair* property ("two
@@ -96,7 +102,25 @@ async def candidates_for_block(
         .scalars()
         .all()
     )
-    return [_candidate_facts(row) for row in rows]
+    if not rows:
+        return []
+
+    # ONE indexed read on `ix_listing_sources_listing_id` for the whole block.
+    listing_ids = [int(row.id) for row in rows]
+    grouped: dict[int, set[str]] = {}
+    for listing_id, source in (
+        await session.execute(
+            select(ListingSource.listing_id, ListingSource.source)
+            .where(ListingSource.listing_id.in_(listing_ids))
+            .order_by(ListingSource.listing_id, ListingSource.source)
+        )
+    ).all():
+        grouped.setdefault(int(listing_id), set()).add(str(source))
+
+    return [
+        _candidate_facts(row, sources=frozenset(grouped.get(int(row.id), ())))
+        for row in rows
+    ]
 
 
 async def reverted_pairs(

@@ -6,11 +6,14 @@ unit-testable. `sqlalchemy` is forbidden under `app.domain`
 only non-stdlib imports.
 
 Safety bias
------------
+----------
 The failure mode this module exists to prevent is not "fails to merge" but
 "merges two genuinely different roles" — silent, and it destroys a real job
 (PITFALLS P3). So the gate is **component-based and safety-biased**: a pair must
-pass four checks — grade, company, location, score — before it may merge.
+pass five checks — source-disjointness, grade, company, location, score — before
+it may merge. A pair that shares any source is refused outright: Tier-1 has
+already declared its two members different jobs (`uq_listing_sources_source_sid`
+on `(source, source_listing_id)`), and no fuzzy similarity may override that.
 
 Token-set ratio is deliberately **not used anywhere in the decision**. It returns
 `100.0` when one string is a subset of the other, so `"Software Engineer"` vs
@@ -28,7 +31,7 @@ malformed pair all produce an empty list rather than raising.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from rapidfuzz import fuzz
@@ -65,7 +68,13 @@ METHOD_FUZZY_TUPLE = "fuzzy_tuple"
 
 @dataclass(frozen=True)
 class CandidateFacts:
-    """The subset of a `listings` row the dedup decision needs. Pure values."""
+    """The subset of a `listings` row the dedup decision needs. Pure values.
+
+    `sources` is the set of boards that carried this listing (`listing_sources`).
+    It is populated by the repository in one batch read, never queried here. It
+    defaults to the empty set: an unknown provenance must be able to *fall
+    through* the source guard rather than silently disabling cross-source dedup.
+    """
 
     listing_id: int
     company_norm: str | None
@@ -74,6 +83,7 @@ class CandidateFacts:
     blocking_key: str | None
     posted_at: datetime | None
     first_seen_at: datetime
+    sources: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -128,23 +138,40 @@ def score_pair(
 ) -> float | None:
     """The primary gate. Returns the token-sort score when the pair may merge.
 
-    All four checks must pass, in this order:
+    All checks must pass, in this order:
 
-    1. **grade** — `grades_conflict` refuses outright.
-    2. **company** — equal `company_norm`, or `fuzz.token_sort_ratio(company_a,
+    1. **source-disjointness** — the two candidates must share no source. This is
+       first because it is cheaper than a fuzzy comparison and more decisive than
+       any score: a shared source means Tier-1 already gave the two listings
+       different identity, so no similarity may merge them.
+    2. **grade** — `grades_conflict` refuses outright.
+    3. **company** — equal `company_norm`, or `fuzz.token_sort_ratio(company_a,
        company_b) >= company_threshold`. The threshold defaults to `threshold`
        deliberately: a second fuzzy constant would be a knob nobody tunes, and the
        candidate pool is already blocked by company equality in
        `candidate_merges`. An unknown (`None`) company on either side never merges.
-    3. **location** — equal `location_norm`, **or either side is `None`** (an
+    4. **location** — equal `location_norm`, **or either side is `None`** (an
        unknown location is never a rejection reason).
-    4. **score** — `token_sort_ratio` over the concatenated normalised tuple must
+    5. **score** — `token_sort_ratio` over the concatenated normalised tuple must
        be `>= threshold`. When exactly one side's location is `None` the location
-       component is excluded from both texts, so the check at 3 does not leak
+       component is excluded from both texts, so the check at 4 does not leak
        into the score as a second, hidden penalty.
 
     Returns `None` when the pair must not merge; otherwise the score, for the log.
     """
+    # Identity guard, checked FIRST. Two listings that both came from one board
+    # must have different Tier-1 keys (`uq_listing_sources_source_sid` on
+    # `(source, source_listing_id)`), or they would be the same row — so Tier-1 has
+    # already declared them different jobs and a high fuzzy score cannot overrule
+    # it. The asymmetry is deliberate and one-sided: refusing a true duplicate
+    # leaves a VISIBLE duplicate the user scrolls past, whereas a false merge is an
+    # INVISIBLE lost job silently removed from the queue — the documented worst
+    # failure mode (PITFALLS P3). An empty/unknown source set on either side never
+    # refuses: missing provenance must fall through to the grade/company/location/
+    # score gates, not disable a legitimate cross-source merge.
+    if a.sources & b.sources:
+        return None
+
     if grades_conflict(a.title_norm, b.title_norm):
         return None
 

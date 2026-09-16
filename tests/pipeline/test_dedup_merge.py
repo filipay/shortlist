@@ -83,11 +83,11 @@ class MultiJobAdapter(JobSource):
         return FetchResult(source=self.name, items=list(self._items), status="ok", requests_used=1)  # type: ignore[arg-type]
 
 
-def _raw(source: str, *, with_salary: bool) -> RawListing:
+def _raw(source: str, *, with_salary: bool, source_listing_id: str | None = None) -> RawListing:
     return RawListing(
         source=source,  # type: ignore[arg-type]
-        source_listing_id=f"{source}-same-job",
-        source_url=f"https://{source}.example.com/jobs/same-job",
+        source_listing_id=source_listing_id or f"{source}-same-job",
+        source_url=f"https://{source}.example.com/jobs/{source_listing_id or 'same-job'}",
         direct_url=None,
         title=SAME_JOB_TITLE,
         company_name=SAME_JOB_COMPANY,
@@ -253,6 +253,36 @@ async def test_a_run_with_no_duplicate_reports_zero_merges(
     assert run.fetched_count == 2
 
 
+async def test_two_same_source_listings_never_merge_even_with_identical_titles(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The real #5 shape: one board lists identical titles under different job ids.
+
+    Tier-1 has already declared them separate jobs, so the dedup stage must leave
+    both in the queue rather than silently absorbing one.
+    """
+    await _register_sources(session_factory, "indeed")
+    # ONE adapter returning two rows: a board that lists the role twice under two
+    # different job ids, which is the shape that must not collapse.
+    indeed = MultiJobAdapter(
+        "indeed",
+        [
+            _raw("indeed", with_salary=False, source_listing_id="in-first"),
+            _raw("indeed", with_salary=True, source_listing_id="in-second"),
+        ],
+    )
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[indeed])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert await _count(session_factory, ListingDupe) == 0, "same-source pair must not merge"
+    assert run.fetched_count == 2
+    assert run.deduped_count == 0
+
+
 def _block_job(source: str, source_listing_id: str, *, location: str | None) -> RawListing:
     """One member of a three-way duplicate block, faithful to the live corpus."""
     return RawListing(
@@ -268,22 +298,24 @@ def _block_job(source: str, source_listing_id: str, *, location: str | None) -> 
     )
 
 
-async def test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen(
+async def test_a_shared_source_member_is_not_merged_but_the_cross_source_twin_is(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC1 on the real-corpus shape: one board omits the location.
 
     Live corpus (the mastercard block): indeed carries the role twice WITH a
     location (`dublin, d, ie`), linkedin carries the same role with
-    `location_raw=None`. All three are one blocked group (`company_norm` equal,
-    same `blocking_key`), so only Tier-2 can collapse the set; the two indeed rows
-    are Tier-1-distinct, and the documented path is that the earliest-seen member
-    absorbs the other two (D-27).
+    `location_raw=None`.
 
-    Regression: `score_pair` refused the location-less member. It built the fuzzy
-    score from `_pair_text`, which concatenates `location_norm`; the missing
-    location on one side dropped `token_sort_ratio` below theta (83.33 < 88) even
-    though the location gate explicitly treats an unknown location as compatible.
+    The old expectation was a three-way collapse (both indeed rows absorbed). That
+    was the *wrong* merge this fix exists to stop: the two indeed rows are
+    Tier-1-distinct jobs (`uq_listing_sources_source_sid`), so they share a source
+    and must never merge. Only the genuine cross-source pair may: the earliest-seen
+    indeed row absorbs the location-less linkedin twin.
+
+    The `a51a133` regression is still covered — the location-less member is not
+    skipped for its missing location — just on the cross-source path where it
+    belongs.
     """
     await _register_sources(session_factory, "linkedin", "indeed")
 
@@ -311,15 +343,24 @@ async def test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen(
     assert len(listings) == 3, "a merge never deletes an absorbed listing"
 
     survivor = min(listings, key=lambda row: (row.first_seen_at, row.id))
-    absorbed_ids = {row.id for row in listings if row.id != survivor.id}
     locationless = [row for row in listings if row.location_norm is None]
     assert len(locationless) == 1, "the linkedin member is the location-less one"
+    cross_source_twin = locationless[0]
 
-    assert len(dupes) == 2, "the three-way duplicate must produce two merges"
-    assert {dupe.listing_id for dupe in dupes} == {survivor.id}
-    assert {dupe.dup_listing_id for dupe in dupes} == absorbed_ids
-    assert locationless[0].id in absorbed_ids, "the location-less twin must not be skipped"
+    assert len(dupes) == 1, "only the cross-source duplicate may merge"
+    assert dupes[0].listing_id == survivor.id
+    assert dupes[0].dup_listing_id == cross_source_twin.id, (
+        "the location-less linkedin twin must still merge (a51a133)"
+    )
     assert all(dupe.reverted_at is None for dupe in dupes)
 
+    # The same-source indeed member is a separate, still-visible job.
+    same_source_id = next(
+        row.id
+        for row in listings
+        if row.id not in {survivor.id, cross_source_twin.id}
+    )
+    assert same_source_id not in {dupe.dup_listing_id for dupe in dupes}
+
     assert run.fetched_count == 3
-    assert run.deduped_count == 2
+    assert run.deduped_count == 1

@@ -8,15 +8,23 @@ negative-memory orientations are each asserted here rather than assumed.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import event as sa_event
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.db.models import Listing, ListingDupe, ListingSource, Source
-from app.db.repositories.dupe_repo import apply_merge, merged_pairs, reverted_pairs
+from app.db.repositories.dupe_repo import (
+    apply_merge,
+    candidates_for_block,
+    merged_pairs,
+    reverted_pairs,
+)
 from app.db.repositories.listing_repo import _LISTING_FIELDS, upsert_listing_source
 from app.domain.dedup import MergeDecision
 
@@ -118,6 +126,112 @@ async def _match(session: AsyncSession, term: str) -> list[int]:
         {"term": term},
     )
     return [row[0] for row in result.all()]
+
+
+@contextmanager
+def _record_statements(engine: AsyncEngine) -> Iterator[list[str]]:
+    """Capture every statement SQLAlchemy executes while the block is open."""
+    recorded: list[str] = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        recorded.append(statement)
+
+    sa_event.listen(engine.sync_engine, "before_cursor_execute", _record)
+    try:
+        yield recorded
+    finally:
+        sa_event.remove(engine.sync_engine, "before_cursor_execute", _record)
+
+
+# --- provenance enrichment (one batch read, no N+1) ---------------------------
+async def test_candidates_for_block_populates_sources_in_one_batch_read(
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+) -> None:
+    """`CandidateFacts.sources` comes from ONE indexed `listing_sources` read.
+
+    The identity guard is only as good as this field, so the repository must load
+    every block member's provenance in a single `WHERE listing_id IN (...)` — a
+    per-candidate query would be an N+1 on the block.
+    """
+    await _register_sources(session_factory, "linkedin", "indeed")
+
+    shared_url = "https://example.com/jobs/shared"
+    single_url = "https://linkedin.example.com/jobs/single"
+    twin_url = "https://indeed.example.com/jobs/twin"
+
+    async with session_factory() as session:
+        single = await upsert_listing_source(
+            session,
+            source="linkedin",
+            norm=_norm(
+                canonical_url=single_url,
+                source_url=single_url,
+                canonical_source_url=single_url,
+                source_listing_id="li-single",
+            ),
+            run_id=None,
+            now=MERGE_NOW,
+        )
+        twin = await upsert_listing_source(
+            session,
+            source="indeed",
+            norm=_norm(
+                canonical_url=twin_url,
+                source_url=twin_url,
+                canonical_source_url=twin_url,
+                source_listing_id="in-twin",
+            ),
+            run_id=None,
+            now=MERGE_NOW,
+        )
+        # One canonical listing carried by BOTH boards: two provenance rows on one
+        # `listing_id`, which the source set must union.
+        await upsert_listing_source(
+            session,
+            source="linkedin",
+            norm=_norm(
+                canonical_url=shared_url,
+                source_url=shared_url,
+                canonical_source_url=shared_url,
+                source_listing_id="li-shared",
+            ),
+            run_id=None,
+            now=MERGE_NOW,
+        )
+        shared = await upsert_listing_source(
+            session,
+            source="indeed",
+            norm=_norm(
+                canonical_url=shared_url,
+                source_url=shared_url,
+                canonical_source_url=shared_url,
+                source_listing_id="in-shared",
+            ),
+            run_id=None,
+            now=MERGE_NOW,
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        with _record_statements(db_engine) as statements:
+            facts = await candidates_for_block(
+                session, company_norm="acme", posted_window_days=90
+            )
+
+    by_id = {fact.listing_id: fact.sources for fact in facts}
+    assert by_id[single.listing_id] == frozenset({"linkedin"})
+    assert by_id[twin.listing_id] == frozenset({"indeed"})
+    assert by_id[shared.listing_id] == frozenset({"linkedin", "indeed"})
+
+    provenance_reads = [
+        statement
+        for statement in statements
+        if "listing_sources" in statement and statement.lstrip().upper().startswith("SELECT")
+    ]
+    assert len(provenance_reads) == 1, (
+        f"provenance must load in one batch read, not N+1: {provenance_reads}"
+    )
 
 
 # --- negative memory (D-28) ---------------------------------------------------
