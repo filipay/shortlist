@@ -285,3 +285,30 @@ async def test_the_fragment_reports_an_unknown_listing_without_markup_injection(
 
     assert response.status_code == 404
     assert 'id="listing-row-4242"' in response.text
+
+
+async def test_the_swapped_row_keeps_the_active_filter_set_on_its_action_url(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """WR-02: the standalone re-render must carry `queue_query`, not drop it.
+
+    With `?excluded=1` the page's row posts to `.../events?excluded=1`. If the swap
+    response omits that query string, the SECOND click reaches the route with
+    `excluded` absent and the row loses its `listing-exclusion` cell while the
+    table header still has the column — a desynchronised table.
+    """
+    listing_id = await _seed(session_factory)
+
+    response = await client.post(
+        f"/listings/{listing_id}/events",
+        params={"excluded": "1"},
+        data={"event_type": "save"},
+    )
+
+    assert response.status_code == 200
+    assert f'hx-post="/listings/{listing_id}/events?excluded=1"' in response.text, (
+        "the swapped row must keep the predicate set the user is looking at"
+    )
+    assert 'class="listing-exclusion"' in response.text, (
+        "the exclusion column must survive the swap under ?excluded=1"
+    )

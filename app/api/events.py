@@ -141,8 +141,18 @@ async def append_listing_event(
         )
 
     log.info("listing_event.appended", listing_id=listing_id, event_type=event_type)
+    # `queue_query` is what the partial builds the action URL from. It is passed
+    # explicitly (not inferred) so the swapped row keeps the exact predicate set
+    # the page is showing — dropping it would strip `?excluded=1` from the form,
+    # and a second click would then render a row without the exclusion column.
     return templates.TemplateResponse(
-        request, ROW_TEMPLATE, {"row": row, "show_excluded": query.excluded}
+        request,
+        ROW_TEMPLATE,
+        {
+            "row": row,
+            "show_excluded": query.excluded,
+            "queue_query": query.query_string(),
+        },
     )
 
 
