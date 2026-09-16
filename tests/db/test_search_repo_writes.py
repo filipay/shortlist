@@ -348,6 +348,26 @@ async def test_create_rule_with_an_unknown_kind_writes_no_row(
     assert await _count(session_factory, FilterRule) == 0
 
 
+def test_validate_rule_params_accepts_both_location_modes_and_an_absent_one() -> None:
+    allow = {"allow": ["Dublin"]}
+
+    assert search_repo.validate_rule_params("location", {**allow, "mode": "county"}) == []
+    assert search_repo.validate_rule_params("location", {**allow, "mode": "substring"}) == []
+    assert search_repo.validate_rule_params("location", allow) == []
+
+
+def test_validate_rule_params_rejects_an_unknown_location_mode() -> None:
+    errors = search_repo.validate_rule_params(
+        "location", {"allow": ["Dublin"], "mode": "bogus"}
+    )
+
+    assert errors != []
+    message = " ".join(errors)
+    assert "mode" in message
+    assert "substring" in message
+    assert "county" in message
+
+
 async def _seed_protected_rows(session: AsyncSession, search_id: int) -> None:
     """A listing pair, an exclusion, a merge audit row and a run pointing at `search_id`.
 

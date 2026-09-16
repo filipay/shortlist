@@ -73,6 +73,53 @@ LISTING_FACT_FIELDS = (
 #: The `exclude_keyword` default when `fields` is absent.
 DEFAULT_KEYWORD_FIELDS = ("title", "description")
 
+#: The `location` rule's `mode` values. `substring` (the default) matches a
+#: casefolded term anywhere in `location_norm`. `county` keeps that rule and also
+#: matches an Irish county when a term equals the county name or its
+#: ISO 3166-2:IE subdivision code, resolved from `location_norm` by
+#: `_county_from_location`. Any unrecognised value degrades to `substring`.
+LOCATION_MODES = ("substring", "county")
+
+#: ISO 3166-2:IE subdivision code (lowercase, without the `ie-` prefix) -> county
+#: name. Boards normalise an Irish location as `<area>, <code>, <country>`, so the
+#: code segment arrives as `d`/`c`/`lk`/... (`blanchardstown, d, ie` is Dublin 15).
+#: Source: ISO 3166-2:IE, the 26 counties (the former `IE-*` province codes are
+#: not emitted by any board). Kept stdlib-only and pure like the rest of the module.
+IE_COUNTY_NAME_BY_CODE: dict[str, str] = {
+    "cw": "carlow",
+    "cn": "cavan",
+    "ce": "clare",
+    "co": "cork",
+    "dl": "donegal",
+    "d": "dublin",
+    "g": "galway",
+    "ky": "kerry",
+    "ke": "kildare",
+    "kk": "kilkenny",
+    "ls": "laois",
+    "lm": "leitrim",
+    "lk": "limerick",
+    "ld": "longford",
+    "lh": "louth",
+    "mo": "mayo",
+    "mh": "meath",
+    "mn": "monaghan",
+    "oy": "offaly",
+    "rn": "roscommon",
+    "so": "sligo",
+    "ta": "tipperary",
+    "wd": "waterford",
+    "wh": "westmeath",
+    "wx": "wexford",
+    "ww": "wicklow",
+}
+
+#: The inverse of `IE_COUNTY_NAME_BY_CODE` (the mapping is a bijection), so
+#: `county` mode can match a bare code term without re-scanning the table.
+_COUNTY_CODE_BY_NAME: dict[str, str] = {
+    name: code for code, name in IE_COUNTY_NAME_BY_CODE.items()
+}
+
 #: The intervals `annualise_salary` resolves to an annual figure. A comparison is
 #: only meaningful between annual figures, so anything else is skipped.
 _ANNUAL_INTERVALS = frozenset({"year", "yearly", "annual", "annually"})
@@ -235,6 +282,24 @@ def _eval_exclude_keyword(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | 
     return None
 
 
+def _county_from_location(location_norm: str | None) -> str | None:
+    """Resolve an Irish county *name* from a normalised location string.
+
+    The boards normalise as `<area>, <county-code>, <country>`; this returns the
+    county name for the first comma-separated segment that is an ISO 3166-2:IE
+    subdivision code (`d` -> `dublin`). A location that names the county instead
+    (`galway, county galway, ireland`) has no code segment, so it resolves to
+    `None` — an absent county is never itself a rejection reason.
+    """
+    if not location_norm:
+        return None
+    for segment in location_norm.split(","):
+        name = IE_COUNTY_NAME_BY_CODE.get(segment.strip().casefold())
+        if name is not None:
+            return name
+    return None
+
+
 def _eval_location(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | None:
     params = _as_mapping(spec.params)
     if params is None:
@@ -246,12 +311,28 @@ def _eval_location(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | None:
         return None
 
     if not facts.location_norm:
+        # An unknown location is never a rejection reason.
         return None
 
     haystack = facts.location_norm.casefold()
-    # `mode` is documented as "substring"; it is read for forward compatibility
-    # and any unrecognised value degrades to substring rather than raising.
-    if any(term.casefold() in haystack for term in allow):
+    # `mode` is documented as "substring"; `county` is strictly more permissive
+    # (it can only add matches), and any unrecognised value degrades to substring
+    # rather than raising.
+    if params.get("mode") == "county":
+        county_name = _county_from_location(facts.location_norm)
+        county_code = (
+            _COUNTY_CODE_BY_NAME.get(county_name) if county_name is not None else None
+        )
+        matched = any(
+            term.casefold() in haystack
+            or (county_name is not None and term.casefold() == county_name)
+            or (county_code is not None and term.casefold() == county_code)
+            for term in allow
+        )
+    else:
+        matched = any(term.casefold() in haystack for term in allow)
+
+    if matched:
         return None
 
     return RuleOutcome(
@@ -393,7 +474,9 @@ def evaluate(rules: Iterable[RuleSpec], facts: ListingFacts) -> list[RuleOutcome
 
 
 __all__ = [
+    "IE_COUNTY_NAME_BY_CODE",
     "LISTING_FACT_FIELDS",
+    "LOCATION_MODES",
     "ListingFacts",
     "RULE_KINDS",
     "RuleOutcome",

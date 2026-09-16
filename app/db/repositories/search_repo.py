@@ -53,7 +53,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FilterRule, Listing, ListingDupe, Run, Search
-from app.domain.filter import RULE_KINDS, ListingFacts
+from app.domain.filter import LOCATION_MODES, RULE_KINDS, ListingFacts
 from app.domain.sanitize import sanitize_short_field
 
 
@@ -459,6 +459,12 @@ def validate_rule_params(kind: str, params: Mapping[str, Any] | None) -> list[st
     elif kind == "location":
         if not _as_str_list(data.get("allow")):
             errors.append("location.allow must be a non-empty list")
+        # An absent `mode` is valid: the evaluator defaults it to `substring`.
+        mode = data.get("mode")
+        if mode is not None and mode not in LOCATION_MODES:
+            errors.append(
+                "location.mode must be one of " + ", ".join(LOCATION_MODES)
+            )
 
     elif kind == "remote":
         if not isinstance(data.get("require"), bool):

@@ -151,6 +151,41 @@ async def test_post_rule_round_trips_and_bumps_the_owning_search_version(
     assert stored.version == 2, "creating a rule is a criteria change"
 
 
+async def test_a_location_rule_round_trips_county_mode(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+
+    response = await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "location", "location_allow": "Dublin", "location_mode": "county"},
+    )
+
+    assert response.status_code == 200
+    rules = await _rule_rows(session_factory)
+    assert len(rules) == 1
+    assert rules[0].kind == "location"
+    assert rules[0].params_json["allow"] == ["Dublin"]
+    assert rules[0].params_json["mode"] == "county"
+
+
+async def test_a_location_rule_with_an_unknown_mode_is_rejected(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+
+    response = await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "location", "location_allow": "Dublin", "location_mode": "bogus"},
+    )
+
+    assert response.status_code == 400
+    assert "county" in response.text
+    assert await _rule_rows(session_factory) == []
+
+
 async def test_a_negative_salary_floor_rule_is_rejected_and_writes_no_row(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

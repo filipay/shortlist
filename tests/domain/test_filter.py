@@ -200,6 +200,90 @@ def test_location_passes_when_allowed_or_unknown() -> None:
     assert evaluate([_spec(kind="location", params=params)], _facts(location_norm=None)) == []
 
 
+# --- location: county-aware mode ----------------------------------------------
+def test_location_county_mode_accepts_an_iso_subdivision_code() -> None:
+    """`blanchardstown, d, ie` is Dublin 15; county mode must not reject it."""
+    county = {"allow": ["dublin"], "mode": "county"}
+    assert evaluate(
+        [_spec(kind="location", params=county)],
+        _facts(location_norm="blanchardstown, d, ie"),
+    ) == []
+
+    # The same input under substring mode keeps today's rejection: county is the
+    # only mode that widens the match.
+    substring = {"allow": ["dublin"], "mode": "substring"}
+    outcome = _fire("location", substring, _facts(location_norm="blanchardstown, d, ie"))
+    assert outcome.excluded is True
+
+
+def test_location_county_mode_accepts_cloghran_by_dublin_airport() -> None:
+    county = {"allow": ["dublin"], "mode": "county"}
+
+    assert (
+        evaluate([_spec(kind="location", params=county)], _facts(location_norm="cloghran, d, ie"))
+        == []
+    )
+
+
+def test_location_county_mode_rejects_another_county() -> None:
+    county = {"allow": ["dublin"], "mode": "county"}
+
+    outcome = _fire("location", county, _facts(location_norm="cork, c, ie"))
+
+    assert outcome.excluded is True
+
+
+def test_location_county_mode_accepts_the_matching_county() -> None:
+    county = {"allow": ["cork"], "mode": "county"}
+
+    assert (
+        evaluate([_spec(kind="location", params=county)], _facts(location_norm="cork, c, ie")) == []
+    )
+
+
+def test_location_county_mode_rejects_a_location_without_a_code() -> None:
+    """`galway, county galway, ireland` names the county; it is not a Dublin code."""
+    county = {"allow": ["dublin"], "mode": "county"}
+
+    outcome = _fire("location", county, _facts(location_norm="galway, county galway, ireland"))
+
+    assert outcome.excluded is True
+
+
+def test_location_county_mode_never_rejects_an_unknown_location() -> None:
+    county = {"allow": ["dublin"], "mode": "county"}
+
+    assert evaluate([_spec(kind="location", params=county)], _facts(location_norm=None)) == []
+
+
+def test_location_an_unrecognised_mode_behaves_as_substring() -> None:
+    bogus = {"allow": ["dublin"], "mode": "bogus"}
+
+    outcome = _fire("location", bogus, _facts(location_norm="galway, ireland"))
+    assert outcome.excluded is True
+    assert (
+        evaluate([_spec(kind="location", params=bogus)], _facts(location_norm="dublin, ireland"))
+        == []
+    )
+
+
+def test_location_county_mode_accepts_a_bare_county_code_term() -> None:
+    county = {"allow": ["d"], "mode": "county"}
+
+    assert evaluate(
+        [_spec(kind="location", params=county)],
+        _facts(location_norm="blanchardstown, d, ie"),
+    ) == []
+
+
+def test_location_county_mode_detail_keys_are_exact() -> None:
+    county = {"allow": ["dublin"], "mode": "county"}
+
+    outcome = _fire("location", county, _facts(location_norm="cork, c, ie"))
+
+    assert set(outcome.detail) == {"location_norm", "allowed"}
+
+
 # --- remote -------------------------------------------------------------------
 def test_remote_excludes_only_a_known_non_remote_flag() -> None:
     params = {"require": True}
