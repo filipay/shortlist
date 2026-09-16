@@ -6,7 +6,14 @@
    the page — a swapped fragment must carry them, or the count would go stale.
 
    The count markup is the Phase-1 markup verbatim: `tests/api/test_run_trigger.py`
-   pins the rendered `"0 listings"` string and the `No listings yet` empty state. #}
+   pins the rendered `"0 listings"` string and the `No listings yet` empty state.
+
+   `show_excluded` and `queue_query` are set here and inherited by the row include, so
+   the row partial works identically when `POST /listings/{id}/events` renders it
+   standalone (which passes them explicitly) and when the queue includes it here. #}
+{% set show_excluded = page.query.excluded %}
+{% set queue_query = page.query.query_string() %}
+
 <p class="queue-count" id="queue-count">{{ count }} listing{% if count != 1 %}s{% endif %}</p>
 
 {# The explicit watermark action. It carries the current predicate set in its URL
@@ -36,6 +43,7 @@
       <th scope="col">Source</th>
       <th scope="col">Posted</th>
       {% if page.query.excluded %}<th scope="col">Excluded by</th>{% endif %}
+      <th scope="col">Actions</th>
     </tr>
   </thead>
   <tbody>

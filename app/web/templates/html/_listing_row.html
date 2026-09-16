@@ -1,13 +1,20 @@
-{# One queue row (QUEUE-06 / QUEUE-07 / FILT-03).
+{# One queue row (QUEUE-06 / QUEUE-07 / FILT-03 / QUEUE-08).
 
-   Included by `queue_list.html`, so it inherits the page context (`row`, `page`).
-   Every flag arrives PRECOMPUTED on the row — no date arithmetic, no settings read
-   and no lookup happens in a template.
+   Included by `queue_list.html`, so it inherits the page context (`row`, `show_excluded`,
+   `queue_query`). It is ALSO returned standalone by `POST /listings/{id}/events`, which is
+   why the flags it needs are plain context variables rather than `page.*` lookups: one
+   rendering path serves the queue and the swap (T-02-38).
 
-   The `listing-title` cell carries the title and NOTHING else: a pre-existing
-   determinism test reads the queue back with
-   `<td class="listing-title">([^<]+)</td>`, so badges live in their own cell rather
-   than quietly breaking a pinned Phase-1 assertion.
+   Every flag arrives PRECOMPUTED on the row — no date arithmetic, no settings read and no
+   lookup happens in a template.
+
+   The `listing-title` cell carries the title and NOTHING else: a pre-existing determinism
+   test reads the queue back with `<td class="listing-title">([^<]+)</td>`, so badges and
+   controls live in their own cells rather than quietly breaking a pinned Phase-1 assertion.
+
+   Save and Hide are two separately-labelled controls (D-41). Neither guesses which the
+   user meant, and the button text flips to the inverse action so an already-hidden listing
+   reads as a one-tap undo.
 
    Jinja autoescape is the only escaping in play: titles, companies and locations are
    untrusted job-board text and are rendered as text, never marked safe. #}
@@ -15,9 +22,13 @@
     class="listing-row{% if row.is_stale %} listing-stale{% endif %}{% if row.rules %} dimmed{% endif %}"
     data-new="{{ 1 if row.is_new else 0 }}"
     data-stale="{{ 1 if row.is_stale else 0 }}"
-    data-merged-from="{{ row.merged_from }}">
+    data-merged-from="{{ row.merged_from }}"
+    data-saved="{{ 1 if row.saved else 0 }}"
+    data-hidden="{{ 1 if row.hidden else 0 }}">
   <td class="listing-title">{{ row.title }}</td>
   <td class="listing-badges">
+    {% if row.saved %}<span class="badge badge-saved" id="listing-saved-{{ row.id }}">&#9733; saved</span>{% endif %}
+    {% if row.hidden %}<span class="badge badge-hidden" id="listing-hidden-{{ row.id }}">hidden</span>{% endif %}
     {% if row.is_new %}<span class="badge badge-new">new</span>{% endif %}
     {% if row.is_stale %}<span class="badge badge-stale">stale</span>{% endif %}
     {% if row.merged_from %}<a class="badge badge-merged" href="/merges">merged from {{ row.merged_from }} sources</a>{% endif %}
@@ -26,11 +37,39 @@
   <td class="listing-location">{{ row.location }}</td>
   <td class="listing-source">{{ row.sources | join(", ") }}</td>
   <td class="listing-posted">{{ row.posted }}</td>
-  {% if page.query.excluded %}
+  {% if show_excluded %}
   <td class="listing-exclusion">
     {% for rule in row.rules %}
     <span class="rule-chip rule-chip-{{ rule.kind }}">{{ rule.kind }} ({{ rule.count }})</span>
     {% endfor %}
   </td>
   {% endif %}
+  <td class="listing-actions">
+    {# The queue's current predicate set rides on the action URL so the swapped row keeps
+       the exclusion column the user is looking at. `event_type` is the whole request body;
+       `occurred_at` is server-side and cannot be supplied here. #}
+    {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
+    <form class="listing-action listing-action-save"
+          hx-post="{{ action_url }}"
+          hx-target="#listing-row-{{ row.id }}"
+          hx-swap="outerHTML">
+      <input type="hidden" name="event_type" value="{{ 'unsave' if row.saved else 'save' }}">
+      <button type="submit"
+              id="listing-save-{{ row.id }}"
+              class="listing-save-button{% if row.saved %} is-on{% endif %}">
+        {% if row.saved %}Unsave{% else %}Save{% endif %}
+      </button>
+    </form>
+    <form class="listing-action listing-action-hide"
+          hx-post="{{ action_url }}"
+          hx-target="#listing-row-{{ row.id }}"
+          hx-swap="outerHTML">
+      <input type="hidden" name="event_type" value="{{ 'unhide' if row.hidden else 'hide' }}">
+      <button type="submit"
+              id="listing-hide-{{ row.id }}"
+              class="listing-hide-button{% if row.hidden %} is-on{% endif %}">
+        {% if row.hidden %}Unhide{% else %}Hide{% endif %}
+      </button>
+    </form>
+  </td>
 </tr>

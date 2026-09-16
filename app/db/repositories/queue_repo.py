@@ -66,11 +66,11 @@ from app.db.models import (
     FilterRule,
     Listing,
     ListingDupe,
-    ListingEvent,
     ListingExclusion,
     ListingSource,
     Run,
 )
+from app.db.repositories import event_repo
 from app.db.repositories.dupe_repo import merge_summary_for_listings
 from app.db.repositories.exclusion_repo import (
     excluded_counts_for_run,
@@ -172,6 +172,9 @@ class QueueRow:
     is_new: bool
     is_stale: bool
     merged_from: int
+    #: Projected from `listing_events` (plan 02-09), never from a column.
+    saved: bool = False
+    hidden: bool = False
     rules: tuple[QueueRule, ...] = ()
 
 
@@ -208,22 +211,6 @@ def _not_absorbed_twin() -> ColumnElement[bool]:
             ListingDupe.dup_listing_id == Listing.id,
             ListingDupe.reverted_at.is_(None),
         )
-    )
-
-
-def _latest_event_type() -> ColumnElement[str]:
-    """The listing's most recent `listing_events` type, or `''` when it has none.
-
-    `coalesce` matters: `NULL != 'hide'` is NULL in SQL and would drop every listing
-    that has no events at all.
-    """
-    return func.coalesce(
-        select(ListingEvent.event_type)
-        .where(ListingEvent.listing_id == Listing.id)
-        .order_by(ListingEvent.occurred_at.desc(), ListingEvent.id.desc())
-        .limit(1)
-        .scalar_subquery(),
-        "",
     )
 
 
@@ -313,10 +300,18 @@ async def read_queue(
     expression = build_match_expression(query.q)
 
     predicates: list[ColumnElement[bool]] = [_not_absorbed_twin()]
+    # The save/hide predicates come from `event_repo`, which owns the projection: their
+    # rules are `save`/`unsave` and `hide`/`unhide` restricted to the LATEST event of
+    # the pair, so a `view` after a `save` cannot make the listing look unsaved. Building
+    # them here from a bare "latest event type" was plan 02-07's placeholder and was
+    # wrong for exactly that reason.
+    #
+    # A hide composes with `_not_absorbed_twin` above rather than replacing it: an
+    # absorbed twin is out of the queue whether or not anyone also hid it.
     if not query.hidden:
-        predicates.append(_latest_event_type() != "hide")
+        predicates.append(~event_repo.hidden_predicate())
     if query.saved:
-        predicates.append(_latest_event_type() == "save")
+        predicates.append(event_repo.saved_predicate())
     if query.scope_search_id is not None:
         predicates.append(_in_scope(int(query.scope_search_id)))
     if not query.excluded:
@@ -407,6 +402,11 @@ async def _enrich(
     # that own those queries (plans 02-06 and 02-05); neither join is rebuilt here.
     merged_from = await merge_summary_for_listings(session, listing_ids=list(ids))
 
+    # The saved/hidden flags come from the append-only event log, projected in ONE
+    # query for the whole page (plan 02-09). No flag is read per row, and no template
+    # recomputes them.
+    states = await event_repo.state_for_listings(session, listing_ids=list(ids))
+
     firing: dict[int, list[str]] = {}
     kinds: dict[str, str] = {}
     latest_run_id = await _latest_run_id_value(session)
@@ -433,6 +433,7 @@ async def _enrich(
                         count=rule_counts.get(rule_id, 1),
                     )
                 )
+        state = states.get(listing_id, event_repo.NO_STATE)
         rows.append(
             QueueRow(
                 id=listing_id,
@@ -447,10 +448,39 @@ async def _enrich(
                 is_new=is_new,
                 is_stale=is_stale,
                 merged_from=int(merged_from.get(listing_id, 0)),
+                saved=state.saved,
+                hidden=state.hidden,
                 rules=tuple(chips),
             )
         )
     return rows
+
+
+async def read_row(
+    session: AsyncSession,
+    *,
+    listing_id: int,
+    query: QueueQuery,
+    now: datetime,
+    stale_after_days: int,
+    watermark: datetime | None,
+) -> QueueRow | None:
+    """One fully-enriched row, by id.
+
+    The seam plan 02-09's event routes swap back after a save/hide click. It goes
+    through the same `_enrich` the page does, so a swapped row cannot render
+    differently from the row it replaces — the badges, the merge indicator, the
+    exclusion chips and the projected flags all come from one code path.
+    """
+    rows = await _enrich(
+        session,
+        [int(listing_id)],
+        query=query,
+        now=now,
+        stale_after_days=stale_after_days,
+        watermark=watermark,
+    )
+    return rows[0] if rows else None
 
 
 async def _latest_run_id_value(session: AsyncSession) -> int | None:
@@ -501,4 +531,5 @@ __all__ = [
     "QueueRow",
     "QueueRule",
     "read_queue",
+    "read_row",
 ]
