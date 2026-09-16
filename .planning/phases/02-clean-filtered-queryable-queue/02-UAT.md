@@ -130,6 +130,68 @@ same behaviour upstream. Internally consistent and individually true — but it 
   headline with the latest run as detail — the phase already established the trailing-window idiom;
 - all-time un-reverted merges over all-time fetched, with the latest run beside it.
 
+### G4 — Tier-2 over-merged: 6 of 7 merges were different jobs — FIXED
+Found by the user reading the real merged output on `/merges`, i.e. by the human UAT step. **No
+automated check could have caught it**: every merge was individually well-formed, audited, snapshot-backed
+and reversible. Only a human who knows what "Lead SRE (DSS)" means could see they were different jobs.
+
+**Measured precision: 4 of the 5 commented merges were wrong (~20%).** The 7 merges with both sides'
+provenance:
+
+| # | score | company | sources | user's verdict |
+|---|---|---|---|---|
+| 1 | 100.00 | dow jones | indeed / indeed | WRONG — different listings behind the links |
+| 2 | 92.04 | jpmorganchase | indeed / indeed | user read as SAME (see note) |
+| 3 | 95.24 | jpmorganchase | indeed / indeed | WRONG — `(DSS)` is a different role |
+| 4 | 89.06 | jpmorganchase | indeed / indeed | WRONG — `(Backend, AWS)` vs `Backend` |
+| 5 | 100.00 | mastercard | indeed / indeed | WRONG — different Indeed `jk` (`9814f9bf…` vs `e9764e77…`) |
+| 6 | 90.57 | taktile | linkedin / linkedin | WRONG — "Platform team" vs "Team Agent" |
+| 7 | 100.00 | mastercard | indeed / **linkedin** | CORRECT — the only cross-source pair |
+
+**Root cause: Tier-2 merged listings that Tier-1 had already declared distinct.** Tier-1's identity
+primitive is `uq_listing_sources_source_sid` — `UNIQUE (source, source_listing_id)`
+(`app/db/models.py:178-184`) — and JobSpy supplies a stable board key (`in-<jk>`, `li-<id>`). Two
+distinct listings sharing a source therefore necessarily have different job ids. **6 of 7 merges crossed
+that boundary**, and a high fuzzy score overrode it.
+
+**θ cannot fix it.** At θ=90 the pairs interleave: #2 (92.04, judged SAME) would be refused before #3
+(95.24, judged WRONG). #5 has *identical titles* at score 100.0, so no threshold and no qualifier guard
+can separate it — the distinguishing fact is the job id, not the text.
+
+**The user proposed:** *"if the listing is from the same domain but has different listing ids, we should
+consider them different jobs."* The conclusion was adopted, the **key was corrected**: `canonical_source_url`
+prefers `direct_url`, so for these rows it holds the *employer's* URL (`dowjones.jobs`,
+`contacthr.com`, an `appcast.io` redirect token), not a board id. The correct primitive is
+`(source, source_listing_id)` — which also dissolves the `appcast.io` tracking-token concern.
+
+**Note on the user's #2 verdict.** #2 and #4 are structurally identical (same company, same domain,
+different req id, one title carrying a trailing qualifier) yet were judged oppositely. The rule treats
+them consistently by refusing both, so **#2's "same job" read is the probable outlier** — `153569403` and
+`153557411` are different reqs. Worth the user's confirmation.
+
+**Fix (`819bb9e`, oracle-designed): fuzzy merge is only attempted across DISJOINT source sets.** A shared
+source refuses the pair as the *first* check in `score_pair`, before the grade guard
+(`app/domain/dedup.py:162-173`). `CandidateFacts.sources` is populated by ONE indexed batch read (no
+N+1). No threshold change, no migration, no new dependency. Empty source sets never refuse, so missing
+provenance still falls through to grade/company/location/score. 14 new tests pin each false-merge shape
+plus a cross-source **must-merge** control and an aggregate case asserting the real 7-pair corpus now
+yields exactly **one** decision.
+
+**Trade-off, stated honestly:** same-source *reposts* (the same role re-posted under a new job id) will no
+longer collapse — they appear as visible duplicates. That is the safe direction: a refused duplicate is a
+**visible** duplicate the user scrolls past; a wrong merge is an **invisible lost job**. Same-source was
+also 6-for-6 wrong on this corpus, so its expected value was negative.
+
+**Test corrected, not weakened:** `a51a133`'s reproduction test
+(`test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen`) asserted two *same-source* Indeed rows
+merging — precisely the behaviour this feedback proved wrong. Replaced by
+`test_a_shared_source_member_is_not_merged_but_the_cross_source_twin_is`; the `a51a133` location
+regression it protected is preserved on the cross-source path.
+
+**Still open for the operator:** the live corpus still holds the 6 wrong merges. They are **revertible
+today** via `/merges` (that is what revert shipped for), and a rebuilt image is required before the guard
+is active. See the step-by-step instructions in the session record.
+
 ### G3 — dedup gap on the phase's CENTRAL promise — ROOT CAUSE CONFIRMED AND FIXED
 SC1 promises "the same job found on two sources appears once". A real-corpus case violated it.
 
