@@ -24,6 +24,7 @@ from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.ingest.sanitize import sanitize_listing
 from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
+from app.pipeline.filter_stage import FILTER_STAGE, run_filter_stage
 from app.pipeline.stages import normalise_listing
 from app.probe.survival import (
     compute_fill_rates,
@@ -237,6 +238,7 @@ async def _finish(
     source_counts: dict[str, Any],
     errors: list[dict[str, Any]],
     merged_count: int = 0,
+    filtered_count: int = 0,
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -253,6 +255,9 @@ async def _finish(
         # so the merge rate is `deduped_count / fetched_count`. Do not restore the
         # old meaning.
         run.deduped_count = merged_count
+        # The hard-filter stage (plan 02-05) is the writer `filtered_count` never
+        # had: the number of listings the run's deterministic rules excluded.
+        run.filtered_count = filtered_count
         await session.commit()
 
 
@@ -293,6 +298,7 @@ async def run_pipeline(
     source_counts: dict[str, Any] = {}
     errors: list[dict[str, Any]] = []
     merged_count = 0
+    excluded_count = 0
 
     try:
         selected = await _resolve_adapters(session_factory, adapters)
@@ -340,11 +346,10 @@ async def run_pipeline(
         )
 
         # Tier-2 dedup (D-30): post-persist, so both halves of a cross-source pair
-        # exist before either is scored. The hard-filter stage (plan 02-05) inserts
-        # between this stage and `_finish` — filtering first would discard the copy
-        # that carried the salary. Dedup is best-effort on the run path: an internal
-        # failure is recorded and the run still finishes, because the listings are
-        # already persisted.
+        # exist before either is scored. The hard-filter stage runs after this one —
+        # filtering first would discard the copy that carried the salary. Both are
+        # best-effort on the run path: an internal failure is recorded and the run
+        # still finishes, because the listings are already persisted.
         try:
             dedup_result = await run_dedup_stage(session_factory, resolved_run_id)
             merged_count = int(dedup_result.counts.get("merges", 0))
@@ -355,6 +360,22 @@ async def run_pipeline(
         except Exception as exc:  # noqa: BLE001 — dedup must not sink a saved run
             log.exception("pipeline.dedup_failed", run_id=resolved_run_id, error=str(exc))
             errors.append({"source": DEDUP_STAGE, "status": "failed", "error": str(exc)})
+
+        # Hard-rule filter (FILT-01/02): deterministic, after dedup and before
+        # `_finish`. This path makes NO model call — no LLM module is imported here
+        # and no `llm_calls` row is ever written by it. Best-effort like dedup: a
+        # filter failure is recorded and the run still finishes, because the
+        # listings are already persisted.
+        try:
+            filter_result = await run_filter_stage(session_factory, resolved_run_id)
+            excluded_count = int(filter_result.counts.get("excluded_listings", 0))
+            errors.extend(
+                {"source": FILTER_STAGE, "status": "warning", "error": message}
+                for message in filter_result.errors
+            )
+        except Exception as exc:  # noqa: BLE001 — the filter must not sink a saved run
+            log.exception("pipeline.filter_failed", run_id=resolved_run_id, error=str(exc))
+            errors.append({"source": FILTER_STAGE, "status": "failed", "error": str(exc)})
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
@@ -367,6 +388,7 @@ async def run_pipeline(
         source_counts=source_counts,
         errors=errors,
         merged_count=merged_count,
+        filtered_count=excluded_count,
     )
     log.info(
         "pipeline.finished",
