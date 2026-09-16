@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-09-16T10:27:07.106Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-09-16T10:44:33.589Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: e073ffff11bbdf140193e6cd6fd5a001dbe13f76
+state_head: d6a43292caa9ad81020917d4e3f44b07473fbd3b
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 12
+  completed_plans: 13
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P03 | 15 min | 3 tasks | 6 files |
 | Phase 02 P04 | 15 min | 2 tasks | 7 files |
 | Phase 02 P05 | 22 min | 3 tasks | 10 files |
+| Phase 02 P06 | 15 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,11 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-05: the capability-warning sentence in `runs.errors_json` is EXTENDED with '(enforced locally as a hard filter after the fetch)', never replaced, so Phase-1 assertions stay valid while the meaning becomes honest.
 - [Phase 2]: 02-05: the stage log and the capability-warning list are bounded by two documented module constants (STAGE_LOG_MAX_ENTRIES=12, STAGE_LOG_MAX_ERRORS=10), deliberately not Settings knobs.
 - [Phase 2]: 02-05: `new_since_watermark` reads the queue watermark read-only and a NULL watermark means every survivor counts as new; plan 02-07 owns advancing it.
+- [Phase 2]: 02-06: the Merges panel is a Jinja macro inside merges.html rendered for the fragment via Template.make_module — one template file, one definition of the markup — and render_merges_table passes the same merges/rate/note the page body needs (make_module executes the content block).
+- [Phase 2]: 02-06: the merge rate counts UN-REVERTED merges only over the latest run (un-reverted/fetched), rendered as a whole-number percentage with both integers beside it and None at a zero/null denominator; the reverted count is shown separately so a revert visibly moves the number.
+- [Phase 2]: 02-06: revert_merge is UPDATE-only on listing_dupes, restores snapshot fields through the survivor's ORM row so the listings_au FTS trigger fires, counts a non-column snapshot key in RevertResult.skipped instead of raising, and never touches listing_sources (the A5 divergence).
+- [Phase 2]: 02-06: the rate and the reverted count live inside the id=merges-table root so one htmx swap moves both — a revert can never leave a stale rate beside a fresh table.
+- [Phase 2]: 02-06: no listing_events row is written on merge or revert (that log records user actions), and UNRENDERED_SNAPSHOT_FIELDS keeps source_extras_json/quality_signals_json off the audit page while revert still restores them.
 
 ### Pending Todos
 
@@ -154,6 +160,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T10:27:07.035Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-09-16T10:44:33.524Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None
