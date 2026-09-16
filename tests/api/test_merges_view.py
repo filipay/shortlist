@@ -168,11 +168,18 @@ async def test_merges_page_lists_the_rate_its_window_and_the_rows_behind_it(
     text = response.text
 
     # The rate is a percentage with BOTH integers beside it, and the window is named
-    # rather than left as an unlabelled all-time aggregate.
+    # rather than left as an unlabelled all-time aggregate. The label is deliberately
+    # "this run only", not "latest run": the latter reads as the latest measurement of
+    # the OVERALL rate, which is how a 0% window got misread as broken dedup.
     assert "33%" in text, "1 merge over 3 fetched must render 33%"
     assert "1 merged / 3 fetched" in text
-    assert "latest run" in text
+    assert "this run only" in text
     assert "0 reverted" in text
+
+    # The narrow scope is spelled out in prose too, so a 0% on a well-deduped corpus
+    # cannot be read as a failure.
+    assert 'id="merge-rate-scope"' in text
+    assert "not an all-time rate" in text
 
     # The rows behind the number are on the same page, newest-first with stable ids.
     assert 'id="merges-table"' in text

@@ -24,6 +24,12 @@
     {%- endif %}
   </p>
 
+  <p class="merges-note" id="merge-rate-scope">
+    This is only the latest run's window, not an all-time rate. A run that re-fetches
+    a corpus whose duplicates are already collapsed can legitimately report 0%; the
+    table below is the full merge history, reverted rows included.
+  </p>
+
   {% if note %}
   <p class="merges-note" id="merges-note">{{ note }}</p>
   {% endif %}

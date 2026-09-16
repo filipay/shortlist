@@ -320,7 +320,14 @@ class MergeRate:
 
     @property
     def window(self) -> str:
-        return f"latest run (#{self.run_id})" if self.run_id is not None else "no run yet"
+        """The stated scope of the rate, phrased so it cannot be read as all-time.
+
+        "Latest run" invites the reading "the most recent measurement of the overall
+        rate" — which is exactly how a 0% headline on a corpus with 7 already-collapsed
+        merges got misread as broken dedup. "This run only" says the figure describes a
+        single run's window, which is the truth (CR-01's narrow window is deliberate).
+        """
+        return f"this run only (#{self.run_id})" if self.run_id is not None else "no run yet"
 
 
 @dataclass(frozen=True)
