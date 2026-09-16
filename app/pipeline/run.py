@@ -11,7 +11,7 @@ The database is the single source of truth for run state — there is no in-memo
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,6 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
+from app.db.repositories.search_repo import (
+    enabled_searches,
+    rules_for_searches,
+)
+from app.domain.criteria import search_query_from
 from app.ingest.sanitize import sanitize_listing
 from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
 from app.pipeline.filter_stage import FILTER_STAGE, run_filter_stage
@@ -90,8 +95,8 @@ async def _resolve_adapters(
 
     async with session_factory() as session:
         rows = (
-            await session.execute(select(Source).where(Source.enabled.is_(True)))
-        ).scalars().all()
+            (await session.execute(select(Source).where(Source.enabled.is_(True)))).scalars().all()
+        )
 
     resolved: list[JobSource] = []
     for row in rows:
@@ -108,7 +113,7 @@ async def _resolve_adapters(
 
 async def _fetch_one(
     adapter: JobSource, query: SearchQuery
-) -> tuple[FetchResult, list[dict[str, Any]]]:
+) -> tuple[FetchResult, list[dict[str, Any]], list[dict[str, Any]]]:
     """A board's failure degrades the run; it never propagates (R1).
 
     The query is compiled against the board's declared capabilities BEFORE the
@@ -116,13 +121,31 @@ async def _fetch_one(
     warning rather than being dropped silently, and the adapter executes the
     compiled query. When nothing must be dropped the compiled query is the
     caller's query unchanged, so today's `default_query()` is unaffected.
+
+    Returns the error-shaped warnings (for `runs.errors_json`, unchanged shape)
+    **and** the structured `source`/`filter_name`/`reason` triples the stage log
+    persists, so the run detail page can render a warning its own way.
     """
     compiled = compile_query_for_source(query, adapter.capabilities, source=adapter.name)
+    warning_records: list[dict[str, Any]] = [
+        {
+            "source": warning.source,
+            "filter_name": warning.filter_name,
+            "reason": warning.reason,
+        }
+        for warning in compiled.warnings
+    ]
     warnings: list[dict[str, Any]] = [
         {
             "source": adapter.name,
             "status": "warning",
-            "error": f"filter not applied: {warning.filter_name} — {warning.reason}",
+            # The Phase-1 sentence is EXTENDED, not replaced: the same rules are
+            # enforced locally as hard filters after the fetch (plan 02-05), so an
+            # unsupported *fetch-side* filter is no longer "not applied at all".
+            "error": (
+                f"filter not applied: {warning.filter_name} — {warning.reason} "
+                "(enforced locally as a hard filter after the fetch)"
+            ),
         }
         for warning in compiled.warnings
     ]
@@ -131,18 +154,16 @@ async def _fetch_one(
     except Exception as exc:  # noqa: BLE001 — belt and braces around R1
         log.warning("pipeline.fetch_failed", source=adapter.name, error=str(exc))
         result = FetchResult(source=adapter.name, status="error", error=str(exc))
-    return result, warnings
+    return result, warnings, warning_records
 
 
 async def _fetch_all(
     adapters: Sequence[JobSource], query: SearchQuery
-) -> list[tuple[FetchResult, list[dict[str, Any]]]]:
+) -> list[tuple[FetchResult, list[dict[str, Any]], list[dict[str, Any]]]]:
     """Fan out concurrently — one call per board, one budget each."""
     if not adapters:
         return []
-    return list(
-        await asyncio.gather(*(_fetch_one(adapter, query) for adapter in adapters))
-    )
+    return list(await asyncio.gather(*(_fetch_one(adapter, query) for adapter in adapters)))
 
 
 async def _persist_result(
@@ -176,9 +197,7 @@ async def _persist_result(
                     )
             except Exception as exc:  # noqa: BLE001 — one bad row must not kill the run
                 failed += 1
-                log.warning(
-                    "pipeline.persist_failed", source=result.source, error=str(exc)
-                )
+                log.warning("pipeline.persist_failed", source=result.source, error=str(exc))
                 continue
             if outcome.kind == "created":
                 created += 1
@@ -214,9 +233,7 @@ async def _persist_result(
                         now=now,
                     )
         except Exception as exc:  # noqa: BLE001 — bookkeeping is not the payload
-            log.warning(
-                "pipeline.ledger_failed", source=result.source, error=type(exc).__name__
-            )
+            log.warning("pipeline.ledger_failed", source=result.source, error=type(exc).__name__)
 
         await session.commit()
 
@@ -230,6 +247,104 @@ async def _persist_result(
     }
 
 
+#: Bounds on `runs.stage_log_json`. A pathological run must not be able to write an
+#: unbounded blob, so the log keeps the last N stage entries and at most N errors
+#: per entry. Deliberately small module constants, not Settings knobs: this is a
+#: log-size guard, not a tunable operating limit.
+STAGE_LOG_MAX_ENTRIES = 12
+STAGE_LOG_MAX_ERRORS = 10
+
+
+def _query_snapshot(query: SearchQuery) -> dict[str, Any]:
+    """`SearchQuery` field values as JSON-plain values (never a dataclass)."""
+    return {
+        "keywords": query.keywords,
+        "location": query.location,
+        "distance_miles": query.distance_miles,
+        "remote_only": query.remote_only,
+        "salary_floor": query.salary_floor,
+        "seniority": list(query.seniority),
+        "hours_old": query.hours_old,
+        "easy_apply": query.easy_apply,
+        "offset": query.offset,
+        "results_wanted": query.results_wanted,
+    }
+
+
+async def _build_criteria_snapshot(session: AsyncSession) -> dict[str, Any]:
+    """The exact query + rule set this run will use, keyed by search id (D-33)."""
+    searches = await enabled_searches(session)
+    rules = await rules_for_searches(session, [record.id for record in searches])
+
+    by_search: dict[int, list[Any]] = {}
+    for rule in rules:
+        by_search.setdefault(rule.search_id, []).append(rule)
+
+    snapshot: dict[str, Any] = {}
+    for record in searches:
+        snapshot[str(record.id)] = {
+            "name": record.name,
+            "version": record.version,
+            "query": _query_snapshot(search_query_from(record.criteria_json)),
+            "rules": [
+                {
+                    "rule_id": rule.rule_id,
+                    "kind": rule.kind,
+                    "params": dict(rule.params_json or {}),
+                    "position": rule.position,
+                }
+                for rule in by_search.get(record.id, [])
+            ],
+        }
+    return snapshot
+
+
+async def _write_criteria_snapshot(
+    session_factory: async_sessionmaker[AsyncSession], run_id: int
+) -> dict[str, Any]:
+    """Write the snapshot BEFORE the fetch, and never rewrite it (CRIT-02).
+
+    A run that fails mid-way still records what it attempted, and because the
+    snapshot is taken before any edit can land, a later criteria edit cannot
+    retroactively change what a completed run says it used.
+    """
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        if run is None:  # pragma: no cover — the row was created by this call
+            return {}
+        snapshot = await _build_criteria_snapshot(session)
+        run.criteria_snapshot_json = snapshot or None
+        await session.commit()
+    return snapshot
+
+
+def _plain(value: Any) -> Any:
+    """A JSON-plain value: ints/floats/strings/None pass through, bools stay bools."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
+
+
+def _stage_entry(
+    name: str,
+    counts: Mapping[str, Any],
+    errors: Sequence[str],
+    **extra: Any,
+) -> dict[str, Any]:
+    """One bounded stage-log entry: plain values only, never a dataclass.
+
+    `counts` mixes stage counters (ints) with the per-source persist summary (which
+    carries a status string), so values are coerced to plain JSON types rather than
+    assumed to be integers.
+    """
+    return {
+        "stage": name,
+        "counts": {str(key): _plain(value) for key, value in dict(counts).items()},
+        "errors": [str(message) for message in list(errors)[:STAGE_LOG_MAX_ERRORS]],
+        **extra,
+    }
+
+
 async def _finish(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: int,
@@ -239,6 +354,7 @@ async def _finish(
     errors: list[dict[str, Any]],
     merged_count: int = 0,
     filtered_count: int = 0,
+    stage_log: list[dict[str, Any]] | None = None,
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -258,6 +374,9 @@ async def _finish(
         # The hard-filter stage (plan 02-05) is the writer `filtered_count` never
         # had: the number of listings the run's deterministic rules excluded.
         run.filtered_count = filtered_count
+        # D-44's collapsible raw stage log, bounded so a pathological run cannot
+        # write an unbounded blob.
+        run.stage_log_json = stage_log or None
         await session.commit()
 
 
@@ -299,8 +418,15 @@ async def run_pipeline(
     errors: list[dict[str, Any]] = []
     merged_count = 0
     excluded_count = 0
+    stage_log: list[dict[str, Any]] = []
+    compile_warnings: list[dict[str, Any]] = []
 
     try:
+        # Criteria snapshot (D-33 / CRIT-02): BEFORE the fetch, never rewritten, so
+        # a run that fails mid-way still records what it attempted and a later
+        # criteria edit cannot change what a completed run says it used.
+        await _write_criteria_snapshot(session_factory, resolved_run_id)
+
         selected = await _resolve_adapters(session_factory, adapters)
         fetched = await _fetch_all(selected, query or default_query())
         if not selected:
@@ -308,18 +434,21 @@ async def run_pipeline(
             # false success — the badge reads clean while the queue stays empty (and
             # the operator would read it as a scrape-survival result). The reason is
             # machine-readable in `errors_json`, in the same shape as a source error.
-            errors.append(
-                {"source": "*", "status": "partial", "error": NO_SOURCES_REASON}
-            )
+            errors.append({"source": "*", "status": "partial", "error": NO_SOURCES_REASON})
         results: list[FetchResult] = []
-        for result, capability_warnings in fetched:
+        for result, capability_warnings, warning_records in fetched:
             # A filter the board cannot honour is recorded, never silently dropped
             # (SRC-09/T-01-18). It is a warning, not a run failure: the fetch itself
-            # may still be healthy.
+            # may still be healthy. The same warnings also land in the stage log
+            # below as structured triples (D-37 / T-02-19).
             errors.extend(capability_warnings)
+            compile_warnings.extend(warning_records)
             results.append(result)
             source_counts[result.source] = await _persist_result(
                 session_factory, result, resolved_run_id
+            )
+            stage_log.append(
+                _stage_entry(f"persist:{result.source}", source_counts[result.source], [])
             )
             if result.status != "ok":
                 errors.append(
@@ -334,14 +463,10 @@ async def run_pipeline(
         # like a clean success is a trust failure (Pitfall 10) — and so is
         # `done` for a run that resolved no sources, or whose every item was
         # rejected on write (e.g. an FK to `sources.name`).
-        persisted_failures = sum(
-            int(counts.get("failed", 0)) for counts in source_counts.values()
-        )
+        persisted_failures = sum(int(counts.get("failed", 0)) for counts in source_counts.values())
         status = (
             "done"
-            if results
-            and all(r.status == "ok" for r in results)
-            and persisted_failures == 0
+            if results and all(r.status == "ok" for r in results) and persisted_failures == 0
             else "partial"
         )
 
@@ -353,6 +478,7 @@ async def run_pipeline(
         try:
             dedup_result = await run_dedup_stage(session_factory, resolved_run_id)
             merged_count = int(dedup_result.counts.get("merges", 0))
+            stage_log.append(_stage_entry(DEDUP_STAGE, dedup_result.counts, dedup_result.errors))
             errors.extend(
                 {"source": DEDUP_STAGE, "status": "warning", "error": message}
                 for message in dedup_result.errors
@@ -369,6 +495,7 @@ async def run_pipeline(
         try:
             filter_result = await run_filter_stage(session_factory, resolved_run_id)
             excluded_count = int(filter_result.counts.get("excluded_listings", 0))
+            stage_log.append(_stage_entry(FILTER_STAGE, filter_result.counts, filter_result.errors))
             errors.extend(
                 {"source": FILTER_STAGE, "status": "warning", "error": message}
                 for message in filter_result.errors
@@ -381,6 +508,18 @@ async def run_pipeline(
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
         status = "failed"
 
+    # The criteria-compile entry is built here because the warnings are only known
+    # after the fetch; it is prepended because it is chronologically first.
+    stage_log.insert(
+        0,
+        _stage_entry(
+            "criteria_compile",
+            {"warnings": len(compile_warnings)},
+            [],
+            warnings=compile_warnings,
+        ),
+    )
+
     await _finish(
         session_factory,
         resolved_run_id,
@@ -389,6 +528,7 @@ async def run_pipeline(
         errors=errors,
         merged_count=merged_count,
         filtered_count=excluded_count,
+        stage_log=stage_log[-STAGE_LOG_MAX_ENTRIES:],
     )
     log.info(
         "pipeline.finished",
