@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Iterator
@@ -44,17 +45,121 @@ class OfflineLLMBackend:
 
 
 
-def _run_alembic_upgrade(db_path: Path) -> None:
+def _run_alembic_upgrade(db_path: Path, revision: str = "head") -> None:
     """Run the real migration against `db_path` as a subprocess."""
     env = {**os.environ, "DATABASE_URL_SYNC": f"sqlite:///{db_path}"}
     subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", revision],
         cwd=PROJECT_ROOT,
         env=env,
         check=True,
         capture_output=True,
         text=True,
     )
+
+
+#: The tables that carry a foreign key to ``runs.id``. Migration 0002's
+#: ``ck_runs_reason`` triggers Alembic's SQLite batch path
+#: (CREATE -> COPY -> DROP -> RENAME); ``DROP TABLE runs`` fails while
+#: ``foreign_keys=ON`` if any of these holds a row with a non-NULL ``run_id``.
+RUN_REFERENCING_TABLES = (
+    "listing_events",
+    "listing_exclusions",
+    "scores",
+    "llm_calls",
+    "source_request_log",
+)
+
+
+def _seed_0001(db_path: Path) -> dict[str, int]:
+    """Populate a revision-0001 database with the rows the defect needs.
+
+    Every table with an FK to ``runs.id`` gets exactly one row whose ``run_id``
+    is non-NULL. Column names and NOT NULL requirements come from the actual
+    0001 DDL, not from a guessed INSERT. Returns the per-table row counts so the
+    upgrade test can prove none were lost.
+    """
+    connection = sqlite3.connect(db_path, isolation_level=None)
+    try:
+        now = "2026-09-16 00:00:00"
+
+        connection.execute(
+            "INSERT INTO sources (name, display_name) VALUES ('linkedin', 'LinkedIn')"
+        )
+        connection.execute(
+            "INSERT INTO runs (trigger, status, started_at, finished_at) "
+            "VALUES ('manual', 'done', ?, ?)",
+            (now, now),
+        )
+        run_id = int(connection.execute("SELECT id FROM runs").fetchone()[0])
+        connection.execute(
+            "INSERT INTO listings "
+            "(canonical_url, title, first_seen_at, last_seen_at, content_hash, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "https://example.com/populated/1",
+                "Populated Role",
+                now,
+                now,
+                "populated-hash-1",
+                now,
+                now,
+            ),
+        )
+        listing_id = int(connection.execute("SELECT id FROM listings").fetchone()[0])
+
+        # One row per runs.id child table, each with a non-NULL run_id.
+        connection.execute(
+            "INSERT INTO listing_events (listing_id, event_type, occurred_at, run_id) "
+            "VALUES (?, 'view', ?, ?)",
+            (listing_id, now, run_id),
+        )
+        connection.execute(
+            "INSERT INTO listing_exclusions (listing_id, run_id, created_at) "
+            "VALUES (?, ?, ?)",
+            (listing_id, run_id, now),
+        )
+        connection.execute(
+            "INSERT INTO scores (listing_id, run_id, created_at) VALUES (?, ?, ?)",
+            (listing_id, run_id, now),
+        )
+        connection.execute(
+            "INSERT INTO llm_calls (run_id, purpose, status, created_at) "
+            "VALUES (?, 'rank', 'ok', ?)",
+            (run_id, now),
+        )
+        connection.execute(
+            "INSERT INTO source_request_log "
+            "(source, run_id, occurred_at, kind) VALUES ('linkedin', ?, ?, 'search')",
+            (run_id, now),
+        )
+
+        # Fold the WAL back into the main file so the copy is self-contained.
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        counts = {
+            table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            for table in RUN_REFERENCING_TABLES
+        }
+        counts["runs"] = int(connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
+        counts["listings"] = int(
+            connection.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        )
+        counts["sources"] = int(
+            connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+        )
+        return counts
+    finally:
+        connection.close()
+
+
+def _copy_sqlite(src: Path, dest: Path) -> None:
+    """Copy a self-contained SQLite database (plus any sidecars) into place."""
+    shutil.copy2(src, dest)
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{src}{suffix}")
+        if sidecar.exists():
+            shutil.copy2(sidecar, Path(f"{dest}{suffix}"))
 
 
 @pytest.fixture(scope="session")
@@ -70,12 +175,37 @@ def migrated_db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def migrated_db(migrated_db_template: Path, tmp_path: Path) -> Path:
     """A fresh, empty, fully-migrated database file for one test."""
     dest = tmp_path / "jobsearch.db"
-    shutil.copy2(migrated_db_template, dest)
-    for suffix in ("-wal", "-shm"):
-        src = Path(f"{migrated_db_template}{suffix}")
-        if src.exists():
-            shutil.copy2(src, Path(f"{dest}{suffix}"))
+    _copy_sqlite(migrated_db_template, dest)
     return dest
+
+
+@pytest.fixture(scope="session")
+def populated_0001_template(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, dict[str, int]]:
+    """A session-scoped revision-0001 database populated for the upgrade test.
+
+    Built by running the real migration only to ``0001`` and then seeding it;
+    it is deliberately **not** upgraded to head so each test can drive the
+    upgrade itself and observe the failure on an unfixed ``env.py``.
+    """
+    db_dir = tmp_path_factory.mktemp("jobsearch-populated-0001")
+    db_path = db_dir / "populated-0001.db"
+    _run_alembic_upgrade(db_path, "0001")
+    counts = _seed_0001(db_path)
+    return db_path, counts
+
+
+@pytest.fixture
+def populated_0001(
+    populated_0001_template: tuple[Path, dict[str, int]],
+    tmp_path: Path,
+) -> tuple[Path, dict[str, int]]:
+    """A per-test copy of the populated 0001 database plus its expected counts."""
+    template_path, counts = populated_0001_template
+    dest = tmp_path / "populated-0001.db"
+    _copy_sqlite(template_path, dest)
+    return dest, counts
 
 
 @pytest_asyncio.fixture

@@ -15,6 +15,7 @@ describes the past and cannot be backfilled (PITFALLS P8/Pitfall 9).
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -76,6 +77,29 @@ def _insert_listing(connection: sqlite3.Connection, url: str = "https://example.
         (url, "Test Role", now, now, "hash-1", now, now),
     )
     return int(cursor.lastrowid or 0)
+
+
+def _alembic_upgrade(db_path: Path, revision: str = "head") -> None:
+    """Drive the real migration against `db_path` (same pattern as conftest).
+
+    A non-zero exit is re-raised with Alembic's stderr inline: the regression
+    this test guards against is a subprocess abort, so its message (the
+    ``DROP TABLE runs`` / ``FOREIGN KEY constraint failed`` trace) must be
+    visible in the test report rather than swallowed by ``capture_output``.
+    """
+    env = {**os.environ, "DATABASE_URL_SYNC": f"sqlite:///{db_path}"}
+    completed = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", revision],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"alembic upgrade {revision} failed (rc={completed.returncode}):\n"
+            f"{completed.stderr}"
+        )
 
 
 # --- Item 1 -------------------------------------------------------------------
@@ -448,3 +472,81 @@ def test_criteria_version_and_dupes_unique_index(migrated_db: Path) -> None:
             )
     finally:
         connection.close()
+
+
+# --- Regression — upgrading a *populated* 0001 must not abort ------------------
+def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
+    """A populated 0001 database upgrades to head without an FK/batch abort.
+
+    The batch recreation of ``runs`` performs ``DROP TABLE runs``; with
+    ``foreign_keys=ON`` that fails while ``listing_events``,
+    ``listing_exclusions``, ``scores``, ``llm_calls`` and ``source_request_log``
+    hold rows referencing ``runs.id``. Fresh-database tests never reproduce it,
+    so this fixture seeds a child row per referencing table first. If
+    ``alembic upgrade head`` (and therefore the real ``alembic/env.py``) is
+    correct, the upgrade completes and every seeded row survives.
+    """
+    db_path, seeded_counts = populated_0001
+
+    _alembic_upgrade(db_path)
+
+    connection = _connect(db_path)
+    try:
+        # 1. The upgrade actually reached the one recorded revision.
+        versions = [
+            row["version_num"]
+            for row in connection.execute("SELECT version_num FROM alembic_version")
+        ]
+        assert versions == ["0002"], f"expected exactly 0002, saw {versions}"
+
+        # 2. No data loss: every seeded row count is preserved.
+        for table, expected in seeded_counts.items():
+            actual = int(
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
+            assert actual == expected, (
+                f"{table}: {actual} rows after upgrade, expected {expected}"
+            )
+
+        # 3. The two new 0002 tables exist.
+        assert _exists(connection, "table", "filter_rules")
+        assert _exists(connection, "table", "queue_state")
+
+        # 4. The four new runs columns and listing_exclusions.criteria_version.
+        assert {
+            "reason",
+            "reason_counts_json",
+            "stage_log_json",
+            "criteria_snapshot_json",
+        } <= set(_table_info(connection, "runs"))
+        assert "criteria_version" in _table_info(connection, "listing_exclusions")
+
+        # 5. The new named CHECK is present and the pre-existing named CHECKs
+        #    survived the batch recreation; the constraints are enforced.
+        runs_sql = _master(connection, "table", "runs")["sql"]
+        assert "ck_runs_reason" in runs_sql
+        assert "ck_runs_trigger" in runs_sql
+        assert "ck_runs_status" in runs_sql
+
+        connection.execute(
+            "INSERT INTO runs (trigger, status, reason) VALUES ('manual', 'done', 'mixed')"
+        )
+        connection.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO runs (trigger, status, reason) "
+                "VALUES ('manual', 'done', 'invalid_reason')"
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO runs (trigger, status, reason) "
+                "VALUES ('not_a_trigger', 'done', NULL)"
+            )
+
+        # 6. The 0002 listing_dupes indexes exist.
+        dupes_indexes = _index_list(connection, "listing_dupes")
+        assert dupes_indexes.get("uq_listing_dupes_pair") is not None
+        assert dupes_indexes.get("ix_listing_dupes_dup_listing_id") is not None
+    finally:
+        connection.close()
+
