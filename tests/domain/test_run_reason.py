@@ -75,6 +75,39 @@ def test_all_sources_failed_when_every_status_is_not_ok() -> None:
     assert compute_empty_reason(counts) == "all_sources_failed"
 
 
+def test_all_sources_failed_does_not_fire_when_listings_were_fetched() -> None:
+    """A merged non-`ok` status with listings fetched must not claim nothing came back.
+
+    Two enabled searches on one source: one `ok` with listings, one `blocked`. The
+    merged per-source status is `blocked`, but a listing was fetched and survives, so
+    `all_sources_failed` (and its "fetched nothing" sentence) would be a false claim.
+    """
+    counts = RunCounts(
+        adapters_resolved=1,
+        statuses=("blocked",),
+        fetched=1,
+        excluded_by_rule={},
+        survivors=1,
+        new_since_watermark=1,
+    )
+
+    reason = compute_empty_reason(counts)
+
+    assert reason != "all_sources_failed"
+    assert reason == "mixed", "a failed-and-fetched run is a co-occurrence, not a total failure"
+    assert "fetched nothing" not in reason_sentence(reason, counts)
+
+
+def test_all_sources_failed_still_fires_when_every_source_failed_and_nothing_was_fetched() -> None:
+    """The guard case: the rule must still exist when the failure really cost the run."""
+    counts = RunCounts(adapters_resolved=2, statuses=("blocked", "error"), fetched=0)
+
+    assert compute_empty_reason(counts) == "all_sources_failed"
+    assert reason_sentence("all_sources_failed", counts) == (
+        "All 2 sources failed, so the run fetched nothing."
+    )
+
+
 def test_zero_fetched_when_every_status_is_ok_and_nothing_came_back() -> None:
     counts = RunCounts(adapters_resolved=2, statuses=("ok", "ok"), fetched=0)
 

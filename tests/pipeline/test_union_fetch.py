@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Run, Search, Source
 from app.domain.criteria import search_query_from
+from app.domain.run_reason import RunCounts, reason_sentence
 from app.pipeline.run import default_query, run_pipeline
 from app.sources import registry
 from app.sources.base import (
@@ -281,6 +282,50 @@ async def test_identical_criteria_fetch_the_adapter_once(
         run = await session.get(Run, run_id)
     assert run is not None
     assert (run.source_counts_json or {})["linkedin"]["fetched"] == 1
+
+
+async def test_one_ok_one_blocked_search_does_not_claim_all_sources_failed(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Two searches on one source: one `ok` with a listing, one `blocked`.
+
+    `_merge_source_counts` reduces the per-source status to the worst (`blocked`), but
+    a listing was fetched and survives — so `all_sources_failed` would be false, and
+    its "the run fetched nothing" sentence must not be rendered.
+    """
+    await _register_source(session_factory)
+    await _seed_search(session_factory, name="Python", criteria={"keywords": "python"})
+    await _seed_search(session_factory, name="Go", criteria={"keywords": "golang"})
+
+    adapter = RecordingAdapter(
+        "linkedin",
+        plan={
+            "python": ("ok", [_raw("linkedin", 1)]),
+            "golang": ("blocked", []),
+        },
+    )
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+    assert run is not None
+    assert (run.source_counts_json or {})["linkedin"]["status"] == "blocked", "merged worst"
+    assert run.reason != "all_sources_failed", "a listing was fetched and survives"
+
+    counts_payload = run.reason_counts_json or {}
+    sources = counts_payload.get("sources") or {}
+    counts = RunCounts(
+        adapters_resolved=int(counts_payload.get("adapters_resolved", 0)),
+        statuses=tuple(str(values.get("status", "")) for values in sources.values()),
+        fetched=sum(int(values.get("fetched", 0)) for values in sources.values()),
+        excluded_by_rule=counts_payload.get("excluded_by_rule") or {},
+        survivors=int(counts_payload.get("survivors", 0)),
+        new_since_watermark=int(counts_payload.get("new_since_watermark", 0)),
+    )
+    sentence = reason_sentence(str(run.reason), counts)
+
+    assert "fetched nothing" not in sentence
+    assert "sources failed" not in sentence
 
 
 # --- capability warnings are deduped ------------------------------------------

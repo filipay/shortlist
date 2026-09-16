@@ -79,10 +79,17 @@ def compute_empty_reason(counts: RunCounts) -> str:
 
     1. `no_sources_enabled` — no adapter resolved at all. This recognises the same
        condition `NO_SOURCES_REASON` describes; no second vocabulary is minted.
-    2. `all_sources_failed` — at least one source reported a status and **every**
-       one of them reported a non-`ok` status, so there was nothing to fetch from.
-       A status list is required: with no statuses at all there is no evidence a
-       source failed, and claiming `all_sources_failed` would be a lie (P9).
+    2. `all_sources_failed` — at least one source reported a status, **every** one
+       of them reported a non-`ok` status, **and nothing was fetched**. A status list
+       is required: with no statuses at all there is no evidence a source failed, and
+       claiming `all_sources_failed` would be a lie (P9). The `fetched == 0` guard is
+       required for the union run: a source fetched once per enabled search reports
+       the worst status, so one search can come back `ok` with listings while another
+       is `blocked` — the merged status is then non-`ok`, but listings exist and
+       survive, so "all sources failed, the run fetched nothing" is factually false.
+       This is evaluated on the *merged* per-source status the caller records; the
+       guard makes the rule fire only when that failure actually cost the run its
+       listings.
     3. `zero_fetched` — every source was `ok` and the run still fetched nothing.
     4. `all_filtered` — something was fetched, at least one rule fired
        (`excluded_by_rule` is non-empty, so exclusions were actually recorded), and
@@ -101,8 +108,14 @@ def compute_empty_reason(counts: RunCounts) -> str:
 
     statuses = _statuses(counts)
 
-    # 2 — every source that reported failed.
-    if statuses and all(status != _OK_STATUS for status in statuses):
+    # 2 — every source that reported failed AND the run fetched nothing. Without the
+    # `fetched` guard a union run whose per-source status merges to non-`ok` (one
+    # search `blocked`, another `ok` with listings) would claim nothing was fetched.
+    if (
+        statuses
+        and all(status != _OK_STATUS for status in statuses)
+        and int(counts.fetched) <= 0
+    ):
         return "all_sources_failed"
 
     # 3 — all healthy, nothing returned.
