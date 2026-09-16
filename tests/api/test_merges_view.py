@@ -21,6 +21,9 @@ from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
 
 MERGED_AT = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+#: An earlier run's clock. Every merge written at `MERGED_AT` belongs to the latest
+#: run's window; a merge at this instant belongs to the prior run's window.
+EARLIER_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 FILLED_LOCATION = "Dublin, Ireland"
 
 #: A title that is unambiguous evidence of the escaping rule: `base.html` contains
@@ -75,14 +78,19 @@ async def _seed_listing(
     return outcome.listing_id
 
 
-async def _seed_run(session_factory: async_sessionmaker[AsyncSession], *, fetched: int) -> int:
-    """The latest run, so `merge_rate` has a denominator to name."""
+async def _seed_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    fetched: int,
+    started_at: datetime = MERGED_AT,
+) -> int:
+    """One run, so `merge_rate` has a window to name."""
     async with session_factory() as session:
         run = Run(
             trigger="manual",
             status="done",
-            started_at=MERGED_AT,
-            finished_at=MERGED_AT,
+            started_at=started_at,
+            finished_at=started_at,
             fetched_count=fetched,
         )
         session.add(run)
@@ -122,6 +130,27 @@ async def _seed_merged_pair(
         )
         await session.commit()
     return dupe_id, survivor_id, twin_id
+
+
+async def _apply_merge_at(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    survivor_id: int,
+    twin_id: int,
+    merged_at: datetime,
+) -> int:
+    """One audited merge on a caller-supplied clock (so a run window can own it)."""
+    async with session_factory() as session:
+        dupe_id = await apply_merge(
+            session,
+            decision=MergeDecision(
+                survivor_id=survivor_id, absorbed_id=twin_id, score=95.0, method="fuzzy_tuple"
+            ),
+            now=merged_at,
+            run_id=None,
+        )
+        await session.commit()
+    return dupe_id
 
 
 # --- the page -----------------------------------------------------------------
@@ -167,6 +196,59 @@ async def test_merges_page_lists_the_rate_its_window_and_the_rows_behind_it(
 
     assert {listing.id for listing in listings} == {survivor_id, twin_id}
     assert dupe is not None and dupe.reverted_at is None
+
+
+async def test_merge_rate_windows_both_operands_to_the_latest_run(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """CR-01: the rate must not divide an all-time merge count by one run's fetched.
+
+    Two runs, one merge in each window, the latest run fetched 3. The page names the
+    latest run as its window, so it must report that window's rate (1 merged / 3
+    fetched = 33%) — never the all-time merge count (2) over that denominator (67%,
+    a number that would exceed 100% as more runs merge).
+    """
+    await _register_sources(session_factory, "linkedin", "indeed")
+    early_survivor = await _seed_listing(
+        session_factory,
+        source="linkedin",
+        norm=_norm("linkedin", title="Early Role", location_raw=None, index=1),
+    )
+    early_twin = await _seed_listing(
+        session_factory,
+        source="indeed",
+        norm=_norm("indeed", title="Early Role (m/f/d)", location_raw=FILLED_LOCATION, index=1),
+    )
+    latest_survivor = await _seed_listing(
+        session_factory,
+        source="linkedin",
+        norm=_norm("linkedin", title="Latest Role", location_raw=None, index=2),
+    )
+    latest_twin = await _seed_listing(
+        session_factory,
+        source="indeed",
+        norm=_norm("indeed", title="Latest Role (m/f/d)", location_raw=FILLED_LOCATION, index=2),
+    )
+
+    await _apply_merge_at(
+        session_factory, survivor_id=early_survivor, twin_id=early_twin, merged_at=EARLIER_AT
+    )
+    await _apply_merge_at(
+        session_factory, survivor_id=latest_survivor, twin_id=latest_twin, merged_at=MERGED_AT
+    )
+
+    await _seed_run(session_factory, fetched=10, started_at=EARLIER_AT)
+    await _seed_run(session_factory, fetched=3, started_at=MERGED_AT)
+
+    response = await client.get("/merges")
+
+    assert response.status_code == 200
+    text = response.text
+    assert "33%" in text, "1 merge in the latest window over 3 fetched must render 33%"
+    assert "1 merged / 3 fetched" in text
+    assert "2 merged" not in text, "the all-time numerator must not be used"
+    # The window narrows the RATE, not the audit list: both merges are still shown.
+    assert text.count("merge-row") >= 2
 
 
 async def test_merges_page_escapes_listing_text(

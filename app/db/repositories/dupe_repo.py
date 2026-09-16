@@ -447,27 +447,19 @@ async def list_merges(
 
 
 async def merge_rate(session: AsyncSession) -> MergeRate:
-    """The merge rate over the latest run, with the reverted count beside it.
+    """The merge rate **within the latest run's window**, reverted count beside it.
+
+    Both operands describe the SAME window — the latest run — because the page
+    labels the number as that run's rate (QUEUE-09: "the merge rate … with the
+    window named"). An all-time numerator over a single run's `fetched_count`
+    produced impossible readings (167%) the moment a second run existed.
 
     Counts **un-reverted** merges only, so reverting a merge visibly moves the
     number; the reverted count is carried separately so the difference is legible
-    rather than hidden (T-02-25).
+    rather than hidden (T-02-25). `count_merges_for_run` deliberately counts every
+    row the run wrote (reverted ones included, because it also feeds
+    `deduped_count`), so the reverted rows in the same window are subtracted here.
     """
-    merged = int(
-        await session.scalar(
-            select(func.count()).select_from(ListingDupe).where(ListingDupe.reverted_at.is_(None))
-        )
-        or 0
-    )
-    reverted = int(
-        await session.scalar(
-            select(func.count())
-            .select_from(ListingDupe)
-            .where(ListingDupe.reverted_at.is_not(None))
-        )
-        or 0
-    )
-
     latest = (
         (
             await session.execute(
@@ -478,13 +470,31 @@ async def merge_rate(session: AsyncSession) -> MergeRate:
         .first()
     )
 
-    fetched: int | None = None
-    run_id: int | None = None
-    if latest is not None:
-        run_id = int(latest.id)
-        if latest.fetched_count is not None:
-            fetched = int(latest.fetched_count)
+    if latest is None:
+        # No window to state: the page renders "no run yet" and a null rate.
+        return MergeRate(merged=0, reverted=0, fetched=None, run_id=None)
 
+    run_id = int(latest.id)
+    fetched = int(latest.fetched_count) if latest.fetched_count is not None else None
+
+    if latest.started_at is None:
+        # A run that never started wrote nothing, so its window is empty.
+        return MergeRate(merged=0, reverted=0, fetched=fetched, run_id=run_id)
+
+    written = await count_merges_for_run(session, run_id=run_id)
+    reverted = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ListingDupe)
+            .where(
+                ListingDupe.merged_at.is_not(None),
+                ListingDupe.merged_at >= latest.started_at,
+                ListingDupe.reverted_at.is_not(None),
+            )
+        )
+        or 0
+    )
+    merged = max(0, written - reverted)
     return MergeRate(merged=merged, reverted=reverted, fetched=fetched, run_id=run_id)
 
 
