@@ -29,7 +29,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
 - [x] **QUEUE-06**: User can full-text search the queue
 - [x] **QUEUE-07**: Queue shows which listings are new since last visit and which look stale
-- [ ] **QUEUE-08**: User can save or hide a listing, and those actions are recorded as append-only events
+- [x] **QUEUE-08**: User can save or hide a listing, and those actions are recorded as append-only events
 - [x] **QUEUE-09**: User can see the merge rate and the rows behind it, so dedup behaviour is auditable
 
 ### Criteria (CRIT)
@@ -190,7 +190,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-05 | Phase 1 | Complete |
 | QUEUE-06 | Phase 2 | Complete |
 | QUEUE-07 | Phase 2 | Complete |
-| QUEUE-08 | Phase 2 | Pending |
+| QUEUE-08 | Phase 2 | Complete |
 | QUEUE-09 | Phase 2 | Complete |
 | CRIT-01 | Phase 2 | Complete |
 | CRIT-02 | Phase 2 | Complete |

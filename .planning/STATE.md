@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-09-16T11:51:32.945Z"
+stopped_at: Completed 02-09-PLAN.md
+last_updated: "2026-09-16T12:14:01.101Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: 9a6dbd41a5e69df7f24228f83317fe57d7f5c630
+state_head: b24478202f9f55214407a066ef1ee831203b7a6d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 9 of 10
+Plan: 10 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P06 | 15 min | 2 tasks | 5 files |
 | Phase 02 P07 | 22 min | 3 tasks | 13 files |
 | Phase 02 P08 | 32 min | 3 tasks | 10 files |
+| Phase 02 P09 | 20 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,11 @@ Recent decisions affecting current work:
 - [Phase 2]: Forms are parsed from the urlencoded request body with urllib.parse.parse_qsl rather than adding python-multipart; htmx posts urlencoded by default, so the dependency stays out.
 - [Phase 2]: The pre-run capability report reuses compile_query_for_source (one compiler, two callers) and is wrapped so a registry failure degrades to no warnings, never a 500.
 - [Phase 2]: run_pipeline(trigger, search_id, ...) scopes the snapshot, fetch query and filter rules to one search with the same callable, budget and failure path; search_id=None still unions every enabled search.
+- [Phase 2]: 02-09: saved/hidden are PROJECTED from listing_events, never stored in a column — the latest of save/unsave and of hide/unhide respectively, ordered by (occurred_at, id) because two clicks in one second share a timestamp; shortlisted survives a save and is cleared by a later unsave; view sets only last_viewed_at.
+- [Phase 2]: 02-09: the saved/hidden SQL predicates live in event_repo beside the fold and are built from the SAME SAVE_EVENTS/HIDE_EVENTS grouping — plan 02-07's 'latest event of any type' placeholder was wrong, because a view after a save would have made the Saved filter drop the listing.
+- [Phase 2]: 02-09: state_for_listings is ONE query for a whole page (a per-row query is forbidden) and every requested id gets an entry, NO_STATE when it has no events, so 'no events' can never look like 'unreadable'.
+- [Phase 2]: 02-09: the events POST validates the vocabulary against EVENT_TYPES (mirroring the CHECK) and the listing's existence BEFORE writing — 422/404 append nothing — and occurred_at is server-side so an event's time cannot be forged.
+- [Phase 2]: 02-09: reuses app.api.searches.read_form for urlencoded bodies because request.form() requires python-multipart, which this project deliberately does not depend on.
 
 ### Pending Todos
 
@@ -172,6 +178,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T11:51:32.878Z
-Stopped at: Completed 02-08-PLAN.md
+Last session: 2026-09-16T12:14:00.423Z
+Stopped at: Completed 02-09-PLAN.md
 Resume file: None
