@@ -11,7 +11,7 @@
     {
       "number": "2",
       "name": "Clean, Filtered, Queryable Queue",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "3",
@@ -49,5 +49,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 2 of 8 · 0% · executing"
   },
-  "updated_at": "2026-09-16T09:09:54.104Z"
+  "updated_at": "2026-09-16T09:19:09.693Z"
 }

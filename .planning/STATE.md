@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-09-16T09:09:59.888Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-09-16T09:19:11.153Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: d9bf886a93045dce8d364055dfb91d3c1e67b54e
+state_head: a7df39dda65193fd0affc07d41fe18a9c34caa2a
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -66,6 +66,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P06 | 22 min | 3 tasks | 20 files |
 | Phase 01 P07 | 22 min | 3 tasks | 35 files |
 | Phase 02 P01 | 8 min | 3 tasks | 8 files |
+| Phase 02 P02 | 4 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ Recent decisions affecting current work:
 - [Phase 01]: ensure_registered_sources() seeds the sources allow-list from the adapter registry on app startup and before a probe run: nothing in production ever inserted a sources row, so enabled_source_names() was empty and a fresh deployment silently ingested nothing
 - [Phase 2]: Migration 0002 is additive and pairs with its guard churn: five Phase-1 schema guards (four named plus test_skeleton_boot.py) updated deliberately alongside it, not treated as regressions
 - [Phase 2]: dedup_fuzzy_threshold is a Settings value (default 88) with a tuning task, never a frozen constant (D-31); the named ck_runs_reason CHECK survived a batch table recreation that preserved ck_runs_trigger/ck_runs_status
+- [Phase 2]: rapidfuzz==3.14.6 is Phase 2 only new runtime dependency: the SUS legitimacy verdict was cleared by a blocking human checkpoint before install, and the exact pin is declared in both pyproject.toml and requirements.txt
+- [Phase 2]: rapidfuzz is installed in BOTH .venv-host (the plan must-have) and .venv (the only venv the suite runs in), because .venv-host has a broken pydantic_core compiled dependency
 
 ### Pending Todos
 
@@ -139,6 +142,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T09:09:59.826Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-09-16T09:19:11.095Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
