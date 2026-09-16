@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-09-16T10:44:33.589Z"
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-09-16T11:10:50.407Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: d6a43292caa9ad81020917d4e3f44b07473fbd3b
+state_head: 6500823e77fe537939a24be51fbbb1cdc305a60b
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 7 of 10
+Plan: 8 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P04 | 15 min | 2 tasks | 7 files |
 | Phase 02 P05 | 22 min | 3 tasks | 10 files |
 | Phase 02 P06 | 15 min | 2 tasks | 5 files |
+| Phase 02 P07 | 22 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,11 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-06: revert_merge is UPDATE-only on listing_dupes, restores snapshot fields through the survivor's ORM row so the listings_au FTS trigger fires, counts a non-column snapshot key in RevertResult.skipped instead of raising, and never touches listing_sources (the A5 divergence).
 - [Phase 2]: 02-06: the rate and the reverted count live inside the id=merges-table root so one htmx swap moves both — a revert can never leave a stale rate beside a fresh table.
 - [Phase 2]: 02-06: no listing_events row is written on merge or revert (that log records user actions), and UNRENDERED_SNAPSHOT_FIELDS keeps source_extras_json/quality_signals_json off the audit page while revert still restores them.
+- [Phase 2]: 02-07: every FTS token is double-quoted with internal quotes doubled (FTS5 parses MATCH as an expression, so quoting is the only correct escape); a blank query returns None so the caller skips the listing_fts join entirely and never issues MATCH ''.
+- [Phase 2]: 02-07: every queue order ends in a unique tie-break (score, id DESC for FTS; first_seen_at DESC, id DESC otherwise) because bm25 alone is not deterministic; limit comes from Settings.queue_page_size and never from the request.
+- [Phase 2]: 02-07: the queue watermark is a DB row with exactly two writers (opening the queue, after the read; and Mark all as seen) and never moves backwards; GET /queue/list deliberately does not advance it.
+- [Phase 2]: 02-07: new and stale are independent flags (a listing can be both); stale is last_seen_at <= now - Settings.stale_after_days OR is_active false.
+- [Phase 2]: 02-07: the exclusion predicate is a correlated NOT EXISTS against the LATEST run only, so an older run's exclusion stops applying; chips group the count over the run; and #queue-list swaps use hx-swap=innerHTML because the wrapper lives in queue.html.
 
 ### Pending Todos
 
@@ -160,6 +166,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T10:44:33.524Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-09-16T11:10:50.338Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None

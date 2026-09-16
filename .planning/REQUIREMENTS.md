@@ -27,7 +27,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
 - [x] **QUEUE-04**: User can revert an incorrect merge
 - [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
-- [ ] **QUEUE-06**: User can full-text search the queue
+- [x] **QUEUE-06**: User can full-text search the queue
 - [x] **QUEUE-07**: Queue shows which listings are new since last visit and which look stale
 - [ ] **QUEUE-08**: User can save or hide a listing, and those actions are recorded as append-only events
 - [x] **QUEUE-09**: User can see the merge rate and the rows behind it, so dedup behaviour is auditable
@@ -42,7 +42,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **FILT-01**: Deterministic rules reject listings before any LLM call is made
 - [x] **FILT-02**: Every rejection records which rule fired and why
-- [ ] **FILT-03**: User can see why a specific listing was excluded
+- [x] **FILT-03**: User can see why a specific listing was excluded
 - [x] **FILT-04**: User can tune filter rules from the UI without a code change
 
 ### Ranking (RANK)
@@ -188,7 +188,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-03 | Phase 2 | Complete |
 | QUEUE-04 | Phase 2 | Complete |
 | QUEUE-05 | Phase 1 | Complete |
-| QUEUE-06 | Phase 2 | Pending |
+| QUEUE-06 | Phase 2 | Complete |
 | QUEUE-07 | Phase 2 | Complete |
 | QUEUE-08 | Phase 2 | Pending |
 | QUEUE-09 | Phase 2 | Complete |
@@ -197,7 +197,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRIT-03 | Phase 2 | Pending |
 | FILT-01 | Phase 2 | Complete |
 | FILT-02 | Phase 2 | Complete |
-| FILT-03 | Phase 2 | Pending |
+| FILT-03 | Phase 2 | Complete |
 | FILT-04 | Phase 2 | Complete |
 | RANK-01 | Phase 5 | Pending |
 | RANK-02 | Phase 5 | Pending |
