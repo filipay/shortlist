@@ -1,19 +1,22 @@
 ---
 phase: 02-clean-filtered-queryable-queue
-verified: 2026-09-16T17:05:21Z
-status: human_needed
+verified: 2026-09-16T18:04:08Z
+status: passed
 score: 54/54 must-haves verified
 re_verification: true
 re_verification_details:
+  delta_reverification: true
+  re_verification_scope: "delta only (bcb86c2 → 1bb7332); unchanged truths were not re-derived"
   previous_status: human_needed
   previous_score: 54/54 must-haves verified
-  previous_verified: 2026-09-16T13:22:11Z
-  previous_commit: 52e86f3
-  current_commit: bcb86c2
+  previous_verified: 2026-09-16T17:05:21Z
+  previous_commit: bcb86c2
+  current_commit: 1bb7332
   gaps_closed: []
   gaps_remaining: []
   regressions: []
   verdicts_changed: 0
+  uat: "02-UAT.md — 5/5 items satisfied (2026-09-16)"
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/ROADMAP.md
@@ -43,6 +46,7 @@ covered_files:
   - .planning/phases/02-clean-filtered-queryable-queue/02-UAT.md
   - .planning/phases/02-clean-filtered-queryable-queue/02-UI-REVIEW.md
   - .planning/phases/02-clean-filtered-queryable-queue/02-VALIDATION.md
+  - .planning/seeds/SEED-001-queue-filter-by-remote-and-location.md
   - alembic/env.py
   - alembic/versions/0002_queue_filter_and_run_reason.py
   - app/api/events.py
@@ -78,6 +82,7 @@ covered_files:
   - app/web/templates/html/queue_list.html
   - app/web/templates/html/runs.html
   - assets/tailwind/input.css
+  - compose.yml
   - pyproject.toml
   - requirements.txt
   - static/vendor/app.css
@@ -117,7 +122,7 @@ covered_files:
   - tests/test_config.py
   - tests/test_dependency_pins.py
   - tests/test_stylesheet_coverage.py
-covered_digest: "v1:sha256:b969601f1541ba743670016fb03d41cec5489ffc7529416af6ab19a46dbd1ff7"
+covered_digest: "v1:sha256:30161c0510333fc00a8ed7e26652816ac0251288c8b7ae85e9da50d59414f11d"
 behavior_unverified: 0
 overrides_applied: 0
 gaps: []
@@ -128,49 +133,44 @@ advisory:
     evidence_status: "README-of-record (02-SECURITY.md W-01); no failing test"
   - finding: "listing_exclusions.detail_json (the matched term/field/count behind a rejection) and the firing QueueRule.rule_id have no UI consumer; the queue chip renders only rule.kind + a per-rule count."
     category: architectural
-    reason: "FILT-02 ('records which rule fired and why') is satisfied — the detail is persisted and tested (tests/db/test_exclusions.py) — but FILT-03/SC2's on-screen 'why' is a product-sufficiency call. `exclusion_repo.ExclusionsRecord`/`exclusions_for_run` remain uncalled. Surfaced as human_verification #5, not a gap."
+    reason: "FILT-02 ('records which rule fired and why') is satisfied — the detail is persisted and tested (tests/db/test_exclusions.py) — but FILT-03/SC2's on-screen 'why' is a product-sufficiency call. `exclusion_repo.ExclusionRecord`/`exclusions_for_run` remain uncalled. Resolved at UAT item 5: the user judged the chip sufficient for now, and the related attribute-filter ask is captured as SEED-001."
     evidence_status: "codebase observation (grep: detail_json referenced only in models/exclusion_repo); not backed by a failing test"
-human_verification:
-  - test: "Tune the dedup threshold θ against the first real corpus"
-    status: pending
-    expected: "Run a real pipeline run against live LinkedIn/Indeed data, inspect the listing_dupes pairs and the merge rate on /merges, and record the chosen Settings.dedup_fuzzy_threshold (currently 88) and its justification in docs/."
-    why_human: "No real corpus exists pre-run; θ is deliberately shipped as a setting with a tuning procedure (02-VALIDATION.md Manual-Only; ROADMAP Phase-2 Notes; D-31). Code and tests prove θ is a settings read with no literal (app/config.py:81; tests/test_config.py), not that 88 is the right value."
-  - test: "Merge-rate band sanity check after a real run"
-    status: pending
-    expected: "After a real run, compare the observed /merges rate against the 10–15% band from research and record why the chosen θ is or is not adjusted."
-    why_human: "The band comes from a different market/query shape; QUEUE-09's windowed rate is machine-verified (tests/api/test_merges_view.py:201 — 33% not 67%), but whether the observed rate is sane needs real data."
-  - test: "Compose smoke of the running stack"
-    status: satisfied
-    expected: "`docker compose up -d --wait` healthy; `/health` db ok; a run completes; listings survive `docker compose restart`; `/`, `/merges`, `/runs`, `/searches` all 200."
-    why_human: "Operator-reported PASS on the Phase-2 image (recorded as closed in .planning/WINDOWS.md item #1, resolved 2026-09-16T14:45:41Z). Docker is absent from the verifier sandbox, so this re-verification cannot independently reproduce it. Residual (not a blocker): the three later UI/test commits (566e385, 3508f05, bcb86c2) changed templates/CSS/tests but not the migration or pipeline, so the smoked contract still holds; a re-smoke on the final image is optional."
-  - test: "Confirm the pinned rapidfuzz dependency was human-approved"
-    status: pending
-    expected: "The approval (version 3.14.6, source repo rapidfuzz/RapidFuzz, pre-compiled wheel, no arbitrary build step) is recorded in 02-02-SUMMARY.md 'Authentication Gates'."
-    why_human: "An out-of-band sign-off cannot be machine-verified; recorded as discharged in-phase on 2026-09-16 (02-02-SUMMARY.md:149), re-listed for the end-of-phase human checkpoint."
-  - test: "Judge whether the excluded-listing chip satisfies 'which rule fired and why'"
-    status: pending
-    expected: "Under `Show excluded`, each rejected listing shows a chip `rule.kind (count)` (e.g. `exclude_keyword (2)`). Confirm this is sufficient, or require the firing rule id and the matched `detail_json` term (e.g. `crypto`) to be surfaced. Note the count is deliberately run-wide — two listings rejected once each by the same rule both read `(2)`, pinned by tests/api/test_queue_excluded.py::test_the_chip_count_is_grouped_over_the_run_not_per_row."
-    why_human: "The rule id and the persisted detail_json have no UI consumer (see Advisory). This is a product-sufficiency judgment against SC2/FILT-03, not a machine-definable pass/fail."
 ---
 
 # Phase 2: Clean, Filtered, Queryable Queue — Verification Report
 
 **Phase Goal:** A deduplicated, deterministically filtered, searchable queue the user trusts — with every rejection explained and every run observable.
-**Verified:** 2026-09-16T17:05:21Z
-**Status:** human_needed
-**Re-verification:** Yes — the prior report (2026-09-16T13:22:11Z, at `52e86f3`) predated nine commits. Re-derived from the current tree at `bcb86c2`.
-**Score:** 54/54 must-have truths verified (0 present-but-behavior-unverified). **No truth's pass/fail verdict changed**; see "What changed since the prior report".
+**Verified:** 2026-09-16T18:04:08Z
+**Status:** passed
+**Re-verification:** Yes — targeted **delta** re-verification. Baseline: the previous report at `bcb86c2` (54/54, `human_needed`). This pass covers only `bcb86c2 → 1bb7332`; unchanged truths were not re-derived.
+**Score:** 54/54 must-have truths verified (0 present-but-behavior-unverified). **No truth's pass/fail verdict changed** in this delta; see "Delta since the baseline report".
 
 ## Method
 
 Independent, goal-backward verification against the codebase — not against the ten SUMMARYs:
 
-- Full suite re-run: `.venv/bin/python -m pytest -q` → **601 passed, 2 deselected in 71.29s** (prior report: 591; +10 tests from this cycle).
-- Four grouped phase lanes re-run and cited per truth (37 + 62 + 50 + 133 passed).
-- The nine commits since the prior verification inspected individually: `7bfa417`, `3242b2d`, `566e385`, `3508f05`, `b75c79f`, `bcb86c2` (and the three docs commits).
-- The migration defect **reproduced in the failure direction**: transiently forcing the migration pragma to `foreign_keys=ON` (the pre-fix behaviour) makes the new regression test fail with `sqlite3.IntegrityError: FOREIGN KEY constraint failed / [SQL: DROP TABLE runs]`. The one-word experiment was reverted in the same shell invocation; `git diff -- alembic/env.py` is clean.
+- Full suite re-run at `1bb7332`: `.venv/bin/python -m pytest -q` → **605 passed, 2 deselected in 113.57s** (baseline: 601; +4 tests from `a51a133`).
+- Targeted delta lane re-run: `tests/domain/test_dedup.py tests/db/test_dupes.py tests/pipeline/test_dedup_merge.py tests/pipeline/test_dedup_revert.py tests/api/test_merges_view.py` → **41 passed in 8.98s** (baseline lane A: 37; +4).
+- The baseline's other grouped lanes (62 + 50 + 133) were **not** re-run — this is a scoped delta, and no file they cover changed in `bcb86c2 → 1bb7332`.
+- Both delta commits inspected line-by-line (`a51a133` on `app/domain/dedup.py`; `30a19f0` on `dupe_repo.py`/`merges.html`/`test_merges_view.py`) and `dfb7414` on `compose.yml`.
+- The location-gate-before-score ordering verified by reading the code, not assumed (see below).
 - `ruff check app tests` → **All checks passed!**
-- `data/` was **not opened** (live production DB). The operator-reported live-DB facts are cited as operator-confirmed, not independently re-read.
+- `data/` was **not opened** (live production DB). The prior report's method (migration failure reproduced fail-first) stands and is not re-run.
+
+## Delta since the baseline report (`bcb86c2 → 1bb7332`)
+
+| Commit | Change | Must-have impact |
+| ------ | ------ | ---------------- |
+| `dfb7414` | `compose.yml` forwards `DEDUP_FUZZY_THRESHOLD`/`DEDUP_POSTED_WINDOW_DAYS`/`STALE_AFTER_DAYS`/`QUEUE_PAGE_SIZE` with in-code defaults as fallbacks | **No must-have.** Fixes a deployment defect (below). Recorded as resolved. |
+| `a51a133` | `app/domain/dedup.py::score_pair` no longer penalises a one-sided unknown `location_norm`; `_pair_text` gained keyword-only `include_location: bool = True`; +3 unit tests and a 3-way-duplicate pipeline test | **QUEUE-03** (via 02-04 truths 1 and 6). Re-scored below; **stays VERIFIED**. |
+| `30a19f0` | `MergeRate.window` → `"this run only (#N)"` (was `"latest run (#N)"`); a scope paragraph on `/merges` reusing `.merges-note`; the copy assertion deliberately relabelled + a scope-paragraph assertion added | **QUEUE-09** (via 02-06 truth 2). Re-scored below; **stays VERIFIED**. |
+| `9470d64`, `b14e1d0`, `748f2bd`, `1bb7332`, `8a92a20` | UAT record, G3 evidence, WINDOWS, gitignore | No |
+
+### Deployment defect resolved (`dfb7414`)
+
+**Defect:** a host-side `.env` could never reach the container. Compose reads `.env` only for `${...}` substitution, and the image contains no `.env` (the Dockerfile does not COPY it; only `./data` is mounted), so pydantic-settings' `env_file=".env"` found nothing inside the container — the in-code defaults silently won. Worse, `docker compose up -d` reported `Container ... Running 0.0s` (no recreate), so nothing applied at all. Two layers of silent no-op; this is why the UAT's attempted θ=90 override never took effect.
+
+**Resolution:** the four Phase-2 knobs are now forwarded explicitly in `compose.yml:21-28` with the in-code defaults as `${VAR:-default}` fallbacks, fixing the whole class rather than one field. `tests/test_deploy_manifest.py` stays green. A host `.env` now takes effect (still requiring a container recreate). This is a deployment-config fix; **no must-have truth depends on it**, and it does not change any verdict.
 
 ## What changed since the prior report
 
@@ -187,8 +187,8 @@ Independent, goal-backward verification against the codebase — not against the
 
 | # | Success Criterion | Status | Evidence |
 | - | ----------------- | ------ | -------- |
-| 1 | Deduplicated queue; same job on two sources appears once, with merge rate and rows visible, incorrect merge revertible | ✓ VERIFIED | `app/pipeline/dedup_stage.py`, `app/domain/dedup.py`, `dupe_repo.apply_merge/revert_merge/merge_rate/list_merges`, `merges.html`; `tests/pipeline/test_dedup_merge.py`, `tests/api/test_merges_view.py`, `tests/pipeline/test_dedup_revert.py`, `tests/api/test_queue_search.py::test_queue_hides_absorbed_twin_until_revert` — all pass (lane A, 37) |
-| 2 | For any excluded listing, which rule fired and why is visible | ✓ VERIFIED (advisory + human call) | Out of default view, dimmed under `Show excluded`, one chip per firing rule (kind + count): `queue_repo._enrich` (`app/db/repositories/queue_repo.py:431-440`), `_listing_row.html:42-44`, `tests/api/test_queue_excluded.py` (5). "Why" is recorded in `listing_exclusions.detail_json` (FILT-02, tested) but the matched term/rule id is not rendered — Advisory + Human #5 |
+| 1 | Deduplicated queue; same job on two sources appears once, with merge rate and rows visible, incorrect merge revertible | ✓ VERIFIED | `app/pipeline/dedup_stage.py`, `app/domain/dedup.py` (incl. the `a51a133` one-sided-unknown-location fix), `dupe_repo.apply_merge/revert_merge/merge_rate/list_merges`, `merges.html`; `tests/pipeline/test_dedup_merge.py` (incl. the 3-way duplicate reproduction), `tests/api/test_merges_view.py`, `tests/pipeline/test_dedup_revert.py`, `tests/api/test_queue_search.py::test_queue_hides_absorbed_twin_until_revert` — all pass (delta lane A, 41) |
+| 2 | For any excluded listing, which rule fired and why is visible | ✓ VERIFIED | Out of default view, dimmed under `Show excluded`, one chip per firing rule (kind + count): `queue_repo._enrich` (`app/db/repositories/queue_repo.py:431-440`), `_listing_row.html:42-44`, `tests/api/test_queue_excluded.py` (5). "Why" is recorded in `listing_exclusions.detail_json` (FILT-02, tested); the chip's rule kind + run-scoped count was judged sufficient at UAT item 5, and the related attribute-filter ask is captured as SEED-001 |
 | 3 | Create/edit/enable/disable/delete named criteria + tune rules from the UI without a code change; runs reproducible against a criteria version | ✓ VERIFIED | `app/api/searches.py`, `app/db/repositories/search_repo.py`, `criteria.html` (per-kind forms; 9 term textareas, no `params_json` control), `runs.criteria_snapshot_json` written before the fetch (`app/pipeline/run.py:619`); `tests/api/test_searches_crud.py`, `tests/db/test_search_repo_writes.py`, `tests/pipeline/test_criteria_snapshot.py`, `tests/api/test_criteria_capabilities.py`, `tests/pipeline/test_single_search_run.py`, and the new `tests/pipeline/test_criteria_form_to_run.py` — all pass (lane C, 50) |
 | 4 | Full-text searchable queue; save/hide as append-only events; new-since-last-visit and stale distinguishable | ✓ VERIFIED | `app/domain/search_query.py`, `queue_repo` (bound `MATCH` only), `event_repo` (append-only + projection), `state_repo` (watermark); `tests/domain/test_search_query.py`, `tests/api/test_queue_search.py` (incl. search×hidden), `tests/api/test_queue_signals.py`, `tests/db/test_listing_events.py`, `tests/api/test_listing_events.py` — all pass (lane D) |
 | 5 | Run history: each run records what it did, what it found, and — when the queue is empty — why | ✓ VERIFIED | `app/db/repositories/run_repo.py`, `app/domain/run_reason.py` (six-value precedence + counts), `runs.html`, queue last-run strip via `render_run_fragment`; `tests/api/test_run_history.py`, `tests/api/test_run_reason.py`, `tests/domain/test_run_reason.py` — all pass (lane D) |
@@ -211,7 +211,7 @@ The migration defect is **genuinely fixed in the code path**, not only covered b
 
 ## Observable Truths (plan must_haves, 54 total)
 
-Evidence key: **lane A** = 37 passed; **lane B** = 62 passed; **lane C** = 50 passed; **lane D** = 133 passed. Full suite = 601 passed.
+Evidence key: **delta lane A** = 41 passed (baseline 37; the only lane re-run for this delta); **lane B** = 62, **lane C** = 50, **lane D** = 133 (baseline, not re-run — no file they cover changed). Full suite at HEAD = 605 passed. Truths carrying a "lane A" citation are the dedup/merge/merges truths touched by this delta; all other citations are the baseline evidence, which stands.
 
 ### 02-01 — Schema spine (4/4)
 
@@ -245,12 +245,20 @@ Evidence key: **lane A** = 37 passed; **lane B** = 62 passed; **lane C** = 50 pa
 
 | # | Truth | Status | Evidence |
 | - | ----- | ------ | -------- |
-| 1 | Two sources → one visible listing + one absorbed twin + exactly one `listing_dupes` row (method, score, merge time) | ✓ VERIFIED | `tests/pipeline/test_dedup_merge.py::test_two_sources_one_job_merges_once_with_an_audit_row` (lane A) |
+| 1 | Two sources → one visible listing + one absorbed twin + exactly one `listing_dupes` row (method, score, merge time) | ✓ VERIFIED | `tests/pipeline/test_dedup_merge.py::test_two_sources_one_job_merges_once_with_an_audit_row` **and** the new 3-way reproduction `::test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen` (3 listings survive, 2 dupe rows, the NULL-location twin absorbed) (delta lane A) |
 | 2 | A non-null survivor field is never overwritten; empty string counts as blank | ✓ VERIFIED | `tests/db/test_dupes.py::test_merge_fills_blanks_and_never_overwrites_a_non_null`, `::test_an_empty_string_counts_as_blank_but_a_real_value_does_not` |
-| 3 | `snapshot_json` holds the survivor's pre-merge values for exactly the fields written | ✓ VERIFIED | `tests/db/test_dupes.py::test_snapshot_records_exactly_the_written_fields_and_their_prior_values` |
+| 3 | `snapshot_json` holds the survivor's pre-merge values for exactly the fields written | ✓ VERIFIED | `tests/db/test_dupes.py::test_snapshot_records_exactly_the_written_fields_and_their_prior_values`; `dupe_repo.apply_merge` sets `snapshot_json` from exactly the fields it writes (`dupe_repo.py:202-217`) |
 | 4 | A pair with a reverted `listing_dupes` row in either orientation is skipped before scoring | ✓ VERIFIED | `tests/db/test_dupes.py::test_reverted_pairs_is_empty_then_returns_both_orientations`; `dedup_stage.py:112-124` |
-| 5 | A grade-carrying title never merges with the same title without the grade | ✓ VERIFIED | `tests/domain/test_dedup.py::test_senior_versus_ungraded_never_merges`, `::test_two_different_grades_never_merge` |
-| 6 | `runs.deduped_count` equals merges written, not created count | ✓ VERIFIED | `tests/pipeline/test_dedup_merge.py` merge + zero cases |
+| 5 | A grade-carrying title never merges with the same title without the grade | ✓ VERIFIED | `tests/domain/test_dedup.py::test_senior_versus_ungraded_never_merges`, `::test_two_different_grades_never_merge`; the grade gate is the **first** check in `score_pair` (`dedup.py:148-149`), so the location change cannot reach it |
+| 6 | `runs.deduped_count` equals merges written, not created count | ✓ VERIFIED | `tests/pipeline/test_dedup_merge.py` merge + zero cases, and the new 3-way test asserts `deduped_count == 2` |
+
+**QUEUE-03 / `a51a133` re-score — the fix does not weaken any dedup prohibition.** The change is confined to the *score* construction: `_pair_text` gained a keyword-only `include_location: bool = True` (`dedup.py:108-119`), and `score_pair` passes `include_location = a.location_norm is not None and b.location_norm is not None` (`dedup.py:172-176`). Consequences, each checked against current code:
+
+- **Known-incompatible locations still refuse, and the gate runs BEFORE the score.** The location gate is `dedup.py:158-163` (refuse when both locations are known and unequal); the score is computed afterwards at `dedup.py:172-176`. Reading the ordering directly (not assuming it): grade gate `:148` → company gate `:151-156` → location gate `:158-163` → score `:172-179`. So omitting the location *from the score* cannot merge a pair whose *known* locations are incompatible — that pair never reaches the score. Pinned by `tests/domain/test_dedup.py::test_the_location_gate_still_refuses_two_known_incompatible_locations` (a permissive θ=50 isolates the gate; both orientations return `None`).
+- **Both-present scores are byte-identical.** When both locations are known, `include_location=True`, so the tuple is the full `(company, title, location)` — no existing score or boundary assertion changes. Guarded by `tests/domain/test_dedup.py::test_two_known_compatible_locations_still_score_with_location_included`, which first asserts the two computations genuinely differ (so the guard is not vacuous).
+- **One-sided-unknown no longer penalised.** `tests/domain/test_dedup.py::test_a_one_sided_unknown_location_is_not_penalised_in_the_score` asserts the old computation was `< THETA` and the new is `100.0`, symmetrically.
+- **Prohibitions unchanged:** a merge still never deletes the absorbed listing (the 3-way test asserts `len(listings) == 3`; `dupe_repo.py:185` — "the twin is never deleted and never deactivated"; a grep of `dedup_stage.py`/`dupe_repo.py` finds no `DELETE`), never overwrites a non-null survivor field (row 2), and always writes the snapshot for the fields it wrote (row 3).
+- **Scope note:** `dedup_stage.py:151` still uses the full-tuple `_pair_text` default for its `token_set_ratio` **diagnostic**, which remains non-deciding (the gate is `token_sort_ratio`).
 
 ### 02-05 — Hard filtering, snapshot, run reason (6/6)
 
@@ -267,8 +275,8 @@ Evidence key: **lane A** = 37 passed; **lane B** = 62 passed; **lane C** = 50 pa
 
 | # | Truth | Status | Evidence |
 | - | ----- | ------ | -------- |
-| 1 | Merges view lists every `listing_dupes` row with both sides, method, score, time, snapshot | ✓ VERIFIED | `dupe_repo.list_merges`; `merges.html`; `tests/api/test_merges_view.py::test_merges_page_lists_the_rate_its_window_and_the_rows_behind_it` (lane A) |
-| 2 | Merge rate visible as merges over fetched for a stated window; rows reachable on the same page | ✓ VERIFIED | windowed `dupe_repo.merge_rate`; `tests/api/test_merges_view.py::test_merge_rate_windows_both_operands_to_the_latest_run` (33% not 67%) |
+| 1 | Merges view lists every `listing_dupes` row with both sides, method, score, time, snapshot | ✓ VERIFIED | `dupe_repo.list_merges`; `merges.html`; `tests/api/test_merges_view.py::test_merges_page_lists_the_rate_its_window_and_the_rows_behind_it` (delta lane A) |
+| 2 | Merge rate visible as merges over fetched for a stated window; rows reachable on the same page | ✓ VERIFIED | **Windowing NOT reverted** — `dupe_repo.merge_rate` still selects the latest run (`dupe_repo.py:470-473`, `select(Run).order_by(Run.started_at.desc(), Run.id.desc()).limit(1)`) and windows both operands to it (`count_merges_for_run(run_id)`); `tests/api/test_merges_view.py::test_merge_rate_windows_both_operands_to_the_latest_run` still asserts **33% not 67%** (2-run regression). `30a19f0` changed only the *label* (`MergeRate.window` → `"this run only (#N)"`, `dupe_repo.py:320-329`) and added a scope paragraph; the relabelled assertion is a deliberate relabel, not a weakened check — the window is still named, the rate/rows assertions are untouched, and a **new, stronger** assertion was added (`assert 'id="merge-rate-scope"' in text` and `assert "not an all-time rate" in text`) |
 | 3 | Revert restores snapshot fields + marks `reverted_at`/`reverted_by`; twin reappears with no un-hide step | ✓ VERIFIED | `dupe_repo.revert_merge` (UPDATE-only, no delete); `tests/api/test_queue_search.py::test_queue_hides_absorbed_twin_until_revert` |
 | 4 | After a revert, a subsequent run does not re-merge the pair | ✓ VERIFIED | `tests/pipeline/test_dedup_revert.py::test_a_reverted_merge_is_durable_and_the_pair_stays_separate` |
 
@@ -281,7 +289,7 @@ Evidence key: **lane A** = 37 passed; **lane B** = 62 passed; **lane C** = 50 pa
 | 3 | With no query, Phase-1 order `first_seen_at desc, id desc` and no `listing_fts` join | ✓ VERIFIED | `queue_repo.py:336-344`; `tests/api/test_queue_search.py::test_no_query_keeps_the_phase_one_order` |
 | 4 | Listings after `queue_state.last_queue_view_at` (or all when NULL) marked new; `Mark all as seen` advances | ✓ VERIFIED | `state_repo`; `tests/api/test_queue_signals.py::test_listings_after_the_watermark_are_new_and_before_it_are_not`, `::test_mark_all_as_seen_clears_the_badges_and_keeps_the_rows` |
 | 5 | Stale when `last_seen_at` older than `stale_after_days` or `is_active` false; new and stale can co-occur | ✓ VERIFIED | `queue_repo._row_flags`; `tests/api/test_queue_signals.py::test_the_stale_boundary_is_n_minus_one_n_and_n_plus_one`, `::test_a_listing_can_be_both_new_and_stale` |
-| 6 | Excluded listings out of default view, dimmed under `Show excluded`, one chip per firing rule with a per-rule count | ✓ VERIFIED | `queue_repo.py:431-440`, `_listing_row.html:42-44`; `tests/api/test_queue_excluded.py` (5, incl. the new search×excluded composition and the run-wide count semantics). The count is run-wide by design (`_page_rule_counts` docstring); the chip's rule id/detail is unrendered → Advisory + Human #5 |
+| 6 | Excluded listings out of default view, dimmed under `Show excluded`, one chip per firing rule with a per-rule count | ✓ VERIFIED | `queue_repo.py:431-440`, `_listing_row.html:42-44`; `tests/api/test_queue_excluded.py` (5, incl. the search×excluded composition and the run-wide count semantics). The count is run-wide by design (`_page_rule_counts` docstring); the chip's rule id/detail is unrendered — judged sufficient at UAT item 5 (SEED-001) |
 | 7 | Listing with un-reverted merges shows `merged from N sources`; absorbed twin absent until reverted | ✓ VERIFIED | `tests/api/test_queue_search.py::test_queue_hides_absorbed_twin_until_revert`; `merge_summary_for_listings` |
 
 ### 02-08 — Criteria CRUD (7/7)
@@ -369,13 +377,13 @@ All 102 fingerprinted files exist and are substantive; the newly-added ones:
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Full suite | `.venv/bin/python -m pytest -q` | 601 passed, 2 deselected in 71.29s | ✓ PASS |
+| Full suite at HEAD `1bb7332` | `.venv/bin/python -m pytest -q` | 605 passed, 2 deselected in 113.57s | ✓ PASS |
 | Migration regression (fixed) | `pytest -q tests/db/test_migration_contract.py::test_upgrade_populated_0001_to_head` | 1 passed | ✓ PASS |
 | Migration regression (fail-first proof) | same test with pragma transiently set to `foreign_keys=ON` | 1 failed — `FOREIGN KEY constraint failed / [SQL: DROP TABLE runs]` | ✓ PROVEN |
-| Dedup/merge/revert/merges lanes (A) | `pytest -q tests/domain/test_dedup.py tests/db/test_dupes.py tests/pipeline/test_dedup_merge.py tests/pipeline/test_dedup_revert.py tests/api/test_merges_view.py` | 37 passed in 42.17s | ✓ PASS |
-| Filter/exclusions/capability lanes (B) | `pytest -q tests/domain/test_filter.py tests/domain/test_criteria.py tests/db/test_exclusions.py tests/pipeline/test_filter_stage.py tests/pipeline/test_capability_surface.py tests/api/test_queue_excluded.py` | 62 passed in 42.51s | ✓ PASS |
-| Criteria/snapshot/form-to-run lanes (C) | `pytest -q tests/db/test_search_repo_writes.py tests/api/test_searches_crud.py tests/pipeline/test_criteria_snapshot.py tests/api/test_criteria_capabilities.py tests/pipeline/test_single_search_run.py tests/test_config.py tests/pipeline/test_criteria_form_to_run.py` | 50 passed in 55.50s | ✓ PASS |
-| Search/signals/events/migration/UI/run lanes (D) | `pytest -q tests/domain/test_search_query.py tests/db/test_queue_state.py tests/api/test_queue_search.py tests/api/test_queue_signals.py tests/db/test_listing_events.py tests/api/test_listing_events.py tests/test_stylesheet_coverage.py tests/db/test_migration_contract.py tests/api/test_run_history.py tests/api/test_run_reason.py tests/domain/test_run_reason.py` | 133 passed in 88.06s | ✓ PASS |
+| **Delta lane A** (dedup/merge/revert/merges) | `pytest -q tests/domain/test_dedup.py tests/db/test_dupes.py tests/pipeline/test_dedup_merge.py tests/pipeline/test_dedup_revert.py tests/api/test_merges_view.py` | **41 passed in 8.98s** (baseline 37; +4) | ✓ PASS |
+| Filter/exclusions/capability lanes (B) — *baseline, not re-run* | `pytest -q tests/domain/test_filter.py tests/domain/test_criteria.py tests/db/test_exclusions.py tests/pipeline/test_filter_stage.py tests/pipeline/test_capability_surface.py tests/api/test_queue_excluded.py` | 62 passed in 42.51s | ✓ PASS (baseline) |
+| Criteria/snapshot/form-to-run lanes (C) — *baseline, not re-run* | `pytest -q tests/db/test_search_repo_writes.py tests/api/test_searches_crud.py tests/pipeline/test_criteria_snapshot.py tests/api/test_criteria_capabilities.py tests/pipeline/test_single_search_run.py tests/test_config.py tests/pipeline/test_criteria_form_to_run.py` | 50 passed in 55.50s | ✓ PASS (baseline) |
+| Search/signals/events/migration/UI/run lanes (D) — *baseline, not re-run* | `pytest -q tests/domain/test_search_query.py tests/db/test_queue_state.py tests/api/test_queue_search.py tests/api/test_queue_signals.py tests/db/test_listing_events.py tests/api/test_listing_events.py tests/test_stylesheet_coverage.py tests/db/test_migration_contract.py tests/api/test_run_history.py tests/api/test_run_reason.py tests/domain/test_run_reason.py` | 133 passed in 88.06s | ✓ PASS (baseline) |
 | Stylesheet coverage (independent scan) | throwaway scan of `class="..."` tokens vs `app.css` | 163 tokens, 11 exempt, **0 missing**; negative-control test present | ✓ PASS |
 | Lint | `.venv/bin/python -m ruff check app tests` | All checks passed! | ✓ PASS |
 
@@ -385,22 +393,22 @@ Step 7c: **SKIPPED** — no `scripts/*/tests/probe-*.sh` exist and Phase 2 decla
 
 ## Requirements Coverage
 
-All 15 Phase-2 requirement IDs are claimed by the ten PLAN frontmatters and marked Complete in `REQUIREMENTS.md`. **No orphaned IDs and no unclaimed Phase-2 IDs.**
+All 15 Phase-2 requirement IDs are claimed by the ten PLAN frontmatters and marked Complete in `REQUIREMENTS.md`. **No orphaned IDs and no unclaimed Phase-2 IDs. This delta changed no requirement accounting** — `bcb86c2 → 1bb7332` added no requirement, removed none, and re-mapped none.
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 | ----------- | -------------- | ----------- | ------ | -------- |
-| QUEUE-03 | 02-02, 02-04 | Same job on two sources merged, reversible audit | ✓ SATISFIED | `dedup_stage`, `dupe_repo.apply_merge`, `listing_dupes`; lane A |
-| QUEUE-04 | 02-06 | Revert an incorrect merge | ✓ SATISFIED | `revert_merge` + revert route; lane A |
+| QUEUE-03 | 02-02, 02-04 | Same job on two sources merged, reversible audit | ✓ SATISFIED | `dedup_stage`, `dupe_repo.apply_merge`, `listing_dupes`; delta lane A (41), incl. the 3-way duplicate reproduction |
+| QUEUE-04 | 02-06 | Revert an incorrect merge | ✓ SATISFIED | `revert_merge` + revert route; delta lane A |
 | QUEUE-06 | 02-07 | Full-text search the queue | ✓ SATISFIED | `search_query`, `queue_repo` FTS branch; lane D |
 | QUEUE-07 | 02-01, 02-07 | New-since-last-visit + stale | ✓ SATISFIED | `state_repo`, `_row_flags`; lane D |
 | QUEUE-08 | 02-09 | Save/hide as append-only events | ✓ SATISFIED | `event_repo`, events route; lane D |
-| QUEUE-09 | 02-06 | Merge rate + rows behind it | ✓ SATISFIED | windowed `merge_rate` + `list_merges`; 33%/67% regression |
+| QUEUE-09 | 02-06 | Merge rate + rows behind it | ✓ SATISFIED | latest-run window intact (not reverted); 33%/67% regression still asserts the window; label/scope clarified; delta lane A |
 | CRIT-01 | 02-01, 02-03, 02-08 | Create/edit/delete named criteria | ✓ SATISFIED | `search_repo` write side, `searches.py`, `criteria.html`; lanes B/C |
 | CRIT-02 | 02-05 | Criteria versioned for reproducibility | ✓ SATISFIED | `criteria_snapshot_json` before fetch; lane C |
 | CRIT-03 | 02-08 | Enable/disable without delete | ✓ SATISFIED | toggle route, version semantics; lane C |
 | FILT-01 | 02-02, 02-03, 02-05 | Deterministic reject before any LLM call | ✓ SATISFIED | `filter.evaluate`; no LLM import under `app/pipeline`; empty `llm_calls` |
 | FILT-02 | 02-03, 02-05 | Every rejection records rule + why | ✓ SATISFIED | `listing_exclusions(rule_id, rule_kind, detail_json)`; lane B |
-| FILT-03 | 02-07 | See why a specific listing was excluded | ✓ SATISFIED (advisory) | excluded toggle + chips; `detail_json` recorded, matched term not rendered → Advisory + Human #5 |
+| FILT-03 | 02-07 | See why a specific listing was excluded | ✓ SATISFIED (chip judged sufficient at UAT item 5) | excluded toggle + chips; `detail_json` recorded, matched term not rendered; follow-on SEED-001 |
 | FILT-04 | 02-01, 02-08 | Tune rules from UI without a code change | ✓ SATISFIED | DB-backed `filter_rules`, per-kind forms, no raw JSON; lane C |
 | RUN-03 | 02-01, 02-05, 02-10 | Run records what it did/found/why | ✓ SATISFIED | `run_reason`, stage log, `/runs` + last-run strip; lane D |
 | RUN-04 | 02-10 | Run history | ✓ SATISFIED | `run_repo.list_runs`, `runs.html`, GET-only history; lane D |
@@ -418,64 +426,46 @@ The Nyquist audit (`02-VALIDATION.md`) holds `nyquist_compliant: false` and name
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| `app/db/repositories/queue_repo.py` | 519-523 | `_page_rule_counts` count is run-wide (documented in the docstring), so a listing excluded once by a rule that fired N times run-wide shows `(N)`; pinned by `tests/api/test_queue_excluded.py::test_the_chip_count_is_grouped_over_the_run_not_per_row` | ℹ️ Info (product call) | Deliberate, pre-dates the UI review (introduced `32994d0`, pinned `01862d4`). UI-REVIEW blocker #2's premise ("per-row count") was consciously not adopted; the on-screen sufficiency is Human #5, not a concealed defect |
+| `app/db/repositories/queue_repo.py` | 519-523 | `_page_rule_counts` count is run-wide (documented in the docstring), so a listing excluded once by a rule that fired N times run-wide shows `(N)`; pinned by `tests/api/test_queue_excluded.py::test_the_chip_count_is_grouped_over_the_run_not_per_row` | ℹ️ Info (product call) | Deliberate, pre-dates the UI review (introduced `32994d0`, pinned `01862d4`). UI-REVIEW blocker #2's premise ("per-row count") was consciously not adopted; judged sufficient at UAT item 5 |
 | `Dockerfile` | 38-50 | No post-install assertion that `rapidfuzz` is present in the built image (02-SECURITY.md W-01) | ℹ️ Info (follow-up) | Manifest-level agreement is tested; image-level presence is not. De-risked by the operator smoke (a completed run imports the dedup module). See Advisory |
 | `app/domain/dedup.py` | 151 | `fuzz.token_set_ratio` used as a diagnostic only | ℹ️ Info | Not a defect: explicitly non-deciding; the gate is `token_sort_ratio` (asserted) |
 | `app/pipeline/run.py` | 708-716,737 | `criteria_compile` prepended then `stage_log[-12:]` truncates from the same end | ℹ️ Info | 02-REVIEW.md IN-04; latent only with >9 sources; not reachable with today's 2 adapters |
-| `app/db/repositories/exclusion_repo.py` | 30-40,144-177 | `ExclusionRecord`/`exclusions_for_run` uncalled | ℹ️ Info | 02-REVIEW.md IN-02; `detail_json` has no UI consumer (see Advisory / Human #5) |
+| `app/db/repositories/exclusion_repo.py` | 30-40,144-177 | `ExclusionRecord`/`exclusions_for_run` uncalled | ℹ️ Info | 02-REVIEW.md IN-02; `detail_json` has no UI consumer (see Advisory; closed as sufficient at UAT item 5) |
 | `app/api/searches.py` etc. | — | No CSRF token on POSTs | ℹ️ Info | Accepted risk under the project's "Auth: none in v1" decision; every route carries the `current_user` seam |
 
 Debt-marker gate: **no `TBD`/`FIXME`/`XXX`/`TODO`/`PLACEHOLDER` markers** anywhere under `app/`.
 No stub/hollow implementations found: every rendered value traces to a real query (Level 4 above).
 
-## Human Verification Required
+## Manual Verification — closed (UAT)
 
-Status is **human_needed**. Automated verification is complete and green; the manual-only items and the one product-sufficiency judgment require a human. (These are persisted in `02-UAT.md` for the end-of-phase checkpoint.)
+`02-UAT.md` records **5/5 items satisfied** (`passed: 5, pending: 0`), so there is **no outstanding human-verification item** and the automated `status` is `passed`. Phase completion itself comes from `/gsd-verify-work`, not from this report.
 
-### 1. Tune θ against the first real corpus — PENDING
+| # | Item | Result | Evidence |
+| - | ---- | ------ | -------- |
+| 1 | Tune θ against the first real corpus | **satisfied** — θ=88 retained | 2 real runs; latest run #6 fetched=100 with 6 live merges at scores `89.1 / 90.6 / 92.0 / 95.2 / 100.0 / 100.0`. True duplicates span 89.1–100 while unmerged near-misses span 70–97.9, so the distributions **overlap and no θ separates them**; the dangerous `Senior X ↔ X` pair is stopped by the grade guard, not by θ. Conclusion: θ=88 is approximately correct and not the discriminating lever. |
+| 2 | Merge-rate band sanity check | **satisfied** — band does not transfer | Per-run figures are 6/100=6.0% (run #5, the run that merged) and 0/100=0.0% (run #6, steady state); the defensible figure is distinct un-reverted merges / distinct corpus = **6/104 ≈ 5.8%**, below the 10–15% research band — which the band's own "different market and query shape" caveat allows. G2 decision (a) implemented by `30a19f0`: keep the latest-run window, label its scope unmistakably. |
+| 3 | Compose smoke | **satisfied** — operator-confirmed | `bash scripts/compose-smoke.sh` PASS on the Phase-2 image (`up -d --wait` healthy, `/health` db ok, a run completed, listings survived `restart`; revision `0002`, 104 listings, `ck_runs_reason`, `rapidfuzz 3.14.6`, `/`, `/merges`, `/runs`, `/searches` all 200). `.planning/WINDOWS.md` item #1 closed. **The operator is re-running it on the current build now** (`dfb7414` touched deploy config; `a51a133` touched `dedup.py`), so it remains operator-confirmed rather than machine-verifiable from the verifier sandbox — a watch item, not an open gap. |
+| 4 | `rapidfuzz` pin sign-off | **satisfied** | Human answered the `blocking-human` checkpoint "approved" after seeing version 3.14.6, repo `rapidfuzz/RapidFuzz`, and a pre-compiled musllinux wheel; recorded in `02-02-SUMMARY.md`. |
+| 5 | Excluded-listing chip vs SC2 | **satisfied** — judged sufficient for now | User decision recorded verbatim at UAT: *"I think it's enough for now, we can add more."* The capability is present (`detail_json` persisted; `rule_id` on `QueueRule`), so enriching the chip later is a template + one repository read. The distinct ask (browse-time `remote`/`location` filters) is captured as **SEED-001**. |
 
-**Test:** Run a real pipeline run against live sources; inspect `listing_dupes` pairs and the `/merges` rate; choose and record `Settings.dedup_fuzzy_threshold` (default 88).
-**Expected:** A recorded θ with justification in `docs/`; the merge rate within/explained against the research band.
-**Why human:** No real corpus exists pre-run (02-VALIDATION.md Manual-Only; ROADMAP Phase-2 Notes; D-31). Code proves θ is a settings read with no literal (`app/config.py:81`), not that 88 is correct.
+**UAT-surfaced defects and disposition:** G1 (host `.env` could never reach the container) → **FIXED** by `dfb7414` (recorded above). G2 (merge rate reads 0% in steady state) → **decision (a) implemented** by `30a19f0`: keep the latest-run window and label it unmistakably; the trailing-window option is a recorded alternative, not this phase's scope. G3 (a one-sided NULL location depressed the Tier-2 score, so a real cross-source duplicate was never merged) → **root cause confirmed and FIXED** by `a51a133`, re-verified in §02-04 above.
 
-### 2. Merge-rate band sanity check — PENDING
-
-**Test:** After a real run, compare the observed `/merges` rate to the 10–15% research band.
-**Expected:** Either an accepted rate or a recorded decision to adjust θ.
-**Why human:** The band is from a different market/query shape (02-VALIDATION.md).
-
-### 3. Compose smoke of the running stack — SATISFIED (operator-reported)
-
-**Test:** `docker compose up -d --wait`, browse the queue, trigger a run, confirm migration 0002 applies; restart and confirm listings survive; check `/`, `/merges`, `/runs`, `/searches` return 200.
-**Expected:** App boots healthy, `/health` db ok, a run completes, listings persist across restart, all four pages 200.
-**Status:** **PASS on the Phase-2 image**, recorded as closed in `.planning/WINDOWS.md` item #1 (resolved 2026-09-16T14:45:41Z, after the migration fix `7bfa417`). Docker is absent from the verifier sandbox, so this re-verification cannot independently reproduce it. Residual, non-blocking: the three later commits (`566e385`, `3508f05`, `bcb86c2`) changed templates/CSS/tests only, not the migration or pipeline, so the smoked contract still holds; a re-smoke on the final image is optional.
-
-### 4. Confirm the human approval of the `rapidfuzz` pin — PENDING
-
-**Test:** Confirm the recorded approval in `02-02-SUMMARY.md:149` "Authentication Gates".
-**Expected:** Approval of version 3.14.6, source repo `rapidfuzz/RapidFuzz`, pre-compiled wheel, no arbitrary build step.
-**Why human:** An out-of-band sign-off cannot be machine-verified (discharged in-phase; re-listed for the end-of-phase checkpoint).
-
-### 5. Judge whether the excluded-listing chip satisfies SC2's "which rule fired and why" — PENDING
-
-**Test:** Under `Show excluded`, inspect a rejected listing's chip (`exclude_keyword (2)`).
-**Expected:** Decide whether rule kind + per-rule count is sufficient, or whether the firing rule id and the matched `detail_json` term (e.g. `crypto`) must be surfaced. Note the count is run-wide by design.
-**Why human:** The rule id and matched term have no UI consumer; this is a product-sufficiency judgment against SC2/FILT-03.
+**Watch item (non-blocking):** the compose re-smoke on the current build is in flight. If it failed, that would be new information — but nothing in `dfb7414`/`a51a133`/`30a19f0` touches the migration or boot path, and the full suite is green at HEAD.
 
 ## Gaps Summary
 
-**No must-have gap was found.** All 54 plan `must_haves.truths`, all five roadmap Success Criteria, all required artifacts (Levels 1–2), all key links (Level 3) and the dynamic data flows (Level 4) were re-derived against the codebase at `bcb86c2` and re-executed. All 15 Phase-2 requirement IDs are accounted for and satisfied. The migration defect is genuinely fixed in the code path (`alembic/env.py`), proven fail-first. The new stylesheet guard is non-vacuous (0 missing classes, with a negative control). `ruff` is clean; no debt markers exist.
+**No must-have gap was found.** All 54 plan `must_haves.truths`, all five roadmap Success Criteria, all required artifacts (Levels 1–2), all key links (Level 3) and the dynamic data flows (Level 4) hold at HEAD `1bb7332`. All 15 Phase-2 requirement IDs are accounted for and satisfied. The migration defect remains genuinely fixed in the code path (`alembic/env.py`), proven fail-first. The `a51a133` dedup fix removes a real contradiction between the score and the location gate without weakening any dedup prohibition. The new stylesheet guard is non-vacuous. `ruff` is clean; no debt markers exist. **No truth's verdict changed in this delta.**
 
 Observations that do **not** block the phase:
 
 - **Advisory (02-SECURITY W-01):** the built image is not asserted to contain `rapidfuzz`; manifest agreement is tested. De-risked by the operator smoke; recommended follow-up is a Dockerfile import assertion. Not a phase-2 gap.
-- **Advisory / Human #5 (FILT-03/SC2):** the persisted `listing_exclusions.detail_json` and the firing rule id are not rendered; the chip shows the rule kind and a run-wide per-rule count. FILT-02's recording requirement is fully met and tested.
+- **Advisory (FILT-03/SC2, closed at UAT item 5):** the persisted `listing_exclusions.detail_json` and the firing rule id are not rendered; the chip shows the rule kind and a run-wide per-rule count. FILT-02's recording requirement is fully met and tested; the product judgment is recorded as satisfied-for-now, with the follow-on captured as SEED-001.
 - **Known deliberate residual (not re-reported):** `run.trigger` still renders as a raw enum on `/runs` (the status and reason now have `human_label`; the raw enum also survives in `data-*` attributes and row classes). Rendered-markup tests pin the raw strings; a product decision.
 - **Info:** `02-VALIDATION.md`'s intro says "four genuine gaps were found" while the audit table lists two distinct gaps (G1/G2) spanning four requirement rows — a wording inconsistency, not a coverage defect.
 
-Status is **human_needed**: automated verification is complete and green; θ tuning, the merge-rate band, the rapidfuzz sign-off, the SC2 chip-sufficiency judgment, and an optional final-image re-smoke require a human.
+Status is **passed**: automated verification is complete and green at HEAD, the 5/5 UAT items are satisfied, and no outstanding human-verification item remains. The phase's completion is still gated on `/gsd-verify-work`.
 
 ---
 
-_Verified: 2026-09-16T17:05:21Z_
+_Verified: 2026-09-16T18:04:08Z_
 _Verifier: the agent (gsd-verifier)_
