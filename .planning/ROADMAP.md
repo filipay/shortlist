@@ -101,6 +101,17 @@ Plans:
 
 **Plans**: TBD
 
+- [x] 02-01-PLAN.md
+- [ ] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
+- [ ] 02-04-PLAN.md
+- [ ] 02-05-PLAN.md
+- [ ] 02-06-PLAN.md
+- [ ] 02-07-PLAN.md
+- [ ] 02-08-PLAN.md
+- [ ] 02-09-PLAN.md
+- [ ] 02-10-PLAN.md
+
 **Notes:** Leave dedup threshold θ as a **setting plus a tuning task** against the first real corpus, not a frozen constant (the 10–15% merge-rate band is from a different market and query shape). Extend `domain/sanitize.py` with an `_INJECTION_PATTERNS`-style rule set (pattern-copied from Resume-Matcher's `improver.py`, attributed per Apache-2.0 §4). The criteria compiler consumes each adapter's declared capabilities so an unsupported filter is reported, not silently ignored (SRC-09).
 
 ### Phase 3: LLM Port + Structured Output
@@ -218,7 +229,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
-| 2. Clean, Filtered, Queryable Queue | 0/0 | Not started | - |
+| 2. Clean, Filtered, Queryable Queue | 1/10 | In Progress|  |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |

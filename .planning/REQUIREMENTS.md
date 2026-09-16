@@ -28,13 +28,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **QUEUE-04**: User can revert an incorrect merge
 - [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
 - [ ] **QUEUE-06**: User can full-text search the queue
-- [ ] **QUEUE-07**: Queue shows which listings are new since last visit and which look stale
+- [x] **QUEUE-07**: Queue shows which listings are new since last visit and which look stale
 - [ ] **QUEUE-08**: User can save or hide a listing, and those actions are recorded as append-only events
 - [ ] **QUEUE-09**: User can see the merge rate and the rows behind it, so dedup behaviour is auditable
 
 ### Criteria (CRIT)
 
-- [ ] **CRIT-01**: User can create, edit, and delete named search criteria (keywords, location, remote, salary floor, seniority, exclusions)
+- [x] **CRIT-01**: User can create, edit, and delete named search criteria (keywords, location, remote, salary floor, seniority, exclusions)
 - [ ] **CRIT-02**: Criteria are versioned so any past run is reproducible
 - [ ] **CRIT-03**: User can enable or disable a saved search without deleting it
 
@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **FILT-01**: Deterministic rules reject listings before any LLM call is made
 - [ ] **FILT-02**: Every rejection records which rule fired and why
 - [ ] **FILT-03**: User can see why a specific listing was excluded
-- [ ] **FILT-04**: User can tune filter rules from the UI without a code change
+- [x] **FILT-04**: User can tune filter rules from the UI without a code change
 
 ### Ranking (RANK)
 
@@ -89,7 +89,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **RUN-01**: User can trigger a search run manually from the UI
 - [x] **RUN-02**: Runs execute in the background without freezing the UI
-- [ ] **RUN-03**: Every run records what it did, what it found, and — when the queue is empty — why
+- [x] **RUN-03**: Every run records what it did, what it found, and — when the queue is empty — why
 - [ ] **RUN-04**: User can see run history
 - [ ] **RUN-05**: User can schedule recurring runs
 - [ ] **RUN-06**: User can see when the next scheduled run will happen
@@ -189,16 +189,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-04 | Phase 2 | Pending |
 | QUEUE-05 | Phase 1 | Complete |
 | QUEUE-06 | Phase 2 | Pending |
-| QUEUE-07 | Phase 2 | Pending |
+| QUEUE-07 | Phase 2 | Complete |
 | QUEUE-08 | Phase 2 | Pending |
 | QUEUE-09 | Phase 2 | Pending |
-| CRIT-01 | Phase 2 | Pending |
+| CRIT-01 | Phase 2 | Complete |
 | CRIT-02 | Phase 2 | Pending |
 | CRIT-03 | Phase 2 | Pending |
 | FILT-01 | Phase 2 | Pending |
 | FILT-02 | Phase 2 | Pending |
 | FILT-03 | Phase 2 | Pending |
-| FILT-04 | Phase 2 | Pending |
+| FILT-04 | Phase 2 | Complete |
 | RANK-01 | Phase 5 | Pending |
 | RANK-02 | Phase 5 | Pending |
 | RANK-03 | Phase 5 | Pending |
@@ -229,7 +229,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APPLY-06 | Phase 7 | Pending |
 | RUN-01 | Phase 1 | Complete |
 | RUN-02 | Phase 1 | Complete |
-| RUN-03 | Phase 2 | Pending |
+| RUN-03 | Phase 2 | Complete |
 | RUN-04 | Phase 2 | Pending |
 | RUN-05 | Phase 8 | Pending |
 | RUN-06 | Phase 8 | Pending |

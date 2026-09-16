@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 02
-current_phase_name: clean-filtered-queryable-queue
+current_phase: 2
+current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-09-16T08:40:17.746Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
-state_head: 4d8ee9af7a13054f7000c767cd3ddad22db9a6b3
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-09-16T09:09:59.888Z"
+last_activity: 2026-09-16
+last_activity_desc: Phase 2 execution started
+state_head: d9bf886a93045dce8d364055dfb91d3c1e67b54e
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 17
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 01 — Walking Skeleton + Foundations
+**Current focus:** Phase 2 — Clean, Filtered, Queryable Queue
 
 ## Current Position
 
-Phase: 02 (clean-filtered-queryable-queue) — READY TO EXECUTE
-Plan: Not started
+Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
+Plan: 2 of 10
 Status: Ready to execute
-Last activity: 2026-09-15 — Phase 01 complete, transitioned to Phase 2
+Last activity: 2026-09-16 — Phase 2 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 22 min | 2 tasks | 11 files |
 | Phase 01 P06 | 22 min | 3 tasks | 20 files |
 | Phase 01 P07 | 22 min | 3 tasks | 35 files |
+| Phase 02 P01 | 8 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,8 @@ Recent decisions affecting current work:
 - [Phase 01]: frame_rows() + UnsupportedFrameError is now the single explicit DataFrame-to-rows conversion point with no silent-empty fallback, after list(frame) was found to iterate COLUMN LABELS (every field None, one blank listing per board); DESIRED_ORDER was completed to the full jobspy.util.desired_order and pinned by a contract test
 - [Phase 01]: The pinned dependency is python-jobspy, not jobspy (the PyPI jobspy is an unrelated 2016 Redis package, and pip had been discarding the real candidate after a swallowed MetadataInconsistent), and the Dockerfile must stay classic-builder safe: no BuildKit heredocs, asserted by tests/test_deploy_manifest.py
 - [Phase 01]: ensure_registered_sources() seeds the sources allow-list from the adapter registry on app startup and before a probe run: nothing in production ever inserted a sources row, so enabled_source_names() was empty and a fresh deployment silently ingested nothing
+- [Phase 2]: Migration 0002 is additive and pairs with its guard churn: five Phase-1 schema guards (four named plus test_skeleton_boot.py) updated deliberately alongside it, not treated as regressions
+- [Phase 2]: dedup_fuzzy_threshold is a Settings value (default 88) with a tuning task, never a frozen constant (D-31); the named ck_runs_reason CHECK survived a batch table recreation that preserved ck_runs_trigger/ck_runs_status
 
 ### Pending Todos
 
@@ -136,6 +139,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T23:17:25.422Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-clean-filtered-queryable-queue/02-CONTEXT.md
+Last session: 2026-09-16T09:09:59.826Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
