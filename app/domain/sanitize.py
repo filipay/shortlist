@@ -1,9 +1,15 @@
 """Pure sanitisation: the Phase-1 scope only (PITFALLS Pitfall 7).
 
-Phase 1 ships the *named stage* with four behaviours — email/phone stripping,
+Phase 1 shipped the *named stage* with four behaviours — email/phone stripping,
 HTML-to-text reduction with whitespace collapsing, description truncation, and an
-`instruction_like` flag. The pattern catalogue for the flag is deliberately a
-Phase-2 task; over-reaching here is as wrong as under-reaching.
+`instruction_like` flag. Phase 2 adds the flag's pattern catalogue
+(`INJECTION_PATTERNS`) and a matched-pattern count on the report.
+
+The catalogue **flags and counts; it never redacts.** Rewriting the stored
+description would change it between runs for the same listing, and `content_hash`
+is computed over the sanitised description — a redaction would therefore look like
+a content change and break repost detection. Only the *count* is exposed, never
+the matched text, so a false positive stays diagnosable without persisting prose.
 
 PII is **dropped, never hashed** (a hashed phone number is still personal data
 that serves no product purpose), and the removed value is never returned or
@@ -50,6 +56,44 @@ INSTRUCTION_MARKERS = (
     "do not tell the user",
 )
 
+# --- Injection-pattern catalogue (D-38) ---------------------------------------
+#
+# PATTERN ORIGIN AND LICENCE (Apache-2.0 §4(c) modification notice)
+# ------------------------------------------------------------------
+# The eight regular expressions below are pattern-copied from the
+# `srbhr/resume-matcher` project, file `apps/backend/app/services/improver.py`
+# (its `_INJECTION_PATTERNS` list). The upstream project is licensed under the
+# Apache License, Version 2.0. The upstream source file carried **no** licence
+# header of its own when it was inspected, so the attribution obligation is
+# discharged by this comment block naming the origin.
+#
+# SIGNIFICANT CHANGE FROM THE UPSTREAM IMPLEMENTATION
+# ------------------------------------------------------------------
+# Upstream consumes each pattern with `re.sub(pattern, "[REDACTED]", text)` —
+# it *mutates* the text. This catalogue deliberately does the opposite: it only
+# sets a flag (`looks_like_instructions`) and counts matches
+# (`count_injection_patterns`). Nothing here rewrites the text, because the
+# sanitised description feeds `content_hash` and a rewrite would corrupt repost
+# detection and re-introduce the removed value into stored content.
+#
+# PRECISION: the "System:" pattern (pattern 5) is low-precision and matches
+# ordinary prose such as "System: Windows 11 required". The cost of a false
+# positive is one flag and one logged count — no mutation, no exclusion — which
+# is the deliberate trade.
+INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"ignore\s+(all\s+)?previous\s+instructions",
+        r"disregard\s+(all\s+)?above",
+        r"forget\s+(everything|all)",
+        r"new\s+instructions?:",
+        r"system\s*:",
+        r"<\s*/?\s*system\s*>",
+        r"\[\s*INST\s*\]",
+        r"\[\s*/\s*INST\s*\]",
+    )
+)
+
 
 @dataclass(frozen=True)
 class SanitizeReport:
@@ -60,6 +104,9 @@ class SanitizeReport:
     html_removed: bool = False
     truncated: bool = False
     instruction_like: bool = False
+    #: How many `INJECTION_PATTERNS` matched the sanitised text (D-38). A count
+    #: only — deliberately no field can carry the matched text.
+    patterns_matched: int = 0
 
     def merge(self, other: SanitizeReport) -> SanitizeReport:
         return SanitizeReport(
@@ -68,6 +115,7 @@ class SanitizeReport:
             html_removed=self.html_removed or other.html_removed,
             truncated=self.truncated or other.truncated,
             instruction_like=self.instruction_like or other.instruction_like,
+            patterns_matched=self.patterns_matched + other.patterns_matched,
         )
 
 
@@ -118,11 +166,30 @@ def collapse_whitespace(value: str) -> str:
     return text.strip()
 
 
+def count_injection_patterns(value: str | None) -> int:
+    """How many `INJECTION_PATTERNS` match `value`. Count only — never the match.
+
+    Total: a `None`/empty input returns `0`. This function never returns, logs or
+    accepts the matched text, so an injected instruction cannot be re-persisted
+    through the evidence path.
+    """
+    if not value:
+        return 0
+    return sum(1 for pattern in INJECTION_PATTERNS if pattern.search(value))
+
+
 def looks_like_instructions(value: str) -> bool:
+    """Fast literal-substring pre-check, then the compiled pattern catalogue.
+
+    The boolean contract is unchanged from Phase 1; Phase 2 widens the signal, it
+    does not replace the marker pre-check.
+    """
     if not value:
         return False
     lowered = value.casefold()
-    return any(marker in lowered for marker in INSTRUCTION_MARKERS)
+    if any(marker in lowered for marker in INSTRUCTION_MARKERS):
+        return True
+    return count_injection_patterns(value) > 0
 
 
 def sanitize_text(value: str | None, *, max_chars: int) -> SanitisedText:
@@ -160,6 +227,10 @@ def sanitize_text(value: str | None, *, max_chars: int) -> SanitisedText:
             html_removed=html_removed,
             truncated=truncated,
             instruction_like=looks_like_instructions(text),
+            # Computed over the sanitised (and truncated) text — what is actually
+            # stored. A count only: no `re.sub`, no mutation, so repeated calls
+            # return equal text and `content_hash` cannot drift.
+            patterns_matched=count_injection_patterns(text),
         ),
     )
 
@@ -170,11 +241,13 @@ def sanitize_short_field(value: str | None, *, max_chars: int) -> SanitisedText:
 
 
 __all__ = [
+    "INJECTION_PATTERNS",
     "INSTRUCTION_MARKERS",
     "SanitizeReport",
     "SanitizeResult",
     "SanitisedText",
     "collapse_whitespace",
+    "count_injection_patterns",
     "looks_like_instructions",
     "sanitize_short_field",
     "sanitize_text",
