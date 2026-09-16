@@ -3,7 +3,7 @@ status: testing
 phase: 02-clean-filtered-queryable-queue
 source: [02-VERIFICATION.md]
 started: 2026-09-16T13:30:00Z
-updated: 2026-09-16T13:30:00Z
+updated: 2026-09-16T17:07:19Z
 ---
 
 ## Current Test
@@ -31,12 +31,25 @@ result: [pending]
 ### 3. Compose smoke of the running stack
 expected: `docker compose up` and browse the queue; confirm the migration to `0002` applies, the queue renders, and the run trigger works end to end.
 why_human: 02-VALIDATION.md lists this as a WINDOWS.md carry-over (open item #1); it needs Docker/network and a human browsing.
-result: [pending]
+result: satisfied (2026-09-16)
+evidence: Operator ran `bash scripts/compose-smoke.sh` on the Phase-2 image → PASS (`up -d --wait`
+  healthy, `/health` `db=ok`, a run completed, listings survived `restart`). Follow-up probes:
+  revision `0002`, 104 listings preserved, `ck_runs_reason` present, `rapidfuzz 3.14.6`,
+  and `/`, `/merges`, `/runs`, `/searches` all HTTP 200. `.planning/WINDOWS.md` item #1 closed.
+  Caveat: the three later commits touch templates/CSS/tests only, so the smoked
+  migration + pipeline contract still holds. Docker is absent from the agent sandbox, so this is
+  operator-confirmed rather than independently reproducible by the agent.
 
 ### 4. Confirm the pinned rapidfuzz dependency was human-approved
 expected: The approval (version 3.14.6, source repo `rapidfuzz/RapidFuzz`, pre-compiled musllinux wheel, no arbitrary build step) is recorded in 02-02-SUMMARY.md "Authentication Gates".
 why_human: An out-of-band human sign-off cannot be machine-verified; recorded as discharged in-phase on 2026-09-16 during execution, re-listed for the end-of-phase human checkpoint.
-result: [pending]
+result: satisfied (2026-09-16)
+evidence: During plan 02-02 execution the human answered the `blocking-human` checkpoint with
+  "approved", having been shown: `pip index versions rapidfuzz` → 3.14.6 with a release history
+  back to 0.0.6; PyPI metadata homepage/repository `https://github.com/rapidfuzz/RapidFuzz`
+  (matching the research citation, no slopsquat); and a pre-compiled
+  `rapidfuzz-3.14.6-cp314-cp314-musllinux_1_2_x86_64.whl` (no arbitrary source build).
+  Recorded in `02-02-SUMMARY.md`. Nothing about the pin changed since, so the approval stands.
 
 ### 5. Judge whether the excluded-listing chip satisfies "which rule fired and why"
 expected: Under `Show excluded`, each rejected listing shows a chip `rule.kind (count)` (e.g. `exclude_keyword (2)`). Confirm this is sufficient, or require the firing rule id and the matched `detail_json` term (e.g. `crypto`) to be surfaced.
@@ -46,9 +59,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 0
+passed: 2
 issues: 0
-pending: 5
+pending: 3
 skipped: 0
 blocked: 0
 
