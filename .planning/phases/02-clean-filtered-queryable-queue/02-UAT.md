@@ -301,3 +301,214 @@ with only the template fix reverted, the test fails with
 `AssertionError: htmx would send an empty body for post /searches/1/rules/1`. Six further tests POST
 the exact rendered payload for each of the six rule kinds and assert a 200 plus unchanged
 `params_json` on the edit path. Full suite 626 passed, `ruff` clean.
+
+### G6 — the global Run ignored saved searches — FIXED
+
+Real-corpus UAT against the live DB (`data/jobsearch.db`, 108 listings) produced this gap together with
+G7. The user had created exactly one saved search, `Dublin Junior` (`searches.id=1`, `enabled=1`,
+`version=2`), whose `criteria_json` is
+`{"keywords": "java, ruby, backend, softwarem, engineer", "location": "Dublin", "seniority": ["junior"]}`,
+and one exclusion rule (`filter_rules.id=1`, `kind="location"`,
+`params_json={"allow": ["Dublin"], "mode": "substring"}`, `position=0`). They pressed the queue's global
+**Run** and reported "it found nothing new".
+
+Run row `runs.id=9` (21:11:26→21:11:56, ~30 s, `errors_json=NULL`): `search_id=NULL`, `trigger=manual`,
+`status=done`, `reason=nothing_new`, `fetched_count=100`, `deduped_count=0`, `filtered_count=16`.
+`reason_counts_json`: `adapters_resolved=2`; `sources.indeed = sources.linkedin = {status: ok, fetched:
+50, created: 0, updated: 50, failed: 0, requests_used: 1}`; `excluded_by_rule={"1": 16}`;
+`survivors=83`; `duplicates_already_seen=100`; `new_since_watermark=0`; `capability_warnings=[]`.
+`stage_log_json` (5 entries): `criteria_compile {warnings: 0}`; `persist:indeed`; `persist:linkedin`;
+`dedup {candidates: 102, proposed: 1, skipped_already_merged: 1}`; `filter {enabled_searches: 1,
+rules_loaded: 1, candidates: 99, survivors: 83, excluded_listings: 16, exclusions: 16}`.
+
+**"Nothing new" was CORRECT and expected.** All 100 fetched listings already existed — `created: 0` on
+both boards, `updated: 50` each, `duplicates_already_seen: 100`, `new_since_watermark: 0` — so no new
+listing entered the queue. Fetching is idempotent by design; a re-run of the same corpus keeps reporting
+`nothing_new` until a board publishes something new. `app/domain/run_reason.py::compute_empty_reason`
+has a fixed precedence (`no_sources_enabled`, `all_sources_failed`, `zero_fetched`, `all_filtered` which
+needs `survivors <= 0`, `nothing_new` which needs `survivors > 0` and `new_since_watermark == 0`, then
+`mixed`), and run 9 satisfied `nothing_new` exactly. This is the answer to the user's question, recorded
+plainly — **not** a defect.
+
+**Root cause: the global Run ignored the saved search's criteria; only the searches' exclusion rules were
+unioned.** `app/pipeline/run.py::_resolve_fetch_query` was:
+
+```python
+if query is not None:
+    return query
+if search_id is not None:
+    return search_query_from(record.criteria_json)
+return default_query()
+```
+
+`POST /runs` passes `search_id=None`, so it always used `default_query()` — keywords
+`"software engineer"`, `location=settings.probe_query_location` (which is `"Ireland"`),
+`results_wanted=50`. Three signals in run 9 corroborate it: `search_id=NULL`; the search's `last_run_at`
+stayed `NULL`; and `criteria_compile` reported **0** capability warnings even though the criteria carried
+`seniority: ["junior"]` — a filter both adapters declare unsupported (`supports_seniority=False`;
+`compile_query_for_source` drops it with a `CapabilityWarning`), so a real compile would have warned.
+`searches.is_default` existed but **no code path ever read it** for query resolution.
+
+**The user's decision.** Asked which behaviour they wanted, they chose **"Union of all enabled
+searches"**, rejecting both "use the `is_default` search" and "keep and document `default_query()`".
+Meaning: fetch each enabled search's criteria, one fetch per search, and union the results into the
+queue — mirroring how the exclusion rules already union.
+
+**Fix** (`d222588` `fix(02): the global run fetches the union of enabled searches`, `38c3b23`
+`test(02): pin the union-fetch fan-out, merge and dedupe behaviour`):
+
+- `_resolve_fetch_query` was replaced by
+  `async def _resolve_fetch_queries(session_factory, query, search_id) -> list[tuple[int | None, SearchQuery]]`:
+  an explicit `query` wins (single entry); a scoped `search_id` uses that search's criteria (missing
+  search → `[(None, default_query())]`); a global run gets one entry per enabled search ordered by
+  `searches.id`; **zero enabled searches → `[(None, default_query())]`** so `POST /runs` and
+  `scripts/compose-smoke.sh` still work unconfigured.
+- Fetch is sequential across searches and `asyncio.gather`-concurrent within one search; a dedupe set
+  keyed `(adapter.name, query)` means identical criteria fetch once.
+- New helpers `_FETCH_STATUS_SEVERITY` / `_FETCH_STATUS_RANK` / `_worst_fetch_status` /
+  `_merge_source_counts`: per-source counts are summed and status is the worst. Shapes are preserved —
+  one `source_counts` entry and exactly one `persist:<source>` stage entry per source;
+  `criteria_compile` shape unchanged; capability warnings deduped; watermark, `reason_counts_json`, the
+  reason enum and `_write_criteria_snapshot` untouched.
+- New `tests/pipeline/test_union_fetch.py`, 8 tests (order, per-search criteria, per-search run
+  isolation, same-source merge with worst status, fetch dedupe, warning dedupe, zero-enabled fallback,
+  determinism).
+
+### G7 — an Irish county code broke the location rule — FIXED
+
+Same run 9, same corpus as G6. The user's location allow-rule `allow=["Dublin"], mode="substring"`
+wrongly excluded two Dublin listings. Boards normalise Irish locations as `<area>, <county>, <country>`
+where the middle segment is a **vehicle-registration plate code**, not a county name: the corpus
+contains `blanchardstown, d, ie` and `cloghran, d, ie`, neither of which contains the substring
+`dublin`. Of the 16 exclusions in run 9, 12 were clearly correct (Cork ×5, Galway ×4, Limerick, Sligo,
+Kilcoole/Wicklow), 2 were `remote, ie`, and **2 were the wrongly-excluded Dublin ones** — `listing_id`
+49 "KERNEL SOFTWARE DEVELOPER" at `blanchardstown, d, ie`, and `listing_id` 103 "CRM Developer" at
+`cloghran, d, ie`. `normalise_location` was just `normalise_text`, and **no county mapping existed
+anywhere in the repo**.
+
+The distinct second-segment codes actually present in the corpus:
+
+| second segment | notes |
+|---|---|
+| `county dublin` ×45 | spelled-out form |
+| `d` ×44 | Dublin plate code |
+| `c` ×4 | Cork plate code (divergent — see the review) |
+| `wd` ×3 | Waterford, plate == ISO |
+| `county galway` ×3 | spelled-out form |
+| `ie` ×2 | country leaked into the county slot (`remote, ie`) |
+| `lk` | Limerick, plate code |
+| `so` | Sligo, plate == ISO |
+| `ww` | Wicklow, plate == ISO |
+| `ireland` | country leaked into the county slot |
+| `county cork` | spelled-out form |
+
+The corpus also contains both `dublin 1, d, ie` and `dublin 2, d, ie` — a **separate** dedup gate treats
+those as different jobs, so the location mode must not blur them (see G3).
+
+**The user's decision.** Asked how a location allow-rule should treat these, they chose **"Add a
+county-aware match mode"**, rejecting "match the county code inside substring mode" and "leave it to a
+wider allow list".
+
+**Fix** (`7d0bff5` `fix(02): a county-aware location rule mode so Irish suburbs are not excluded`,
+`7ddd62e` `fix(ui): let the criteria forms choose the location rule mode`):
+
+- `app/domain/filter.py`: added `IE_COUNTY_NAME_BY_CODE` (all 26 ISO 3166-2:IE code→name) and
+  `LOCATION_MODES = ("substring", "county")`, and taught `_eval_location` the mode logic — when
+  `mode == "county"` a term matches if it is a casefolded substring of the haystack **or** equals the
+  resolved county name **or** equals the resolved county code; otherwise the original substring rule
+  runs. Strictly add-only: absent / `"substring"` / unrecognised mode → substring. A falsy
+  `location_norm` still returns `None`. The exclusion `detail` dict is unchanged (a test pins the exact
+  key set).
+- `app/db/repositories/search_repo.py`: `validate_rule_params` rejects a present `mode` not in
+  `LOCATION_MODES`.
+- `app/web/templates/html/criteria.html`: the create form's mode select gained
+  `county (Irish counties)`; the edit form's hidden `location_mode` input became a visible labelled
+  select with the stored mode preselected (so a rule can be switched without delete/recreate). No new
+  CSS classes → no stylesheet rebuild.
+- 14 new tests, no existing assertion modified.
+
+**No migration was needed:** `mode` is stored in free-form `params_json` and the CHECK constraint is on
+`kind`, so a new mode **value** required no schema change.
+
+#### Review findings and fixes
+
+An independent reviewer (the project's @oracle) reviewed both lanes and found two defects that had to be
+fixed before closing, plus three follow-ups. All five are recorded here, split FIXED / FOLLOW-UP.
+
+**FIXED NOW** (`f01ae1c`, `eb4806f`, `87ff974`):
+
+- **`f01ae1c` — the county map was keyed to ISO codes but the boards emit plate codes.** Cork is the
+  divergent case: the board emits `c`, the ISO code is `co`, and the map only had `"co"`, so
+  `midleton, c, ie` resolved to no county and `allow=["cork"]` still wrongly **excluded** a Cork suburb
+  whose town name does not literally contain "cork". Most other counties coincidentally have
+  plate == ISO (`d`=Dublin, `g`=Galway, `wd`=Waterford, `ww`=Wicklow, `so`=Sligo, `lk`=Limerick),
+  which is why Dublin appeared to work. Also affected: Tipperary (plate `t`, older `tn`/`ts`, ISO `ta`)
+  and Limerick (plate `l`). Fix: added `IE_COUNTY_PLATE_CODE_BY_NAME` for the divergent plate codes,
+  built `_COUNTY_NAME_BY_ANY_CODE` as a disjoint superset of the ISO table (strictly add-only; no ISO
+  key removed or re-keyed), and made `_county_from_location` resolve the combined table, match a bare
+  county name, and strip a leading `county ` before name lookup, so the `county <name>` second-segment
+  form (e.g. `swords, county dublin, ireland`) resolves too. `IE_COUNTY_NAME_BY_CODE` and
+  `_COUNTY_CODE_BY_NAME` remain the ISO reference/inverse.
+  - The most important detail: the original Cork test passed **only via the substring branch**
+    (`"cork"` appears literally in `"cork, c, ie"`), so it never exercised code resolution for a
+    non-Dublin county and gave false confidence. The new regression
+    `tests/domain/test_filter.py::test_location_county_mode_accepts_a_cork_plate_code_suburb` was proven
+    to FAIL on the unmodified code (verbatim:
+    `assert [RuleOutcome(... 'location_norm': 'midleton, c, ie', 'allowed': ['cork'])] == []`) and pass
+    after.
+  - Residual limitation: a bare *plate* term (e.g. `allow=["c"]`) does not match the county-name branch,
+    but it still matches the raw location string through the always-evaluated substring branch.
+- **`eb4806f` — a false `all_sources_failed` reason.** The union run stores the **merged worst**
+  per-source status (`_worst_fetch_status`), and `compute_empty_reason` fired `all_sources_failed` on
+  `all(status != "ok")` with **no `fetched` guard**. So two enabled searches on one board, one `ok`
+  (fetching listings) and one `blocked`, produced the reason `all_sources_failed` and a stored sentence
+  claiming all sources failed and nothing was fetched — factually false, since listings were fetched and
+  survived. (The run-level `status` badge was unaffected, because it uses the raw `results` list.)
+  Fix: branch 2 of `compute_empty_reason` now also requires `fetched <= 0`. Chosen over passing pre-merge
+  statuses in, because it is the smaller change and keeps the pure enum a function of `RunCounts`
+  alone. Precedence order and `reason_sentence` unchanged. New tests:
+  `tests/domain/test_run_reason.py::test_all_sources_failed_does_not_fire_when_listings_were_fetched`,
+  `...::test_all_sources_failed_still_fires_when_every_source_failed_and_nothing_was_fetched`, and
+  `tests/pipeline/test_union_fetch.py::test_one_ok_one_blocked_search_does_not_claim_all_sources_failed`.
+- **`87ff974` — a union run never stamped per-search `last_run_at`.** `_stamp_last_run` ran only when
+  `search_id is not None`, so after the union change the global run fetched each enabled search's
+  criteria while leaving every search's "last run" line blank on `/searches` — the very confusing signal
+  that started the investigation. Fix: `_stamp_last_run(session_factory, search_ids, now)` now takes a
+  sequence and stamps every search the union actually fetched (the ids from `_resolve_fetch_queries`),
+  all with one shared timestamp; the explicit-`query` path and the zero-enabled `default_query()`
+  fallback stamp nothing, since neither is attributable to a saved search.
+  `tests/pipeline/test_single_search_run.py::test_the_union_run_still_unions_every_enabled_search` had
+  its closing block changed from asserting both searches' `last_run_at is None` to `is not None` — **a
+  deliberate relabel, not a weakened assertion**: the old assertion pinned the pre-`d222588` premise that
+  a global run used `default_query()` and was attributable to no search, and that premise changed. The
+  replacement asserts more, and new tests `test_a_union_run_stamps_every_search_it_fetched` (also
+  asserts one shared timestamp), `test_a_union_run_with_no_enabled_searches_stamps_nothing` and
+  `test_an_explicit_query_run_stamps_no_search` were added.
+
+**FOLLOW-UPS** (deliberately NOT fixed — open, non-blocking):
+
+- `fetched_count` now sums fetch **events** across searches, so a listing returned by two searches is
+  counted twice; `merge_rate()` in `app/db/repositories/dupe_repo.py` divides `merged` by that
+  `fetched_count`, so its numerator and denominator are no longer in the same units. Latent (only
+  manifests with 2+ enabled searches hitting the same board). Needs a semantics decision: is
+  `fetched_count` fetch events or unique listings?
+- `searches.is_default` is now **dead** — no consumer reads it for query resolution, and the union design
+  removes the "default search" concept. Either give it a consumer or remove the column/field/param.
+- The fetch dedupe key uses the **uncompiled** query, so two searches whose criteria compile to the same
+  board query both fetch. Safe direction (over-fetch, never under-fetch), so "identical criteria fetch
+  once" is narrower than "identical effective query fetch once".
+- `errors_json` can now carry multiple entries per source (one per failed fetch) where it previously had
+  one. Renders fine; noted in case a consumer assumes one-per-source.
+
+**Verification.** Full suite after all three fixes: **660 passed, 2 deselected** (was 648 before the
+review fixes; 648 was itself 634 + the 14 G7 tests; 634 was 626 + the 8 G6 tests). `ruff check app tests`
+clean. `git status --porcelain data` empty throughout — `data/` was never written.
+
+#### Operator step still outstanding
+
+On the host: rebuild (`docker compose down && docker compose up -d --build --wait`) — the running image
+predates `d222588`, `38c3b23`, `7d0bff5`, `7ddd62e`, `f01ae1c`, `eb4806f`, `87ff974`; revert the 6 wrong
+merges on `/merges`; switch the `Dublin Junior` location rule to `mode = county` using the new select on
+`/searches`; add a `seniority` exclusion rule to enforce "junior" locally, because both boards declare
+`supports_seniority=False` and cannot filter on it; and optionally fix the `softwarem` keyword, which is
+probably a typo for `software`.
