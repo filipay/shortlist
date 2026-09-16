@@ -50,9 +50,9 @@ EXEMPT_CLASSES: dict[str, str] = {
     "rule-seniority": "Alpine x-show toggle target; layout carried by .rule-fields",
     "rule-company_blocklist": "Alpine x-show toggle target; layout carried by .rule-fields",
     # Plain buttons/table cells already covered by base-layer element rules
-    # (`button[type="submit"]`, `th, td`). The class is a hook for HTMX/selectors.
-    "search-run-now": "plain submit button styled by the base-layer button element rule",
-    "search-save": "plain submit button styled by the base-layer button element rule",
+    # (`button`, `button[type="submit"]`, `th, td`). The class is a hook for HTMX/selectors.
+    "search-run-now": "plain button styled by the base-layer `button` element rule",
+    "search-save": "plain submit button styled by the base-layer button[type=submit] rule",
     "run-detail-slot": "table cell styled by the base-layer `th, td` element rule",
 }
 
