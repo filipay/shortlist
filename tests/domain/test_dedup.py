@@ -136,6 +136,64 @@ def test_location_gate_allows_equal_or_unknown_and_refuses_a_mismatch() -> None:
     assert score_pair(_facts(), far, threshold=permissive) is None
 
 
+# --- a one-sided unknown location must not depress the score ------------------
+def test_a_one_sided_unknown_location_is_not_penalised_in_the_score() -> None:
+    """The live-corpus shape: an unknown location is compatible, not a penalty.
+
+    `_pair_text` folds `location_norm` into the scored text, so a NULL location
+    used to drop a same-company/same-title pair below theta even though the
+    location gate immediately above had already accepted it — the module's own
+    contract is that an unknown location is never a rejection reason.
+    """
+    located = _facts(
+        company_norm="mastercard",
+        title_norm="senior software engineer",
+        location_norm="dublin, d, ie",
+    )
+    locationless = _facts(
+        company_norm="mastercard",
+        title_norm="senior software engineer",
+        location_norm=None,
+    )
+
+    # The old computation — location folded into both texts — is exactly what
+    # refused the live pair: 83.33 < theta.
+    assert fuzz.token_sort_ratio(_text(located), _text(locationless)) < THETA
+
+    # Dropping the location from the score leaves the identical company+title.
+    assert score_pair(located, locationless, threshold=THETA) == 100.0
+    # Symmetric: either side may be the location-less one.
+    assert score_pair(locationless, located, threshold=THETA) == 100.0
+
+
+def test_the_location_gate_still_refuses_two_known_incompatible_locations() -> None:
+    """A known mismatch is still a rejection, whatever the score would be."""
+    here = _facts(company_norm="acme", title_norm="python engineer", location_norm="dublin 1")
+    there = _facts(company_norm="acme", title_norm="python engineer", location_norm="dublin 2")
+
+    # A permissive theta isolates the gate: only the location check can refuse.
+    assert score_pair(here, there, threshold=50) is None
+    assert score_pair(there, here, threshold=50) is None
+
+
+def test_two_known_compatible_locations_still_score_with_location_included() -> None:
+    """Guard the "always drop location" regression on the both-present path.
+
+    When both sides carry a location the score must remain the one derived from
+    the full `(company, title, location)` tuple — unchanged from before the fix.
+    """
+    a = _facts(company_norm="acme", title_norm="data engineer", location_norm="dublin, ireland")
+    b = _facts(company_norm="acme", title_norm="data engineering", location_norm="dublin, ireland")
+
+    with_location = fuzz.token_sort_ratio(_text(a), _text(b))
+    company_title_only = fuzz.token_sort_ratio("acme data engineer", "acme data engineering")
+    # The two computations genuinely differ here, so this is a real guard.
+    assert with_location != company_title_only
+    assert with_location >= THETA
+
+    assert score_pair(a, b, threshold=THETA) == with_location
+
+
 # --- the score gate boundary --------------------------------------------------
 def test_score_gate_at_the_threshold_passes_and_just_below_fails() -> None:
     a = _facts(company_norm="acme", title_norm="python engineer", location_norm="dublin")

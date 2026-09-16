@@ -105,13 +105,18 @@ def grades_conflict(title_norm_a: str | None, title_norm_b: str | None) -> bool:
     return grades_a != grades_b
 
 
-def _pair_text(facts: CandidateFacts) -> str:
-    """The normalised `(company, title, location)` tuple as one string."""
-    return " ".join(
-        part
-        for part in (facts.company_norm or "", facts.title_norm or "", facts.location_norm or "")
-        if part
-    )
+def _pair_text(facts: CandidateFacts, *, include_location: bool = True) -> str:
+    """The normalised tuple as one string, for whichever score is being taken.
+
+    Includes `location_norm` by default — the `(company, title, location)` tuple.
+    `include_location=False` drops the location component, which `score_pair` uses
+    when exactly one side's location is unknown: the location gate has already
+    accepted that pair, so the score must not re-penalise the missing value.
+    """
+    parts = (facts.company_norm or "", facts.title_norm or "")
+    if include_location:
+        parts = (*parts, facts.location_norm or "")
+    return " ".join(part for part in parts if part)
 
 
 def score_pair(
@@ -134,7 +139,9 @@ def score_pair(
     3. **location** — equal `location_norm`, **or either side is `None`** (an
        unknown location is never a rejection reason).
     4. **score** — `token_sort_ratio` over the concatenated normalised tuple must
-       be `>= threshold`.
+       be `>= threshold`. When exactly one side's location is `None` the location
+       component is excluded from both texts, so the check at 3 does not leak
+       into the score as a second, hidden penalty.
 
     Returns `None` when the pair must not merge; otherwise the score, for the log.
     """
@@ -155,7 +162,18 @@ def score_pair(
     ):
         return None
 
-    score = fuzz.token_sort_ratio(_pair_text(a), _pair_text(b))
+    # The location gate above has already refused incompatible *known* locations,
+    # so a one-sided unknown location must not also depress the score: the
+    # module's contract is that an unknown location is never a rejection reason.
+    # Score over `(company, title)` alone when exactly one side is unknown; when
+    # both locations are known, keep the full `(company, title, location)` tuple
+    # so existing scores are unchanged. (Both-unknown is identical either way —
+    # the empty location contributes nothing — so this stays total.)
+    include_location = a.location_norm is not None and b.location_norm is not None
+    score = fuzz.token_sort_ratio(
+        _pair_text(a, include_location=include_location),
+        _pair_text(b, include_location=include_location),
+    )
     if score < threshold:
         return None
     return float(score)

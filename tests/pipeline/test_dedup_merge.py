@@ -63,6 +63,26 @@ class SameJobAdapter(JobSource):
         return FetchResult(source=self.name, items=[self._item], status="ok", requests_used=1)  # type: ignore[arg-type]
 
 
+class MultiJobAdapter(JobSource):
+    """A total adapter returning several scripted `RawListing`s for its own board.
+
+    One board can carry the same role more than once (a repost with a fresh
+    `source_listing_id`), which is the shape the three-way block test needs.
+    """
+
+    capabilities = CAPABILITIES
+
+    def __init__(self, name: str, items: list[RawListing]) -> None:
+        self.name = name  # type: ignore[assignment]
+        self._items = items
+
+    async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
+        return "ok"
+
+    async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
+        return FetchResult(source=self.name, items=list(self._items), status="ok", requests_used=1)  # type: ignore[arg-type]
+
+
 def _raw(source: str, *, with_salary: bool) -> RawListing:
     return RawListing(
         source=source,  # type: ignore[arg-type]
@@ -231,3 +251,75 @@ async def test_a_run_with_no_duplicate_reports_zero_merges(
     assert await _count(session_factory, ListingDupe) == 0
     assert run.deduped_count == 0
     assert run.fetched_count == 2
+
+
+def _block_job(source: str, source_listing_id: str, *, location: str | None) -> RawListing:
+    """One member of a three-way duplicate block, faithful to the live corpus."""
+    return RawListing(
+        source=source,  # type: ignore[arg-type]
+        source_listing_id=source_listing_id,
+        source_url=f"https://{source}.example.com/jobs/{source_listing_id}",
+        direct_url=None,
+        title=SAME_JOB_TITLE,
+        company_name=SAME_JOB_COMPANY,
+        location_raw=location,
+        description="Build the thing.",
+        posted_at=date(2026, 9, 8),
+    )
+
+
+async def test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """SC1 on the real-corpus shape: one board omits the location.
+
+    Live corpus (the mastercard block): indeed carries the role twice WITH a
+    location (`dublin, d, ie`), linkedin carries the same role with
+    `location_raw=None`. All three are one blocked group (`company_norm` equal,
+    same `blocking_key`), so only Tier-2 can collapse the set; the two indeed rows
+    are Tier-1-distinct, and the documented path is that the earliest-seen member
+    absorbs the other two (D-27).
+
+    Regression: `score_pair` refused the location-less member. It built the fuzzy
+    score from `_pair_text`, which concatenates `location_norm`; the missing
+    location on one side dropped `token_sort_ratio` below theta (83.33 < 88) even
+    though the location gate explicitly treats an unknown location as compatible.
+    """
+    await _register_sources(session_factory, "linkedin", "indeed")
+
+    # indeed first: its rows persist first, so the earliest-seen member — the
+    # survivor under D-27 — is an indeed row that DOES carry a location.
+    indeed = MultiJobAdapter(
+        "indeed",
+        [
+            _block_job("indeed", "in-a", location=SAME_JOB_LOCATION),
+            _block_job("indeed", "in-b", location=SAME_JOB_LOCATION),
+        ],
+    )
+    linkedin = MultiJobAdapter("linkedin", [_block_job("linkedin", "li-c", location=None)])
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[indeed, linkedin])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        listings = (await session.execute(select(Listing).order_by(Listing.id))).scalars().all()
+        dupes = (
+            (await session.execute(select(ListingDupe).order_by(ListingDupe.id))).scalars().all()
+        )
+
+    assert run is not None
+    assert len(listings) == 3, "a merge never deletes an absorbed listing"
+
+    survivor = min(listings, key=lambda row: (row.first_seen_at, row.id))
+    absorbed_ids = {row.id for row in listings if row.id != survivor.id}
+    locationless = [row for row in listings if row.location_norm is None]
+    assert len(locationless) == 1, "the linkedin member is the location-less one"
+
+    assert len(dupes) == 2, "the three-way duplicate must produce two merges"
+    assert {dupe.listing_id for dupe in dupes} == {survivor.id}
+    assert {dupe.dup_listing_id for dupe in dupes} == absorbed_ids
+    assert locationless[0].id in absorbed_ids, "the location-less twin must not be skipped"
+    assert all(dupe.reverted_at is None for dupe in dupes)
+
+    assert run.fetched_count == 3
+    assert run.deduped_count == 2
