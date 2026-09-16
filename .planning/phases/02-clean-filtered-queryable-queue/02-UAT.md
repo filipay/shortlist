@@ -249,3 +249,55 @@ contradiction exists there.
 
 **Still invisible in the UI:** `/merges` lists only merged rows, so an unmerged duplicate cannot be
 surfaced at all — finding this needed a hand-written corpus query.
+
+### G5 — the browser rule form sent an empty body: "Add rule" / "Save rule" were dead — FIXED
+
+Surfaced while reviewing the G3/UI layout screenshot. Not a layout defect and **not** findable by any
+existing test: the rule routes were well covered, but every test posted the body directly rather than
+going through the browser.
+
+**Mechanism.** In `app/web/templates/html/criteria.html` the "Add rule" and "Save rule" buttons are
+`<button type="button" hx-post="…">` living in a plain `<div>` (`<div class="rule-form">` /
+`<div class="rule-edit">`), with their named inputs as siblings. There was **no enclosing `<form>` and
+no `hx-include`/`hx-vals` anywhere**. htmx 2.0.10 (exactly pinned here) sends **zero parameters** in
+that shape, per its own source:
+- `getRelatedForm(elt)` (`src/htmx.js:2853`) = `elt.form || closest(elt, 'form')` → `null`.
+- the non-GET branch of `getInputValues` (`:3602`, `~:3622`) passes that `null` into
+  `processInputValue` (`:3521`), whose first line returns immediately on `null`;
+- the element itself is rejected by `shouldInclude()` (`:3451`) — `type === 'button'` and no `name`;
+- the button-value branch no-ops via `addValueToFormData` (`:3471`) when `name == null`.
+
+So the POST went out urlencoded with an empty body; `create_rule_route`
+(`app/api/searches.py:486-507`) read `kind` from that body, found nothing, and returned a **400**. The
+rule was never created. The docs state the rule exactly (https://htmx.org/docs/#parameters), and
+https://htmx.org/quirks/ documents the same lookup.
+
+**Blast radius (audited, all templates, every mutating htmx element).** Exactly two interactions were
+broken — both the browser half of CRIT-03:
+
+| Route | Trigger | Body needed? | Verdict |
+|---|---|---|---|
+| `POST /searches` (`searches.py:453`) | `<form class="search-create">` | yes | OK (real form) |
+| `POST /searches/{id}` (`:553`) | `<form class="search-edit">` | yes | OK (real form) |
+| `POST /searches/{id}/rules` (`:486`) | `<button hx-post>` in `<div class="rule-form">` | yes | **BROKEN — fixed** |
+| `POST /searches/{id}/rules/{rule_id}` (`:621`) | `<button hx-post>` in `<div class="rule-edit">` | yes | **BROKEN — fixed** |
+| `…/toggle`, `…/delete`, `…/run`, rule toggle/delete, `POST /listings/{id}/events` | id in path / real form | no | OK |
+
+**Fix:** `edcbe68` — `hx-include="closest .rule-form"` on the Add button, `hx-include="closest .rule-edit"`
+on the Save button. Zero structural change, deliberately avoiding a markup change to the recent
+`9d30e23` layout commit; no CSS touched (`app.css` unchanged, sha256 `676cf6dd…`). This is the
+mechanism htmx's own docs prescribe for inputs outside a form
+(https://htmx.org/attributes/hx-include/).
+
+**Why it matters for the phase:** CRIT-03 / plan 02-08 task 1 is "create a named search with a typed
+rule **from the browser**". The API half was correct and tested; the browser half was unreachable. It
+also explains why a real corpus carried no exclusion rules.
+
+**Regression guard:** new `tests/api/test_rule_form_payloads.py` (7 tests) reimplements htmx 2.0.10's
+payload lookup in stdlib `html.parser` — for every mutating element on `/searches` it computes the
+payload htmx would actually send and asserts a non-empty body containing the fields that route reads,
+plus a route-coverage table so a future un-audited mutating element fails the test. Fail-first proven:
+with only the template fix reverted, the test fails with
+`AssertionError: htmx would send an empty body for post /searches/1/rules/1`. Six further tests POST
+the exact rendered payload for each of the six rule kinds and assert a 200 plus unchanged
+`params_json` on the edit path. Full suite 626 passed, `ruff` clean.
