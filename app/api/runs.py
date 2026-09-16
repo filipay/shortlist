@@ -23,6 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
 from app.db.models import Run
+from app.db.repositories.dupe_repo import (
+    MergeRate,
+    MergeRecord,
+    list_merges,
+    merge_rate,
+    revert_merge,
+)
 from app.db.session import get_session, get_session_factory
 from app.domain.models import User
 from app.pipeline.run import TERMINAL_STATUSES, run_pipeline
@@ -31,6 +38,10 @@ router = APIRouter()
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+#: The Merges audit page (D-29 / QUEUE-09). The table markup lives in a macro inside
+#: this one template so the page and the revert fragment cannot drift apart.
+MERGE_TEMPLATE = "html/merges.html"
 
 #: Strong references to in-flight run tasks, so the event loop cannot garbage
 #: collect a fire-and-forget pipeline before it finishes.
@@ -93,4 +104,84 @@ async def run_status(
     return HTMLResponse(fragment)
 
 
-__all__ = ["render_run_fragment", "router"]
+def render_merges_table(
+    merges: list[MergeRecord],
+    rate: MergeRate,
+    *,
+    note: str | None = None,
+) -> str:
+    """Render the `#merges-table` fragment without rendering the whole page.
+
+    The panel markup lives in a Jinja **macro** inside `merges.html`, so the page and
+    the revert swap render from a single definition — there is no second copy of the
+    markup to drift. `Template.make_module` is Jinja's API for obtaining a template's
+    macros; it also runs the template body, and for an extending template that body is
+    the `content` block. So the same three variables the block needs are passed in,
+    which keeps `render_merges_table` working as long as `merges.html`'s page body
+    only references `merges`, `rate` and `note` — the macro itself takes them
+    explicitly and needs no request context, so both call sites escape identically.
+
+    The rate sits **inside** the fragment root on purpose: reverting a merge moves the
+    rate and the reverted count, so the swap must carry them or the page would show a
+    stale number next to a fresh table (T-02-25).
+    """
+    module = templates.get_template(MERGE_TEMPLATE).make_module(
+        {"merges": merges, "rate": rate, "note": note}
+    )
+    return str(module.merges_table(merges=merges, rate=rate, note=note))
+
+
+@router.get("/merges", response_class=HTMLResponse)
+async def merges_view(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """The merge audit page: the rate with its window named, and the rows behind it."""
+    records = await list_merges(session)
+    rate = await merge_rate(session)
+    return templates.TemplateResponse(
+        request,
+        MERGE_TEMPLATE,
+        {"merges": records, "rate": rate, "note": None, "user": user},
+    )
+
+
+@router.post("/merges/{dupe_id}/revert", response_class=HTMLResponse)
+async def revert_merge_route(
+    dupe_id: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Undo one merge and return the re-rendered panel for an `hx-swap` swap.
+
+    The route owns the commit; the repository never commits (the `source_repo`
+    contract). A not-found row answers 404 with a distinguishable body; an
+    already-reverted row answers 200 with the current panel plus a note, so a double
+    click is idempotent and its (absent) effect is legible rather than silent.
+    """
+    result = await revert_merge(session, dupe_id=dupe_id, now=datetime.now(UTC))
+
+    if not result.found:
+        return HTMLResponse(
+            '<div id="merges-table">'
+            '<p id="merges-note" class="merges-note">Unknown merge record.</p>'
+            "</div>",
+            status_code=404,
+        )
+
+    await session.commit()
+
+    records = await list_merges(session)
+    rate = await merge_rate(session)
+    if result.wrote:
+        note = (
+            f"Merge #{dupe_id} reverted — {len(result.restored)} field(s) restored, "
+            f"{len(result.skipped)} skipped."
+        )
+    else:
+        note = f"Merge #{dupe_id} was already reverted."
+    return HTMLResponse(render_merges_table(records, rate, note=note))
+
+
+__all__ = ["render_merges_table", "render_run_fragment", "router"]

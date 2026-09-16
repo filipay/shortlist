@@ -1,0 +1,115 @@
+{% extends "html/base.html" %}
+
+{% block title %}Merges · Job Search Copilot{% endblock %}
+
+{#
+  The panel lives in a macro so the page and the `POST /merges/{id}/revert` fragment
+  are ONE definition of the markup (`app/api/runs.py:render_merges_table` renders
+  this macro through Jinja's public `make_module`, without rendering the page). The
+  rate sits inside the root on purpose: reverting a merge moves the number, so the
+  swap has to carry it too.
+
+  Jinja autoescape is the only escaping in play. Listing titles, companies and
+  locations are untrusted job-board content: they are rendered as text and are never
+  marked safe, and the page loads no remote script or stylesheet.
+#}
+{% macro merges_table(merges, rate, note=None) %}
+<div id="merges-table">
+  <p class="merge-rate" id="merge-rate">
+    Merge rate — {{ rate.window }}:
+    {%- if rate.rate is none %}
+    — (no fetched listings in this window; {{ rate.merged }} merged, {{ rate.reverted }} reverted)
+    {%- else %}
+    {{ rate.rate }}% ({{ rate.merged }} merged / {{ rate.fetched }} fetched; {{ rate.reverted }} reverted)
+    {%- endif %}
+  </p>
+
+  {% if note %}
+  <p class="merges-note" id="merges-note">{{ note }}</p>
+  {% endif %}
+
+  {% if not merges %}
+  <p class="empty-state" id="merges-empty">
+    No merges recorded yet. When two sources carry the same job, the merge and the
+    rows behind it appear here.
+  </p>
+  {% else %}
+  <table class="merges-table">
+    <thead>
+      <tr>
+        <th scope="col">Merged</th>
+        <th scope="col">Method</th>
+        <th scope="col">Score</th>
+        <th scope="col">Kept</th>
+        <th scope="col">Absorbed</th>
+        <th scope="col">Pre-merge values</th>
+        <th scope="col">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in merges %}
+      <tr id="merge-row-{{ row.id }}" class="merge-row{% if row.is_reverted %} merge-row-reverted{% endif %}">
+        <td class="merge-merged-at">{{ row.merged_at }}</td>
+        <td class="merge-method">{{ row.method }}</td>
+        <td class="merge-score">{{ row.score }}</td>
+        <td class="merge-survivor">
+          <span class="merge-title">{{ row.survivor.title }}</span>
+          <span class="merge-company">{{ row.survivor.company }}</span>
+          <span class="merge-location">{{ row.survivor.location }}</span>
+          <span class="merge-sources">{{ row.survivor.sources | join(", ") }}</span>
+          <span class="merge-url">{{ row.survivor.url }}</span>
+        </td>
+        <td class="merge-twin">
+          <span class="merge-title">{{ row.twin.title }}</span>
+          <span class="merge-company">{{ row.twin.company }}</span>
+          <span class="merge-location">{{ row.twin.location }}</span>
+          <span class="merge-sources">{{ row.twin.sources | join(", ") }}</span>
+          <span class="merge-url">{{ row.twin.url }}</span>
+        </td>
+        <td class="merge-snapshot">
+          {% if row.snapshot %}
+          <dl class="merge-snapshot-list">
+            {% for field, value in row.snapshot %}
+            <dt>{{ field }}</dt>
+            <dd>{{ value }}</dd>
+            {% endfor %}
+          </dl>
+          {% else %}
+          <span class="merge-snapshot-none">No fields were filled.</span>
+          {% endif %}
+        </td>
+        <td class="merge-action">
+          {% if row.is_reverted %}
+          <span class="merge-reverted" id="merge-reverted-{{ row.id }}">
+            Reverted{% if row.reverted_by %} by {{ row.reverted_by }}{% endif %}
+          </span>
+          <button type="button" class="merge-revert-disabled" disabled>Reverted</button>
+          {% else %}
+          <button type="button"
+                  class="merge-revert"
+                  hx-post="/merges/{{ row.id }}/revert"
+                  hx-target="#merges-table"
+                  hx-swap="outerHTML">
+            Revert
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<section id="merges">
+  <h2>Merges</h2>
+  <p class="merges-intro">
+    Every automatic merge the pipeline made, newest first. A merge never deletes the
+    absorbed listing: both records are shown so the decision can be judged, and a
+    revert restores the kept listing and puts the absorbed one back in the queue.
+  </p>
+  {{ merges_table(merges, rate, note) }}
+</section>
+{% endblock %}
