@@ -1,0 +1,175 @@
+{% extends "html/base.html" %}
+
+{% block title %}Run history · Job Search Copilot{% endblock %}
+
+{#
+  Two macros in one template: the list (rendered by `GET /runs` through the page body)
+  and the detail expansion (rendered by `GET /runs/{run_id}` through `make_module`, so
+  the expansion costs one round trip and the stage log stays collapsed until asked for).
+  One definition of each, and no second template to drift.
+
+  The page renders what each run PERSISTED: `run.status` verbatim (never re-derived),
+  the reason value, and the counts behind it. The sentence is the only derived value and
+  it comes from `reason_sentence` in the read model, not from a template.
+
+  Jinja autoescape is the only escaping in play. `errors_json` and `stage_log_json` carry
+  board- and filter-derived strings, so they are rendered as text and never marked safe:
+  a tag in a board error cannot become markup (T-02-41).
+#}
+{% macro run_list(runs) %}
+<div id="runs-table">
+  {% if not runs %}
+  <p class="empty-state" id="runs-empty">
+    No runs yet. Use the <strong>Run search now</strong> button on the
+    <a href="/">queue</a> to start one.
+  </p>
+  {% else %}
+  <table class="runs-table">
+    <thead>
+      <tr>
+        <th scope="col">Run</th>
+        <th scope="col">Status</th>
+        <th scope="col">Trigger</th>
+        <th scope="col">Started</th>
+        <th scope="col">Finished</th>
+        <th scope="col">Duration</th>
+        <th scope="col">Sources</th>
+        <th scope="col">Deduped</th>
+        <th scope="col">Filtered</th>
+        <th scope="col">Reason</th>
+        <th scope="col">Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr id="run-row-{{ run.id }}"
+          class="run-row run-row-{{ run.status }}{% if run.in_flight %} run-in-flight{% endif %}"
+          data-status="{{ run.status }}"
+          data-reason="{{ run.reason or '' }}"
+          data-in-flight="{{ 1 if run.in_flight else 0 }}">
+        <td class="run-id">#{{ run.id }}</td>
+        <td class="run-status run-status-{{ run.status }}">{{ run.status }}</td>
+        <td class="run-trigger">{{ run.trigger }}</td>
+        <td class="run-started">{{ run.started_at or '—' }}</td>
+        <td class="run-finished">{{ run.finished_at or '—' }}</td>
+        {# An unfinished run shows an em dash, never `0s` — "in flight" must not read
+           as "finished instantly". #}
+        <td class="run-duration">{% if run.duration_seconds is none %}—{% else %}{{ run.duration_seconds | round(1) }}s{% endif %}</td>
+        <td class="run-sources">
+          {% for name, counts in run.sources.items() %}
+          <span class="run-source run-source-{{ name }}">{{ name }}: {{ counts.fetched if counts.fetched is defined else 0 }} fetched</span>
+          {% endfor %}
+        </td>
+        <td class="run-deduped">{{ run.deduped_count }}</td>
+        <td class="run-filtered">{{ run.filtered_count }}</td>
+        <td class="run-reason">
+          <span class="reason-value" id="run-reason-{{ run.id }}">{{ run.reason or 'unknown' }}</span>
+          <span class="reason-sentence">{{ run.sentence }}</span>
+        </td>
+        <td class="run-detail-slot">
+          <button type="button"
+                  id="run-expand-{{ run.id }}"
+                  hx-get="/runs/{{ run.id }}"
+                  hx-target="#run-detail-{{ run.id }}"
+                  hx-swap="outerHTML">
+            Show detail
+          </button>
+        </td>
+      </tr>
+      <tr class="run-detail-row">
+        <td colspan="11"><div id="run-detail-{{ run.id }}"></div></td>
+      </tr>
+      {% if run.errors %}
+      <tr class="run-errors-row">
+        <td colspan="11">
+          <ul class="run-errors" id="run-errors-{{ run.id }}">
+            {% for entry in run.errors %}
+            <li class="run-error">{{ entry.error }}</li>
+            {% endfor %}
+          </ul>
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro run_detail(detail) %}
+<div id="run-detail-{{ detail.id }}" class="run-detail">
+  <h3>Run #{{ detail.id }} — {{ detail.status }}</h3>
+  <p class="run-detail-sentence" id="run-detail-sentence-{{ detail.id }}">{{ detail.sentence }}</p>
+
+  <h4>Counts behind the reason</h4>
+  {% if detail.reason_counts %}
+  <dl class="run-reason-counts">
+    {% for key, value in detail.reason_counts.items() %}
+    <dt>{{ key }}</dt>
+    <dd>{{ value }}</dd>
+    {% endfor %}
+  </dl>
+  {% else %}
+  <p class="run-detail-empty">No counts were persisted for this run.</p>
+  {% endif %}
+
+  <h4>Excluded by rule</h4>
+  {% if detail.excluded_by_rule %}
+  <ul class="run-excluded-counts">
+    {% for rule_id, count in detail.excluded_by_rule.items() %}
+    <li class="run-excluded-count">rule {{ rule_id }}: {{ count }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="run-detail-empty">No rule fired in this run.</p>
+  {% endif %}
+
+  <h4>Criteria used</h4>
+  {% if detail.searches %}
+  <ul class="run-searches">
+    {% for entry in detail.searches %}
+    <li class="run-search">{{ entry.name }} (version {{ entry.version }})</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="run-detail-empty">No criteria snapshot was persisted for this run.</p>
+  {% endif %}
+
+  <details class="stage-log" id="stage-log-{{ detail.id }}">
+    <summary>Raw stage log ({{ detail.stage_log | length }} entries)</summary>
+    {% for entry in detail.stage_log %}
+    <div class="stage-entry">
+      <span class="stage-name">{{ entry.stage }}</span>
+      {% for key, value in (entry.counts or {}).items() %}
+      <span class="stage-count">{{ key }}={{ value }}</span>
+      {% endfor %}
+      {% for message in entry.errors %}
+      <span class="stage-error">{{ message }}</span>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </details>
+
+  {% if detail.errors %}
+  <h4>Errors</h4>
+  <ul class="run-errors">
+    {% for entry in detail.errors %}
+    <li class="run-error">{{ entry.error }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<section id="runs">
+  <h2>Run history</h2>
+  <p class="runs-intro">
+    One row per trigger, newest first. The status is what the run persisted; the reason
+    and the counts behind it are what that run recorded — nothing here recomputes an
+    outcome.
+  </p>
+  {{ run_list(runs) }}
+</section>
+{% endblock %}

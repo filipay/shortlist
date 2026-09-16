@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
 from app.db.models import Run
+from app.db.repositories import run_repo
 from app.db.repositories.dupe_repo import (
     MergeRate,
     MergeRecord,
@@ -30,6 +31,7 @@ from app.db.repositories.dupe_repo import (
     merge_rate,
     revert_merge,
 )
+from app.db.repositories.run_repo import RunDetail
 from app.db.session import get_session, get_session_factory
 from app.domain.models import User
 from app.pipeline.run import TERMINAL_STATUSES, run_pipeline
@@ -42,6 +44,10 @@ templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 #: The Merges audit page (D-29 / QUEUE-09). The table markup lives in a macro inside
 #: this one template so the page and the revert fragment cannot drift apart.
 MERGE_TEMPLATE = "html/merges.html"
+
+#: The run-history page (D-43 / RUN-04). Its list and its detail expansion are two
+#: macros in this one template, so both surfaces have exactly one definition.
+RUN_TEMPLATE = "html/runs.html"
 
 #: Strong references to in-flight run tasks, so the event loop cannot garbage
 #: collect a fire-and-forget pipeline before it finishes.
@@ -80,6 +86,56 @@ async def start_run(
     return HTMLResponse(
         render_run_fragment(request, run, None), status_code=202
     )
+
+
+def render_run_detail(detail: RunDetail) -> str:
+    """Render the `#run-detail-{id}` fragment from the macro in `runs.html`.
+
+    The detail markup lives in a macro inside the page template, so the list and the
+    expansion render from one definition. `Template.make_module` obtains the macro; it
+    also runs the page body, which is why the same `runs` value the block needs is
+    passed in (an empty list renders the empty state, harmlessly).
+    """
+    module = templates.get_template(RUN_TEMPLATE).make_module({"runs": []})
+    return str(module.run_detail(detail=detail))
+
+
+@router.get("/runs", response_class=HTMLResponse)
+async def run_history(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """The run-history page: one row per run, newest first.
+
+    Read-only by construction — the only mutating run route is `POST /runs`, which
+    lives on the queue's run control and is unchanged (T-02-42).
+    """
+    runs = await run_repo.list_runs(session)
+    return templates.TemplateResponse(
+        request, RUN_TEMPLATE, {"runs": runs, "user": user}
+    )
+
+
+@router.get("/runs/{run_id}", response_class=HTMLResponse)
+async def run_detail_route(
+    run_id: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """The expansion fragment: counts, per-rule exclusions, criteria and the stage log.
+
+    A separate request on purpose, so the list page never carries every run's log and
+    the stage log stays collapsed until the user asks for it (T-02-44).
+    """
+    detail = await run_repo.get_run_detail(session, run_id=run_id)
+    if detail is None:
+        return HTMLResponse(
+            f'<div id="run-detail-{int(run_id)}" class="run-detail" '
+            f'data-error="unknown-run">Unknown run.</div>',
+            status_code=404,
+        )
+    return HTMLResponse(render_run_detail(detail))
 
 
 @router.get("/runs/{run_id}/status", response_class=HTMLResponse)
@@ -184,4 +240,9 @@ async def revert_merge_route(
     return HTMLResponse(render_merges_table(records, rate, note=note))
 
 
-__all__ = ["render_merges_table", "render_run_fragment", "router"]
+__all__ = [
+    "render_merges_table",
+    "render_run_detail",
+    "render_run_fragment",
+    "router",
+]
