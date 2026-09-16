@@ -63,6 +63,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.sql import Select
 
 from app.db.models import (
+    Company,
     FilterRule,
     Listing,
     ListingDupe,
@@ -379,14 +380,18 @@ async def _enrich(
     if not ids:
         return []
 
-    listings = {
-        int(row.id): row
-        for row in (
-            await session.execute(select(Listing).where(Listing.id.in_(list(ids))))
+    listing_rows = (
+        await session.execute(
+            select(Listing, Company)
+            .outerjoin(Company, Listing.company_id == Company.id)
+            .where(Listing.id.in_(list(ids)))
         )
-        .scalars()
-        .all()
-    }
+    ).all()
+    listings: dict[int, Listing] = {}
+    companies: dict[int, Company | None] = {}
+    for listing, company in listing_rows:
+        listings[int(listing.id)] = listing
+        companies[int(listing.id)] = company
 
     grouped: dict[int, list[str]] = {}
     for listing_id, source in (
@@ -434,11 +439,12 @@ async def _enrich(
                     )
                 )
         state = states.get(listing_id, event_repo.NO_STATE)
+        company = companies.get(listing_id)
         rows.append(
             QueueRow(
                 id=listing_id,
                 title=listing.title or "",
-                company=listing.company_norm or "",
+                company=(company.name if company else None) or listing.company_norm or "",
                 location=listing.location_raw or "",
                 sources=tuple(grouped.get(listing_id, ())),
                 posted=listing.posted_at.isoformat() if listing.posted_at else "",

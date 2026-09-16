@@ -42,7 +42,6 @@ from urllib.parse import parse_qsl
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
@@ -54,13 +53,14 @@ from app.domain.criteria import search_query_from
 from app.domain.models import User
 from app.pipeline.run import resolve_enabled_adapters, run_pipeline
 from app.sources.base import CapabilityWarning, compile_query_for_source
+from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates = make_templates(TEMPLATE_DIR)
 
 CRITERIA_TEMPLATE = "html/criteria.html"
 CRITERIA_ROOT_ID = "criteria-list"

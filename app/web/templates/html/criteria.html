@@ -126,8 +126,8 @@
 <div class="rule-edit"
      data-rule-id="{{ rule.id }}"
      x-data="{ shown: false }">
-  <button type="button" class="rule-edit-toggle" @click="shown = !shown" :aria-expanded="shown.toString()">Edit</button>
-  <div class="rule-edit-fields" x-show="shown" x-cloak>
+  <button type="button" class="rule-edit-toggle" @click="shown = !shown" :aria-expanded="shown.toString()" aria-controls="rule-edit-fields-{{ rule.id }}">Edit</button>
+  <div class="rule-edit-fields" id="rule-edit-fields-{{ rule.id }}" x-show="shown" x-cloak>
     {% if rule.kind == 'salary_floor' %}
     <label for="rule-edit-amount-{{ rule.id }}">Amount</label>
     <input type="number" id="rule-edit-amount-{{ rule.id }}" name="salary_amount" min="0" step="1"
@@ -239,7 +239,7 @@
       <span class="search-version">v{{ search.version }}</span>
       <span class="search-state">{% if search.enabled %}enabled{% else %}disabled{% endif %}</span>
       {% if search.last_run_at %}
-      <span class="search-last-run">last run {{ search.last_run_at }}</span>
+      <span class="search-last-run">last run {{ search.last_run_at | format_datetime }}</span>
       {% endif %}
     </header>
 
@@ -251,9 +251,9 @@
               hx-swap="innerHTML">
         {% if search.enabled %}Disable{% else %}Enable{% endif %}
       </button>
-      <button type="button" class="search-edit-toggle" @click="editing = !editing" :aria-expanded="editing.toString()">Edit</button>
-      <button type="button" class="search-delete" @click="confirming = true">Delete</button>
-      <span class="search-delete-confirm" x-show="confirming">
+      <button type="button" class="search-edit-toggle" @click="editing = !editing" :aria-expanded="editing.toString()" aria-controls="search-edit-{{ search.id }}">Edit</button>
+      <button type="button" class="search-delete" @click="confirming = true" :aria-expanded="confirming.toString()" aria-controls="search-delete-confirm-{{ search.id }}">Delete</button>
+      <span class="search-delete-confirm" id="search-delete-confirm-{{ search.id }}" x-show="confirming">
         <button type="button"
                 class="search-delete-yes"
                 hx-post="/searches/{{ search.id }}/delete"
@@ -279,7 +279,7 @@
       <div id="search-status-{{ search.id }}" aria-live="polite"></div>
     </div>
 
-    <form class="search-edit" x-show="editing" x-cloak
+    <form class="search-edit" id="search-edit-{{ search.id }}" x-show="editing" x-cloak
           hx-post="/searches/{{ search.id }}"
           hx-target="#criteria-list"
           hx-swap="innerHTML">
@@ -317,10 +317,10 @@
       {% for rule in search.rules %}
       <li class="rule-row{% if not rule.enabled %} rule-disabled{% endif %}"
           id="rule-{{ rule.id }}">
-        <span class="rule-kind">{{ rule.kind }}</span>
+        <span class="rule-kind">{{ rule.kind | human_label }}</span>
         <span class="rule-summary">{{ rule.summary }}</span>
         <span class="rule-state">{% if rule.enabled %}on{% else %}off{% endif %}</span>
-        <span class="rule-controls">
+        <span class="rule-controls" x-data="{ confirming: false }">
           <button type="button"
                   class="rule-toggle"
                   hx-post="/searches/{{ search.id }}/rules/{{ rule.id }}/toggle"
@@ -328,13 +328,17 @@
                   hx-swap="innerHTML">
             {% if rule.enabled %}Disable{% else %}Enable{% endif %}
           </button>
-          <button type="button"
-                  class="rule-delete"
-                  hx-post="/searches/{{ search.id }}/rules/{{ rule.id }}/delete"
-                  hx-target="#criteria-list"
-                  hx-swap="innerHTML">
-            Delete
-          </button>
+          <button type="button" class="rule-delete" @click="confirming = true" :aria-expanded="confirming.toString()" aria-controls="rule-delete-confirm-{{ rule.id }}">Delete</button>
+          <span class="rule-delete-confirm" id="rule-delete-confirm-{{ rule.id }}" x-show="confirming">
+            <button type="button"
+                    class="rule-delete-yes"
+                    hx-post="/searches/{{ search.id }}/rules/{{ rule.id }}/delete"
+                    hx-target="#criteria-list"
+                    hx-swap="innerHTML">
+              Confirm
+            </button>
+            <button type="button" class="rule-delete-no" @click="confirming = false">Cancel</button>
+          </span>
         </span>
         {{ rule_edit_form(rule, "/searches/" ~ search.id ~ "/rules/" ~ rule.id) }}
       </li>

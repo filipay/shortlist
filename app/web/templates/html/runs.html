@@ -48,10 +48,10 @@
           data-reason="{{ run.reason or '' }}"
           data-in-flight="{{ 1 if run.in_flight else 0 }}">
         <td class="run-id">#{{ run.id }}</td>
-        <td class="run-status run-status-{{ run.status }}">{{ run.status }}</td>
+        <td class="run-status run-status-{{ run.status }}">{{ run.status | human_label }}</td>
         <td class="run-trigger">{{ run.trigger }}</td>
-        <td class="run-started">{{ run.started_at or '—' }}</td>
-        <td class="run-finished">{{ run.finished_at or '—' }}</td>
+        <td class="run-started">{{ run.started_at | format_datetime }}</td>
+        <td class="run-finished">{{ run.finished_at | format_datetime }}</td>
         {# An unfinished run shows an em dash, never `0s` — "in flight" must not read
            as "finished instantly". #}
         <td class="run-duration">{% if run.duration_seconds is none %}—{% else %}{{ run.duration_seconds | round(1) }}s{% endif %}</td>
@@ -63,7 +63,7 @@
         <td class="run-deduped">{{ run.deduped_count }}</td>
         <td class="run-filtered">{{ run.filtered_count }}</td>
         <td class="run-reason">
-          <span class="reason-value" id="run-reason-{{ run.id }}">{{ run.reason or 'unknown' }}</span>
+          <span class="reason-value" id="run-reason-{{ run.id }}">{{ run.reason or 'unknown' | human_label }}</span>
           <span class="reason-sentence">{{ run.sentence }}</span>
         </td>
         <td class="run-detail-slot">
@@ -99,7 +99,7 @@
 
 {% macro run_detail(detail) %}
 <div id="run-detail-{{ detail.id }}" class="run-detail" aria-live="polite">
-  <h3>Run #{{ detail.id }} — {{ detail.status }}</h3>
+  <h3>Run #{{ detail.id }} — {{ detail.status | human_label }}</h3>
   <p class="run-detail-sentence" id="run-detail-sentence-{{ detail.id }}">{{ detail.sentence }}</p>
 
   <h4>Counts behind the reason</h4>

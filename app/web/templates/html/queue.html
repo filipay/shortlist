@@ -27,7 +27,7 @@
   <h2>Last run</h2>
   {{ last_run_fragment }}
   <p class="last-run-reason" id="last-run-reason">
-    <span class="reason-value" id="last-run-reason-value">{{ last_run.reason or 'unknown' }}</span>
+    <span class="reason-value" id="last-run-reason-value">{{ last_run.reason or 'unknown' | human_label }}</span>
     <span class="reason-sentence">{{ last_run.sentence }}</span>
   </p>
   <p class="last-run-link">

@@ -836,6 +836,8 @@
   .search-delete-no,
   .rule-toggle,
   .rule-delete,
+  .rule-delete-yes,
+  .rule-delete-no,
   .rule-edit-toggle,
   .rule-edit-save,
   .rule-submit {
@@ -853,7 +855,8 @@
     background-color: var(--color-danger-bg);
   }
 
-  .search-delete-confirm {
+  .search-delete-confirm,
+  .rule-delete-confirm {
     display: inline-flex;
     gap: 0.5rem;
   }

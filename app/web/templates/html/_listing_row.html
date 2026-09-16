@@ -36,7 +36,7 @@
   <td class="listing-company">{{ row.company }}</td>
   <td class="listing-location">{{ row.location }}</td>
   <td class="listing-source">{{ row.sources | join(", ") }}</td>
-  <td class="listing-posted">{{ row.posted }}</td>
+  <td class="listing-posted">{{ row.posted | format_datetime }}</td>
   {% if show_excluded %}
   <td class="listing-exclusion">
     {% for rule in row.rules %}

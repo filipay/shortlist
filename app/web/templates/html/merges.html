@@ -49,7 +49,7 @@
     <tbody>
       {% for row in merges %}
       <tr id="merge-row-{{ row.id }}" class="merge-row{% if row.is_reverted %} merge-row-reverted{% endif %}">
-        <td class="merge-merged-at">{{ row.merged_at }}</td>
+        <td class="merge-merged-at">{{ row.merged_at | format_datetime }}</td>
         <td class="merge-method">{{ row.method }}</td>
         <td class="merge-score">{{ row.score }}</td>
         <td class="merge-survivor">

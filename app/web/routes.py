@@ -27,7 +27,6 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,13 +41,14 @@ from app.db.session import get_session
 from app.domain.models import User
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
+from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 router = APIRouter()
-templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates = make_templates(TEMPLATE_DIR)
 
 PAGE_TEMPLATE = "html/queue.html"
 LIST_TEMPLATE = "html/queue_list.html"

@@ -27,7 +27,6 @@ from pathlib import Path
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
@@ -38,13 +37,14 @@ from app.db.repositories import event_repo, state_repo
 from app.db.repositories.queue_repo import QueueQuery, read_row
 from app.db.session import get_session
 from app.domain.models import User
+from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
 
 router = APIRouter()
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates = make_templates(TEMPLATE_DIR)
 
 #: The row partial, re-rendered as the swap target. The queue renders the same file,
 #: so there is one rendering path and not two (T-02-38).

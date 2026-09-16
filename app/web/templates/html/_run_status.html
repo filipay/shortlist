@@ -1,9 +1,10 @@
 <div id="run-status"
      hx-get="/runs/{{ run.id }}/status"
      hx-trigger="every 2s"
-     hx-swap="outerHTML">
+     hx-swap="outerHTML"
+     aria-live="polite">
   <p class="run-badge run-status-{{ run.status }}">
-    Run #{{ run.id }} — {{ run.status }}
+    Run #{{ run.id }} — {{ run.status | human_label }}
   </p>
 
   {% if sources %}

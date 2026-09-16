@@ -20,7 +20,6 @@ from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
@@ -37,11 +36,12 @@ from app.db.repositories.run_repo import RunDetail
 from app.db.session import get_session, get_session_factory
 from app.domain.models import User
 from app.pipeline.run import TERMINAL_STATUSES, run_pipeline
+from app.web.template_env import make_templates
 
 router = APIRouter()
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+templates = make_templates(TEMPLATE_DIR)
 
 #: The Merges audit page (D-29 / QUEUE-09). The table markup lives in a macro inside
 #: this one template so the page and the revert fragment cannot drift apart.
