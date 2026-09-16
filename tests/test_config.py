@@ -36,6 +36,11 @@ REQUIRED_SETTINGS_FIELDS = (
     "local_user_id",
     "database_url_async",
     "database_url_sync",
+    # Phase 2 queue + dedup envelope (D-31 / D-40 / D-42).
+    "dedup_fuzzy_threshold",
+    "dedup_posted_window_days",
+    "stale_after_days",
+    "queue_page_size",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -47,6 +52,10 @@ LIMIT_FIELDS = (
     "probe_results_wanted",
     "probe_cache_ttl_seconds",
     "description_max_chars",
+    # Both are distinctive integers >= DISTINCTIVE_THRESHOLD_FLOOR, so listing
+    # them here is what makes the absence scan actually cover them.
+    "dedup_fuzzy_threshold",
+    "queue_page_size",
 )
 
 #: Values below this are too common in ordinary code (counts, indexes, 0/1) to
@@ -69,6 +78,7 @@ def test_documented_defaults() -> None:
     """Asserted against the declared defaults so an ambient env var cannot flake it."""
     assert Settings.model_fields["probe_country_indeed"].default == "ireland"
     assert Settings.model_fields["probe_max_detail_fetches"].default == 0
+    assert Settings.model_fields["dedup_fuzzy_threshold"].default == 88
 
 
 # --- 2. behaviour -------------------------------------------------------------
@@ -84,6 +94,22 @@ def test_an_environment_override_changes_the_effective_value(
 
     assert refreshed.probe_max_results == 7
     assert refreshed.probe_country_indeed == "spain"
+
+
+def test_the_new_queue_knobs_are_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Phase-2 thresholds are overridable exactly like the probe_* fields."""
+    assert Settings.model_fields["stale_after_days"].default == 14
+    assert Settings.model_fields["queue_page_size"].default == 25
+
+    monkeypatch.setenv("STALE_AFTER_DAYS", "30")
+    monkeypatch.setenv("DEDUP_FUZZY_THRESHOLD", "95")
+
+    refreshed = Settings()
+
+    assert refreshed.stale_after_days == 30
+    assert refreshed.dedup_fuzzy_threshold == 95
 
 
 def test_build_budget_reads_every_ceiling_from_settings(

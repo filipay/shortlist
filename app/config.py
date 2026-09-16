@@ -74,5 +74,19 @@ class Settings(BaseSettings):
     probe_promotion_blocked_runs: int = 3
     probe_promotion_consecutive_runs: int = 2
 
+    # --- Phase 2 queue + dedup envelope (D-31 / D-40 / D-42) ------------------
+    # Tier-2 fuzzy-match θ (D-31): a 0-100 starting value with a tuning task
+    # against the first real corpus. STATE.md records that it is untunable
+    # without one, so this is a setting, never a frozen constant.
+    dedup_fuzzy_threshold: int = 88
+    # The candidate blocking window for Tier-2 dedup, so two roles at one company
+    # a year apart are never compared.
+    dedup_posted_window_days: int = 90
+    # QUEUE-07 staleness boundary (D-40): a listing whose last_seen_at is older
+    # than this is stale (or is_active is false).
+    stale_after_days: int = 14
+    # The queue read model's page size (D-42 "Load more" paging).
+    queue_page_size: int = 25
+
 
 settings = Settings()
