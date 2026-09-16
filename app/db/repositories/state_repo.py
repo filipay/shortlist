@@ -60,15 +60,18 @@ async def advance_watermark(session: AsyncSession, *, now: datetime) -> datetime
     resurrect old listings as new, or "new since last visit" would become
     unfalsifiable. `NULL` (never viewed) always advances.
 
-    The single row is created if it does not exist, SAVEPOINT-wrapped as
-    `source_repo.ensure_registered_sources` does, so a racing insert degrades to a
-    re-read rather than an exception.
+    The single row is created if it does not exist, with an **explicit `id=1`** so
+    the primary key makes the "single-row" contract real: two concurrent first
+    inserts both target `id=1`, one wins and the other raises `IntegrityError`,
+    which is caught and degraded to a re-read. (Without the explicit id the
+    autoincrement hands the loser `id=2`, no `IntegrityError` is ever raised, and
+    `_load`'s lowest-id read silently ignores the second row.)
     """
     row = await _load(session)
     if row is None:
         try:
             async with session.begin_nested():
-                row = QueueState(last_queue_view_at=now, updated_at=now)
+                row = QueueState(id=1, last_queue_view_at=now, updated_at=now)
                 session.add(row)
                 await session.flush()
         except IntegrityError:  # a concurrent writer won the race; re-read instead

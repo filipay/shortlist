@@ -104,3 +104,39 @@ async def test_mark_all_seen_returns_and_stores_the_new_value(
     async with session_factory() as session:
         assert await get_watermark(session) == LATE.replace(tzinfo=None)
     assert await _rows(session_factory) == 1
+
+
+async def test_a_lost_first_insert_race_re_reads_and_never_creates_a_second_row(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """WR-03: the singleton needs an explicit id, or its race guard can never fire.
+
+    Seed the row a concurrent writer would have written, then make this caller's
+    first `_load` miss it (the race snapshot). With no uniqueness beyond the PK the
+    old autoincrement insert silently created a SECOND row that `_load`'s
+    lowest-id read ignores; the explicit `id=1` turns the lost race into the
+    `IntegrityError` the `except` clause was written for.
+    """
+    async with session_factory() as session:
+        session.add(QueueState(id=1, last_queue_view_at=None, updated_at=EARLY))
+        await session.commit()
+
+    from app.db.repositories import state_repo
+
+    real_load = state_repo._load
+    calls = {"n": 0}
+
+    async def racing_load(session: AsyncSession) -> QueueState | None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # what this caller saw before the other writer committed
+        return await real_load(session)
+
+    monkeypatch.setattr(state_repo, "_load", racing_load)
+
+    async with session_factory() as session:
+        await advance_watermark(session, now=LATE)
+        await session.commit()
+
+    assert calls["n"] == 2, "the lost race must fall back to the guarded re-read"
+    assert await _rows(session_factory) == 1, "a lost race must not create a second row"
