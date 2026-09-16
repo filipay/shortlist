@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
 from app.config import settings
+from app.db.repositories import state_repo
 from app.db.repositories.queue_repo import QueuePage, QueueQuery, read_queue
 from app.db.repositories.source_repo import SourceHealth, get_source_health
 from app.db.session import get_session
@@ -119,15 +120,19 @@ def _queue_context(page: QueuePage) -> dict[str, Any]:
 
 
 async def _read_queue_page(
-    session: AsyncSession, params: Mapping[str, str], *, now: datetime
+    session: AsyncSession,
+    params: Mapping[str, str],
+    *,
+    now: datetime,
+    watermark: datetime | None,
 ) -> QueuePage:
-    """Read one page with the current watermark. The caller owns any commit."""
+    """Read one page at the given watermark. The caller owns any commit."""
     return await read_queue(
         session,
         query=parse_queue_query(params),
         now=now,
         stale_after_days=settings.stale_after_days,
-        watermark=None,
+        watermark=watermark,
     )
 
 
@@ -144,7 +149,17 @@ async def queue(
     pass is Phase 8.
     """
     now = datetime.now(UTC)
-    page = await _read_queue_page(session, request.query_params, now=now)
+    watermark = await state_repo.get_watermark(session)
+    page = await _read_queue_page(
+        session, request.query_params, now=now, watermark=watermark
+    )
+
+    # The advance happens AFTER the read, so the render the user is looking at keeps
+    # the badges it was rendered with. This is the only IMPLICIT advance in the whole
+    # application — the other writer is the explicit `Mark all as seen` action.
+    await state_repo.advance_watermark(session, now=now)
+    await session.commit()
+
     source_health, reachable, version, error = await _health_strip(session, backend)
 
     return templates.TemplateResponse(
@@ -172,7 +187,32 @@ async def queue_list(
     A fragment read does **not** advance the watermark: only opening the page
     (`GET /`) and the explicit `Mark all as seen` action do.
     """
-    page = await _read_queue_page(session, request.query_params, now=datetime.now(UTC))
+    page = await _read_queue_page(
+        session,
+        request.query_params,
+        now=datetime.now(UTC),
+        watermark=await state_repo.get_watermark(session),
+    )
+    return templates.TemplateResponse(request, LIST_TEMPLATE, _queue_context(page))
+
+
+@router.post("/queue/mark-seen", response_class=HTMLResponse)
+async def queue_mark_seen(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Advance the watermark and return the refreshed queue fragment.
+
+    The page is read **after** marking, so the new badges are already cleared in the
+    fragment the user sees — otherwise `Mark all as seen` would look like a no-op
+    until the next reload.
+    """
+    now = datetime.now(UTC)
+    await state_repo.mark_all_seen(session, now=now)
+    await session.commit()
+
+    page = await _read_queue_page(session, request.query_params, now=now, watermark=now)
     return templates.TemplateResponse(request, LIST_TEMPLATE, _queue_context(page))
 
 

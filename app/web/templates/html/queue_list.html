@@ -9,6 +9,18 @@
    pins the rendered `"0 listings"` string and the `No listings yet` empty state. #}
 <p class="queue-count" id="queue-count">{{ count }} listing{% if count != 1 %}s{% endif %}</p>
 
+{# The explicit watermark action. It carries the current predicate set in its URL
+   (so the refreshed fragment keeps the user's filters) and swaps the fragment's
+   CONTENTS rather than the wrapper — `#queue-list` lives in queue.html, so an
+   outerHTML swap would delete the very element every later swap targets. #}
+<button type="button"
+        id="queue-mark-seen"
+        hx-post="/queue/mark-seen?{{ page.query.query_string() }}"
+        hx-target="#queue-list"
+        hx-swap="innerHTML">
+  Mark all as seen
+</button>
+
 {% if is_empty %}
 <p class="empty-state" id="queue-empty">
   No listings yet. Once a search runs, its normalised results appear here.

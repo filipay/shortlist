@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
@@ -24,6 +25,17 @@ from app.sources.base import (
 from app.sources.linkedin import CAPABILITIES, map_jobspy_row
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "listings"
+
+
+def _without_new_signal(body: str) -> str:
+    """`body` with the `new`-since-last-visit signal stripped.
+
+    Plan 02-07's watermark advance makes exactly this one difference legitimate
+    between two consecutive queue loads, so normalising it out lets a byte comparison
+    still catch any OTHER divergence.
+    """
+    body = re.sub(r' data-new="\d"', "", body)
+    return body.replace('<span class="badge badge-new">new</span>', "")
 
 
 class FixtureLinkedIn(JobSource):
@@ -149,9 +161,15 @@ async def test_queue_order_is_deterministic_when_first_seen_at_is_equal(
 ) -> None:
     """Both fixture items are persisted with the SAME `first_seen_at`, so the
     id-descending tie-break is the only thing that can order them — and two
-    identical requests must render byte-identically."""
-    import re
+    identical requests must render the same rows in the same order.
 
+    Plan 02-07 narrowed this from a whole-body byte comparison. Opening the queue now
+    advances the `queue_state` watermark (D-39), so the SECOND render legitimately
+    drops the `new` signal the first one showed — that is the feature, not drift. The
+    contract this test exists for is the ROW ORDER, so it is asserted directly, and
+    the two bodies are asserted byte-identical once the one deliberate difference is
+    normalised out (catching any OTHER divergence between two identical requests).
+    """
     registry.register(FixtureLinkedIn)
     await _register_source(session_factory, "linkedin")
 
@@ -160,9 +178,14 @@ async def test_queue_order_is_deterministic_when_first_seen_at_is_equal(
     first = await client.get("/")
     second = await client.get("/")
 
-    assert first.text == second.text, "identical requests must produce identical output"
+    assert _without_new_signal(first.text) == _without_new_signal(second.text), (
+        "two identical requests must differ only in the new-since-last-visit signal"
+    )
 
     titles = re.findall(r'<td class="listing-title">([^<]+)</td>', first.text)
     assert titles == ["Platform Engineer", "Senior Python Engineer"], (
         "expected id-descending order as the tie-break on equal first_seen_at"
+    )
+    assert titles == re.findall(r'<td class="listing-title">([^<]+)</td>', second.text), (
+        "the order must not change between two identical requests"
     )
