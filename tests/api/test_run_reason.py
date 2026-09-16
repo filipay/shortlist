@@ -255,3 +255,29 @@ async def test_the_pinned_phase_one_queue_contract_survives_the_strip(client) ->
     assert 'id="run-status-slot"' in response.text
     assert "0 listings" in response.text
     assert "No listings yet" in response.text
+
+
+async def test_a_render_failure_in_the_strip_does_not_500_the_queue(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """WR-01: the strip is decorative, so its RENDER must sit inside the guard too.
+
+    Before the fix only `list_runs` was guarded; a template failure (an older or
+    hand-edited `stage_log_json`) escaped as a 500 on `GET /` — the product page.
+    """
+    await _register_sources(session_factory, "linkedin")
+    await run_pipeline(
+        "manual", None, session_factory, adapters=[StubAdapter("linkedin", [_raw("linkedin")])]
+    )
+
+    from app.web import routes as web_routes
+
+    def _boom(request, run, sources):  # noqa: ANN001
+        raise RuntimeError("the partial cannot traverse this run row")
+
+    monkeypatch.setattr(web_routes, "render_run_fragment", _boom)
+
+    response = await client.get("/")
+
+    assert response.status_code == 200, "a decorative strip must never 500 the queue"
+    assert 'id="last-run"' not in response.text, "the strip degrades to absent"

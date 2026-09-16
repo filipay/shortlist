@@ -161,14 +161,17 @@ async def _last_run_strip(
     """
     try:
         runs = await run_repo.list_runs(session, limit=1)
+        latest = runs[0] if runs else None
+        if latest is None:
+            return None, None
+        # The RENDER is inside the guard too: the docstring promises this is
+        # decorative, and a hand-edited/older `stage_log_json` the partial cannot
+        # traverse must not 500 the product page.
+        fragment = Markup(render_run_fragment(request, latest, latest.sources))
     except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the queue
         log.warning("queue.last_run_read_failed", error=type(exc).__name__)
         return None, None
-
-    latest = runs[0] if runs else None
-    if latest is None:
-        return None, None
-    return latest, Markup(render_run_fragment(request, latest, latest.sources))
+    return latest, fragment
 
 
 @router.get("/", response_class=HTMLResponse)
