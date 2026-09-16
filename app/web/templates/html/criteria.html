@@ -265,6 +265,20 @@
       </span>
     </div>
 
+    {# D-45: iterate on one search without changing the one-tap full run. The status
+       fragment lands in this search's own slot, so the queue's run strip is
+       untouched; its `hx-get="/runs/{id}/status"` self-poll drives the swap. #}
+    <div class="search-run">
+      <button type="button"
+              class="search-run-now"
+              hx-post="/searches/{{ search.id }}/run"
+              hx-target="#search-status-{{ search.id }}"
+              hx-swap="innerHTML">
+        Run this one
+      </button>
+      <div id="search-status-{{ search.id }}"></div>
+    </div>
+
     <form class="search-edit" x-show="editing"
           hx-post="/searches/{{ search.id }}"
           hx-target="#criteria-list"

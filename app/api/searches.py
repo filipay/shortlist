@@ -31,6 +31,7 @@ Route families:
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime
@@ -42,12 +43,17 @@ import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
+from app.api.runs import render_run_fragment
+from app.db.models import Run
 from app.db.repositories import search_repo
-from app.db.session import get_session
+from app.db.session import get_session, get_session_factory
+from app.domain.criteria import search_query_from
 from app.domain.models import User
+from app.pipeline.run import resolve_enabled_adapters, run_pipeline
+from app.sources.base import CapabilityWarning, compile_query_for_source
 
 log = structlog.get_logger(__name__)
 
@@ -61,7 +67,7 @@ CRITERIA_ROOT_ID = "criteria-list"
 
 #: Strong references to in-flight per-search run tasks, mirroring `app/api/runs.py`:
 #: a fire-and-forget pipeline must not be garbage-collected before it finishes.
-_BACKGROUND_TASKS: set[Any] = set()
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 #: Split a comma- or newline-separated free-text list into non-empty entries.
 _TERM_SPLIT_RE = re.compile(r"[,\n]")
@@ -327,6 +333,60 @@ async def build_search_views(
     return views
 
 
+async def build_capability_warnings(
+    session: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> dict[int, list[dict[str, Any]]]:
+    """Per-search, per-board warnings for a filter a board cannot honour (D-37).
+
+    For each **enabled** search, its `SearchQuery` is compiled against each enabled
+    adapter's declared `SourceCapabilities` through the existing
+    `compile_query_for_source` — the same compiler the run path uses, so the report
+    and the run can never disagree. The structured `CapabilityWarning` triples are
+    returned as plain `{board, filter, reason}` mappings for the template.
+
+    Decorations must not 500 the page (`_health_strip`'s pattern): a registry or
+    adapter failure degrades to *no warnings* and a logged warning. The deprecated
+    plain-text `capability_warnings()` wrapper is deliberately not used.
+    """
+    try:
+        records = await search_repo.enabled_searches(session)
+        adapters = await resolve_enabled_adapters(session_factory)
+    except Exception as exc:  # noqa: BLE001 — decorative data must not take the page down
+        log.warning("searches.capability_read_failed", error=type(exc).__name__)
+        return {}
+
+    collected: dict[int, list[dict[str, Any]]] = {}
+    for record in records:
+        query = search_query_from(record.criteria_json)
+        rows: list[dict[str, Any]] = []
+        for adapter in adapters:
+            try:
+                compiled = compile_query_for_source(
+                    query, adapter.capabilities, source=adapter.name
+                )
+            except Exception as exc:  # noqa: BLE001 — one board must not blank the report
+                log.warning(
+                    "searches.capability_compile_failed",
+                    source=getattr(adapter, "name", "?"),
+                    error=type(exc).__name__,
+                )
+                continue
+            for warning in compiled.warnings:
+                rows.append(_warning_view(warning))
+        if rows:
+            collected[record.id] = rows
+    return collected
+
+
+def _warning_view(warning: CapabilityWarning) -> dict[str, Any]:
+    return {
+        "board": warning.source,
+        "filter": warning.filter_name,
+        "reason": warning.reason,
+    }
+
+
 def render_criteria_list(
     searches: Sequence[Mapping[str, Any]],
     *,
@@ -369,9 +429,16 @@ async def criteria_page(
     request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> HTMLResponse:
-    """The criteria page: every search (enabled and disabled) with its rules."""
-    searches = await build_search_views(session)
+    """The criteria page: every search (enabled and disabled) with its rules.
+
+    Also renders the pre-run capability report (D-37): which of a search's filters
+    each board cannot honour, so the user is told *before* a run rather than
+    believing a filter applied.
+    """
+    warnings = await build_capability_warnings(session, session_factory)
+    searches = await build_search_views(session, warnings_by_search=warnings)
     return templates.TemplateResponse(
         request,
         CRITERIA_TEMPLATE,
@@ -632,8 +699,47 @@ async def delete_rule_route(
     return await _render_list(request, session, note="Rule deleted.")
 
 
+@router.post("/searches/{search_id}/run", response_class=HTMLResponse)
+async def run_search_route(
+    search_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> HTMLResponse:
+    """Run one search on its own, without disturbing the one-tap full trigger.
+
+    Same contract as `POST /runs` (Phase 1): create the `runs` row with this
+    `search_id`, commit it, enqueue the *same* `run_pipeline` callable with
+    `run_id=` and never await it, then answer **202** with the polling fragment —
+    which carries `hx-get="/runs/{id}/status"`, the shape the compose smoke reads.
+    """
+    record = await search_repo.search_by_id(session, search_id)
+    if record is None:
+        return await _not_found(session, "Unknown search.")
+
+    run = Run(
+        search_id=int(search_id),
+        trigger="manual",
+        status="running",
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+
+    task = asyncio.create_task(
+        run_pipeline("manual", int(search_id), session_factory, run_id=run.id)
+    )
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    return HTMLResponse(render_run_fragment(request, run, None), status_code=202)
+
+
 __all__ = [
     "CRITERIA_ROOT_ID",
+    "build_capability_warnings",
     "build_search_views",
     "criteria_from_form",
     "describe_rule",

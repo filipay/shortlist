@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -359,4 +360,36 @@ async def test_rule_routes_404_for_a_rule_that_belongs_to_another_search(
 
     assert response.status_code == 404
     assert (await _rule_rows(session_factory))[0].enabled is True
+
+
+# --- flagged assumptions this plan owns ---------------------------------------
+
+
+async def test_two_identical_creates_produce_two_distinguishable_searches(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Recorded honestly: there is no unique constraint on `searches.name` (no idempotency)."""
+    await client.post("/searches", data={"name": "Dup", "keywords": "python"})
+    await client.post("/searches", data={"name": "Dup", "keywords": "python"})
+
+    rows = await _search_rows(session_factory)
+    assert len(rows) == 2
+    assert rows[0].id != rows[1].id, "the second is distinguishable by its id"
+
+
+@pytest.mark.parametrize("amount", ["-1", "1.5", "abc"])
+async def test_a_non_integer_salary_floor_rule_is_rejected(
+    client, session_factory: async_sessionmaker[AsyncSession], amount: str
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+
+    response = await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "salary_floor", "salary_amount": amount},
+    )
+
+    assert response.status_code == 400
+    assert await _rule_rows(session_factory) == []
+
 

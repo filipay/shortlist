@@ -29,6 +29,7 @@ from app.db.repositories.search_repo import (
     active_listings,
     enabled_searches,
     rules_for_searches,
+    search_by_id,
 )
 from app.domain.criteria import rule_specs_from
 from app.domain.filter import evaluate
@@ -43,9 +44,15 @@ async def run_filter_stage(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: int,
     *,
+    search_id: int | None = None,
     now: datetime | None = None,
 ) -> StageResult:
     """Evaluate this run's rules against every listing the run touched.
+
+    Rule scope is the **union of every enabled search** (A4) when `search_id` is
+    `None`. A per-search run (`search_id` not `None`, D-45's "Run this one") scopes
+    to that one search — enabled or not, because the user pointed at it explicitly —
+    so iterating on a single search cannot be perturbed by another search's rules.
 
     Returns a `StageResult` whose counts carry `survivors`, `excluded_listings` and
     `exclusions`; `run_pipeline` turns `excluded_listings` into `filtered_count`.
@@ -58,7 +65,11 @@ async def run_filter_stage(
         if run is None or run.started_at is None:
             return StageResult(FILTER_STAGE, counts.counts, counts.errors)
 
-        searches = await enabled_searches(session)
+        if search_id is not None:
+            scoped = await search_by_id(session, search_id)
+            searches = [scoped] if scoped is not None else []
+        else:
+            searches = await enabled_searches(session)
         counts.bump("enabled_searches", len(searches))
         if not searches:
             # No enabled search means no rules: the stage is legitimately a no-op.

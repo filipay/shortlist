@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.db.models import QueueState, Run, Source
+from app.db.models import QueueState, Run, Search, Source
 from app.db.repositories.exclusion_repo import (
     excluded_counts_for_run,
     rule_counts_for_listings,
@@ -30,6 +30,7 @@ from app.db.repositories.search_repo import (
     active_listings,
     enabled_searches,
     rules_for_searches,
+    search_by_id,
 )
 from app.domain.criteria import search_query_from
 from app.domain.run_reason import RunCounts, compute_empty_reason
@@ -115,6 +116,18 @@ async def _resolve_adapters(
             continue
         resolved.append(adapter_cls())
     return resolved
+
+
+async def resolve_enabled_adapters(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[JobSource]:
+    """The enabled adapters, resolved through the `sources` rows and the registry.
+
+    A thin public seam over `_resolve_adapters`, for a caller that wants the
+    capabilities *without* running a pipeline (the criteria page's pre-run report,
+    D-37). It reuses the run path's one resolution rather than a second SQL copy.
+    """
+    return await _resolve_adapters(session_factory, None)
 
 
 async def _fetch_one(
@@ -277,9 +290,21 @@ def _query_snapshot(query: SearchQuery) -> dict[str, Any]:
     }
 
 
-async def _build_criteria_snapshot(session: AsyncSession) -> dict[str, Any]:
-    """The exact query + rule set this run will use, keyed by search id (D-33)."""
-    searches = await enabled_searches(session)
+async def _build_criteria_snapshot(
+    session: AsyncSession, *, search_id: int | None = None
+) -> dict[str, Any]:
+    """The exact query + rule set this run will use, keyed by search id (D-33).
+
+    With `search_id` set (D-45's per-search run) the snapshot has exactly one entry
+    and is that search's query+rules — so a "Run this one" is reproducible on its
+    own, not blurred into the union. With `search_id` `None` it is the union of the
+    enabled searches, unchanged from plan 02-05.
+    """
+    if search_id is not None:
+        record = await search_by_id(session, search_id)
+        searches = [record] if record is not None else []
+    else:
+        searches = await enabled_searches(session)
     rules = await rules_for_searches(session, [record.id for record in searches])
 
     by_search: dict[int, list[Any]] = {}
@@ -306,7 +331,10 @@ async def _build_criteria_snapshot(session: AsyncSession) -> dict[str, Any]:
 
 
 async def _write_criteria_snapshot(
-    session_factory: async_sessionmaker[AsyncSession], run_id: int
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: int,
+    *,
+    search_id: int | None = None,
 ) -> dict[str, Any]:
     """Write the snapshot BEFORE the fetch, and never rewrite it (CRIT-02).
 
@@ -318,7 +346,7 @@ async def _write_criteria_snapshot(
         run = await session.get(Run, run_id)
         if run is None:  # pragma: no cover — the row was created by this call
             return {}
-        snapshot = await _build_criteria_snapshot(session)
+        snapshot = await _build_criteria_snapshot(session, search_id=search_id)
         run.criteria_snapshot_json = snapshot or None
         await session.commit()
     return snapshot
@@ -502,6 +530,46 @@ async def _finish(
         await session.commit()
 
 
+async def _stamp_last_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    search_id: int,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Record the per-search `last_run_at` — never a global one (PITFALLS m10).
+
+    Only a per-search run (`search_id` set) stamps here: the union run's behaviour
+    is unchanged, and a per-search run's freshness belongs to that search alone.
+    """
+    async with session_factory() as session:
+        row = await session.get(Search, search_id)
+        if row is None:
+            return
+        row.last_run_at = now or datetime.now(UTC)
+        await session.commit()
+
+
+async def _resolve_fetch_query(
+    session_factory: async_sessionmaker[AsyncSession],
+    query: SearchQuery | None,
+    search_id: int | None,
+) -> SearchQuery:
+    """The query the fetch uses: an explicit query wins, else the scoped search.
+
+    With neither, the Phase-1 `default_query()` applies. This is what makes D-45's
+    "Run this one" fetch with *that search's* query without touching the one-tap
+    trigger's behaviour.
+    """
+    if query is not None:
+        return query
+    if search_id is not None:
+        async with session_factory() as session:
+            record = await search_by_id(session, search_id)
+        if record is not None:
+            return search_query_from(record.criteria_json)
+    return default_query()
+
+
 async def run_pipeline(
     trigger: str,
     search_id: int | None,
@@ -548,11 +616,12 @@ async def run_pipeline(
         # Criteria snapshot (D-33 / CRIT-02): BEFORE the fetch, never rewritten, so
         # a run that fails mid-way still records what it attempted and a later
         # criteria edit cannot change what a completed run says it used.
-        await _write_criteria_snapshot(session_factory, resolved_run_id)
+        await _write_criteria_snapshot(session_factory, resolved_run_id, search_id=search_id)
 
         selected = await _resolve_adapters(session_factory, adapters)
         adapters_resolved = len(selected)
-        fetched = await _fetch_all(selected, query or default_query())
+        fetch_query = await _resolve_fetch_query(session_factory, query, search_id)
+        fetched = await _fetch_all(selected, fetch_query)
         if not selected:
             # Zero adapters resolved: the run fetched nothing, so `done` would be a
             # false success — the badge reads clean while the queue stays empty (and
@@ -617,7 +686,9 @@ async def run_pipeline(
         # filter failure is recorded and the run still finishes, because the
         # listings are already persisted.
         try:
-            filter_result = await run_filter_stage(session_factory, resolved_run_id)
+            filter_result = await run_filter_stage(
+                session_factory, resolved_run_id, search_id=search_id
+            )
             excluded_count = int(filter_result.counts.get("excluded_listings", 0))
             stage_log.append(_stage_entry(FILTER_STAGE, filter_result.counts, filter_result.errors))
             errors.extend(
@@ -667,6 +738,10 @@ async def run_pipeline(
         reason=reason,
         reason_counts=reason_counts,
     )
+    # A per-search run records that search's freshness; the union run does not, so
+    # the one-tap trigger's behaviour is unchanged (PITFALLS m10).
+    if search_id is not None:
+        await _stamp_last_run(session_factory, search_id)
     log.info(
         "pipeline.finished",
         run_id=resolved_run_id,
@@ -684,5 +759,6 @@ __all__ = [
     "TERMINAL_STATUSES",
     "build_budget",
     "default_query",
+    "resolve_enabled_adapters",
     "run_pipeline",
 ]
