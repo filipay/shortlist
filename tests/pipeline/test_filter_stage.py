@@ -200,6 +200,79 @@ async def test_a_stored_rule_rejects_a_listing_and_the_run_records_why(
     assert "trading desk" not in str(exclusion.detail_json)
 
 
+async def test_each_exclusion_row_carries_its_own_searchs_criteria_version(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-05: with rules from two searches, each row records its OWN search's version.
+
+    A listing rejected by two enabled searches' rules (the A4 union scope) must not
+    stamp search B's row with search A's `criteria_version`.
+    """
+    await _register_sources(session_factory, "linkedin")
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        first = Search(
+            name="First",
+            enabled=True,
+            criteria_json={"keywords": "python"},
+            version=3,
+            created_at=now,
+            updated_at=now,
+        )
+        second = Search(
+            name="Second",
+            enabled=True,
+            criteria_json={"keywords": "python"},
+            version=7,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([first, second])
+        await session.flush()
+        first_rule = FilterRule(
+            search_id=first.id,
+            kind="exclude_keyword",
+            params_json={"terms": ["crypto"], "fields": ["description"]},
+            enabled=True,
+            position=0,
+            created_at=now,
+            updated_at=now,
+        )
+        second_rule = FilterRule(
+            search_id=second.id,
+            kind="exclude_keyword",
+            params_json={"terms": ["nft"], "fields": ["description"]},
+            enabled=True,
+            position=0,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add_all([first_rule, second_rule])
+        await session.commit()
+        first_rule_id = int(first_rule.id)
+        second_rule_id = int(second_rule.id)
+
+    linkedin = OneListingAdapter(
+        "linkedin",
+        _raw(
+            "linkedin",
+            title="Backend Engineer",
+            company="Acme",
+            description="crypto and nft both appear in this description.",
+        ),
+    )
+
+    await run_pipeline("manual", None, session_factory, adapters=[linkedin])
+
+    async with session_factory() as session:
+        rows = (await session.execute(select(ListingExclusion))).scalars().all()
+
+    versions = {row.rule_id: row.criteria_version for row in rows}
+    assert versions == {str(first_rule_id): 3, str(second_rule_id): 7}, (
+        "each exclusion row must carry its own owning search's criteria_version"
+    )
+
+
 async def test_two_identical_runs_append_one_exclusion_row_each(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

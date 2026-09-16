@@ -46,10 +46,19 @@ async def record_exclusions(
     listing_id: int,
     run_id: int | None,
     outcomes: Sequence[RuleOutcome],
-    criteria_version: int | None,
+    criteria_version: int | None = None,
     now: datetime,
+    version_by_rule: Mapping[str, int | None] | None = None,
 ) -> int:
     """Write one row per firing outcome. Returns the rows written.
+
+    `criteria_version` stamps **every** row with one value, which is right when a
+    batch belongs to a single search. When a listing can be rejected by rules from
+    several searches in the same run (the A4 union scope), pass `version_by_rule`
+    — a `rule_id -> criteria_version` mapping — and each row is stamped with its
+    **own** owning search's version, so the stored per-row evidence is per-row
+    correct. `version_by_rule` takes precedence when supplied; a rule absent from
+    the mapping records `None` rather than inheriting an unrelated search's value.
 
     The whole batch is wrapped in a SAVEPOINT as `source_repo` does, so one bad row
     cannot poison the run's outer transaction. `cancel` is never called: nothing is
@@ -65,7 +74,9 @@ async def record_exclusions(
             rule_id=outcome.rule_id,
             rule_kind=outcome.rule_kind,
             detail_json=dict(outcome.detail or {}),
-            criteria_version=criteria_version,
+            criteria_version=_criteria_version_for(
+                criteria_version, version_by_rule, outcome.rule_id
+            ),
             created_at=now,
         )
         for outcome in outcomes
@@ -76,6 +87,17 @@ async def record_exclusions(
         await session.flush()
 
     return len(rows)
+
+
+def _criteria_version_for(
+    criteria_version: int | None,
+    version_by_rule: Mapping[str, int | None] | None,
+    rule_id: str | None,
+) -> int | None:
+    """One row's `criteria_version`: the per-rule override when given, else the batch value."""
+    if version_by_rule is None:
+        return criteria_version
+    return version_by_rule.get(rule_id) if rule_id is not None else None
 
 
 async def excluded_counts_for_run(session: AsyncSession, *, run_id: int) -> dict[str, int]:

@@ -113,12 +113,14 @@ async def run_filter_stage(
                 continue
 
             # A listing may be rejected by rules from more than one search (the
-            # union scope). The row records the version of the search owning the
-            # FIRST firing rule — deterministic, because `evaluate` orders by
+            # union scope), so each row records the version of ITS OWN owning
+            # search rather than the first firing rule's. `evaluate` orders by
             # `(position, rule_id)` and a rule id belongs to exactly one search.
-            first = outcomes[0]
-            owning_search = search_id_by_rule.get(first.rule_id)
-            criteria_version = version_by_search.get(owning_search) if owning_search else None
+            version_by_rule = {
+                outcome.rule_id: version_by_search.get(search_id_by_rule.get(outcome.rule_id))
+                for outcome in outcomes
+                if outcome.rule_id is not None
+            }
 
             try:
                 written = await record_exclusions(
@@ -126,7 +128,7 @@ async def run_filter_stage(
                     listing_id=record.id,
                     run_id=run_id,
                     outcomes=outcomes,
-                    criteria_version=criteria_version,
+                    version_by_rule=version_by_rule,
                     now=moment,
                 )
             except Exception as exc:  # noqa: BLE001 — one bad write must not abort
