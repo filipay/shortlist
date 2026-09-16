@@ -113,31 +113,60 @@ same behaviour upstream. Internally consistent and individually true — but it 
   headline with the latest run as detail — the phase already established the trailing-window idiom;
 - all-time un-reverted merges over all-time fetched, with the latest run beside it.
 
-### G3 — residual dedup gap on the phase's CENTRAL promise — INVESTIGATE
-SC1 promises "the same job found on two sources appears once". A real-corpus case violates it.
+### G3 — dedup gap on the phase's CENTRAL promise — ROOT CAUSE CONFIRMED AND FIXED
+SC1 promises "the same job found on two sources appears once". A real-corpus case violated it.
 
-Evidence:
-- Block `mastercard|engineer senior software` holds at least three listings:
-  id=3 (`indeed`), id=4 (`indeed`), id=74 (`linkedin`).
-- Run #5 merged exactly one pair: `dupe #5: survivor=3 absorbed=4 score=100.0`.
-- id=74 remains UN-ABSORBED with an IDENTICAL `company_norm`, IDENTICAL `title_norm`
-  (`senior software engineer`) and the SAME `blocking_key` as survivor id=3 — and it is CROSS-SOURCE
-  (`linkedin` vs `indeed`), which is precisely the case Tier-2 exists for.
-- Their posted dates are 7 days apart (id=3 `2026-09-15`, id=74 `2026-09-08`), far inside the 90-day
-  `dedup_posted_window_days`.
-- The pure planner EXPLICITLY supports this collapse — `app/domain/dedup.py:189-192`: "a listing
-  already absorbed is removed from the pool, so a three-way duplicate produces two merges onto the
-  first-seen survivor rather than a chain."
+**Root cause (confirmed, not hypothesised): the score gate contradicted the location gate.**
+`app/domain/dedup.py::score_pair` scored a text built by `_pair_text` (`dedup.py:108-114`) that
+concatenates `company + title + location`. So a listing with a NULL `location_norm` was **penalised in
+the score for the very absence the location gate declares acceptable** — the module's own contract at
+`dedup.py:134-135` / `151-156` is *"an unknown location is never a rejection reason"*.
 
-So the planner was designed to merge both, and the run merged one. The fault is therefore most likely
-in candidate SELECTION or per-run bookkeeping — e.g. `dupe_repo.candidates_for_block` not placing id=74
-in run #5's candidate block, or a one-merge-per-survivor cap — **not** in the score gate.
-That is a hypothesis, not a diagnosis, and it needs a real investigation before any fix.
+The live pair:
+| side | `_pair_text` | score |
+|---|---|---|
+| id=3 (indeed) | `'mastercard senior software engineer dublin, d, ie'` | — |
+| id=74 (linkedin, NULL `location_norm`) | `'mastercard senior software engineer'` | **83.33** |
 
-Second case, explainable rather than a bug: `jpmorganchase | director of software engineering`
-(id=23 + id=44, BOTH `indeed`, same `blocking_key`). Tier-1 cannot catch a repost carrying a new
-`source_listing_id`, and Tier-2 is cross-source by design — worth documenting as a known
-same-source-repost limitation.
+83.33 < θ=88, so `score_pair` returned `None` and `candidate_merges` never proposed the pair. The block
+ordered `[3, 4, 74]`, so survivor 3 absorbed 4 (score 100.0) and dropped 74.
 
-The UI cannot surface a MISS at all: `/merges` lists only merged rows, so an unmerged duplicate is
-invisible by construction — which is exactly why finding this needed a hand-written corpus query.
+**The earlier hypothesis in this file was WRONG and is corrected here.** Candidate selection was not at
+fault: `candidates_for_block` filters only `company_norm` + `is_active` (never "touched this run"), and
+the persisted stage logs show `candidates: 102, proposed: 6` on both runs, with run #6 recording
+`skipped_already_merged: 6`. id=74 was in the pool both times; the pair was simply never proposed.
+
+**A second correction.** This file previously said Tier-2 is "cross-source by design". That is false in
+this codebase: `listing_dupes` #2 (22←38) and #4 (39←43) are both **indeed↔indeed** merges. The
+`jpmorganchase` id=23 vs id=44 case is refused by the dedicated location gate (`'dublin 1, d, ie'` vs
+`'dublin 2, d, ie'`), a deliberate safety-bias refusal documented and unit-tested at
+`tests/domain/test_dedup.py:122-136` — not a cross-source limitation. Whether "dublin 1" and "dublin 2"
+should count as the same role is a separate **product** question.
+
+**Impact was bounded:** a corpus-wide scan found the only title-identical pairs failing the score gate
+are (3,74) and (4,74), both this exact mechanism. One bug, one mechanism.
+
+**Fix:** `a51a133` — `_pair_text` gained a keyword-only `include_location: bool = True`; `score_pair`
+now scores over `(company, title)` alone when **exactly one** side's location is unknown, and keeps the
+full `(company, title, location)` tuple when both are known (so both-present scores are byte-identical
+and the boundary assertion at `tests/domain/test_dedup.py:140-150` is untouched). Rejected alternative:
+always dropping location, which would change both-present scores and break that boundary assertion.
+
+**Proof:** the diagnosing lane's reproduction test
+`tests/pipeline/test_dedup_merge.py::test_a_three_way_duplicate_merges_both_twins_onto_the_first_seen`
+failed on the old code with `assert 1 == 2` and passes unmodified after the fix; three focused unit
+tests pin the mechanism in `tests/domain/test_dedup.py`. Full suite 605 passed, `ruff` clean.
+
+**Operational consequence:** the live corpus still holds the unmerged pair. A rerun will now absorb
+id=74, taking that run's `deduped_count` from 6 to 7 (it is `count_merges_for_run`) and raising
+`merge_rate()`'s numerator by 1 with `fetched_count` unchanged. `merge_rate()` itself is deliberately
+untouched — see G2.
+
+**Assessed and deliberately NOT changed:** a blank `title_norm` depresses the score by the same
+mechanism, but the module declares no contract that an unknown *title* is acceptable, and refusing to
+merge on a missing title is the safety-preserving direction (merging on company alone would collapse
+distinct roles). A NULL `company_norm` is an explicit hard refusal, never silently scored, so no
+contradiction exists there.
+
+**Still invisible in the UI:** `/merges` lists only merged rows, so an unmerged duplicate cannot be
+surfaced at all — finding this needed a hand-written corpus query.
