@@ -113,17 +113,31 @@ same behaviour upstream. Internally consistent and individually true — but it 
   headline with the latest run as detail — the phase already established the trailing-window idiom;
 - all-time un-reverted merges over all-time fetched, with the latest run beside it.
 
-### G3 — residual dedup gap: identical company+title pairs left unmerged — INVESTIGATE
-After 6 merges, groups with identical normalised company AND identical normalised title still hold
-more than one un-absorbed listing:
-- `mastercard | senior software engineer` — id=3 (indeed) + id=74 (linkedin), the SAME `blocking_key`
-  (`mastercard|engineer senior software`). This is the exact cross-source case Tier-2 exists for, so it
-  reads as a genuine miss rather than a design limit.
-- `jpmorganchase | director of software engineering` — id=23 + id=44, BOTH `indeed`, same
-  `blocking_key`. Explainable: Tier-1 cannot catch a repost carrying a new `source_listing_id`, and
-  Tier-2 is cross-source by design. Worth documenting as a known same-source-repost limitation.
+### G3 — residual dedup gap on the phase's CENTRAL promise — INVESTIGATE
+SC1 promises "the same job found on two sources appears once". A real-corpus case violates it.
 
-A plausible mechanism for the cross-source case is a bridge/transitive one — two separate merge chains
-never joined, leaving both survivors visible. That is a hypothesis, not a diagnosis, and needs
-investigation before any fix. Note also that the UI cannot surface a MISS at all: `/merges` lists only
-merged rows, so an unmerged duplicate is invisible by construction.
+Evidence:
+- Block `mastercard|engineer senior software` holds at least three listings:
+  id=3 (`indeed`), id=4 (`indeed`), id=74 (`linkedin`).
+- Run #5 merged exactly one pair: `dupe #5: survivor=3 absorbed=4 score=100.0`.
+- id=74 remains UN-ABSORBED with an IDENTICAL `company_norm`, IDENTICAL `title_norm`
+  (`senior software engineer`) and the SAME `blocking_key` as survivor id=3 — and it is CROSS-SOURCE
+  (`linkedin` vs `indeed`), which is precisely the case Tier-2 exists for.
+- Their posted dates are 7 days apart (id=3 `2026-09-15`, id=74 `2026-09-08`), far inside the 90-day
+  `dedup_posted_window_days`.
+- The pure planner EXPLICITLY supports this collapse — `app/domain/dedup.py:189-192`: "a listing
+  already absorbed is removed from the pool, so a three-way duplicate produces two merges onto the
+  first-seen survivor rather than a chain."
+
+So the planner was designed to merge both, and the run merged one. The fault is therefore most likely
+in candidate SELECTION or per-run bookkeeping — e.g. `dupe_repo.candidates_for_block` not placing id=74
+in run #5's candidate block, or a one-merge-per-survivor cap — **not** in the score gate.
+That is a hypothesis, not a diagnosis, and it needs a real investigation before any fix.
+
+Second case, explainable rather than a bug: `jpmorganchase | director of software engineering`
+(id=23 + id=44, BOTH `indeed`, same `blocking_key`). Tier-1 cannot catch a repost carrying a new
+`source_listing_id`, and Tier-2 is cross-source by design — worth documenting as a known
+same-source-repost limitation.
+
+The UI cannot surface a MISS at all: `/merges` lists only merged rows, so an unmerged duplicate is
+invisible by construction — which is exactly why finding this needed a hand-written corpus query.
