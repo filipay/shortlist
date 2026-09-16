@@ -182,6 +182,30 @@ async def test_the_default_view_hides_excluded_listings_and_the_toggle_reveals_t
     assert RULE_KIND in toggled.text, "the chip names the rule kind"
 
 
+async def test_a_search_does_not_surface_an_excluded_listing_unless_the_toggle_is_on(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The FTS branch keeps the excluded predicate; the toggle is the only override.
+
+    Without this, an edit that stopped passing `predicates` to the `MATCH`
+    statement would leak every rejected listing back in the moment the user typed.
+    """
+    _run_id, _rule_id, excluded, kept = await _fixture(session_factory)
+
+    default = await client.get("/", params={"q": "crypto"})
+
+    assert default.status_code == 200
+    assert "Crypto Trader" not in default.text, "a search must not bypass the exclusion"
+    assert _rows(default.text) == [kept], "the kept listing still matches the query"
+
+    toggled = await client.get("/", params={"q": "crypto", "excluded": "1"})
+
+    assert toggled.status_code == 200
+    assert sorted(_rows(toggled.text)) == sorted([excluded, kept]), (
+        "the toggle is the only way back in"
+    )
+
+
 async def test_a_listing_excluded_only_by_an_older_run_returns_to_the_default_view(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

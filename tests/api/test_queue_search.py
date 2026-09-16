@@ -296,3 +296,32 @@ async def test_queue_hides_absorbed_twin_until_revert(
 
     assert len(dupes) == 1, "the audit row is never deleted"
     assert len(listings) == 2
+
+
+# --- the query composes with the other predicates (plan 02-07 prohibition 3) ---
+
+
+async def test_a_search_does_not_surface_a_hidden_listing(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The FTS branch must carry the same predicate set as the no-query branch.
+
+    Both branches share `predicates` today, but nothing asserted the composition:
+    an edit that dropped `*predicates` from the `MATCH` statement would resurface
+    every hidden listing the moment the user typed a query.
+    """
+    await _register_sources(session_factory, "linkedin")
+    hidden = await _seed(
+        session_factory, source="linkedin", label="hidden", title="Engineer Hidden", index=1
+    )
+    visible = await _seed(
+        session_factory, source="linkedin", label="visible", title="Engineer Visible", index=2
+    )
+
+    await client.post(f"/listings/{hidden}/events", data={"event_type": "hide"})
+
+    response = await client.get("/queue/list", params={"q": "engineer"})
+
+    assert response.status_code == 200
+    assert _ids(response.text) == [visible], "a hidden listing must stay out of a search"
+    assert "Engineer Hidden" not in response.text
