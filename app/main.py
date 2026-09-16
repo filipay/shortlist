@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import health as health_routes
 from app.api import runs as run_routes
+from app.api import searches as search_routes
 from app.db.repositories import source_repo
 from app.db.session import async_session_maker
 from app.web import routes as web_routes
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
 
     app.include_router(web_routes.router)
     app.include_router(run_routes.router)
+    app.include_router(search_routes.router)
     app.include_router(health_routes.router)
     return app
 

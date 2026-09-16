@@ -1,0 +1,223 @@
+{% extends "html/base.html" %}
+
+{% block title %}Criteria · Job Search Copilot{% endblock %}
+
+{#
+  The list lives in a macro so the page and every `hx-post` fragment are ONE
+  definition of the markup (`app/api/searches.py:render_criteria_list` renders it
+  through Jinja's public `make_module`, without rendering a second copy). Every
+  mutating route targets `#criteria-list`, so the root div must carry that id in
+  both the page and the fragment.
+
+  Jinja autoescape is the only escaping in play. Search names and rule terms are
+  untrusted user input rendered back as text; there is deliberately no `|safe`
+  anywhere, and no raw-JSON control: each rule kind has its own purpose-built form.
+
+  No filter semantics are evaluated here (D-34). The template renders a view model
+  the route built; the only conditionals are `x-show` toggles over a kind string.
+#}
+{% macro rule_form(action) %}
+<div class="rule-form" x-data="{ kind: 'salary_floor' }">
+  <h4>Add a rule</h4>
+  <label for="rule-kind-{{ action }}">Rule kind</label>
+  <select id="rule-kind-{{ action }}" name="kind" x-model="kind">
+    <option value="salary_floor">Salary floor</option>
+    <option value="exclude_keyword">Exclude keyword</option>
+    <option value="location">Location</option>
+    <option value="remote">Remote</option>
+    <option value="seniority">Seniority</option>
+    <option value="company_blocklist">Company blocklist</option>
+  </select>
+
+  <div class="rule-fields rule-salary_floor" x-show="kind === 'salary_floor'">
+    <label>Amount</label>
+    <input type="number" name="salary_amount" min="0" step="1" inputmode="numeric">
+    <label>Currency</label>
+    <input type="text" name="salary_currency" value="EUR">
+    <label>Interval</label>
+    <select name="salary_interval">
+      <option value="year">year</option>
+      <option value="month">month</option>
+      <option value="day">day</option>
+      <option value="hour">hour</option>
+    </select>
+    <p class="rule-help">
+      A listing whose salary is unknown is <strong>not excluded</strong> — an absent
+      value is never a rejection reason.
+    </p>
+  </div>
+
+  <div class="rule-fields rule-exclude_keyword" x-show="kind === 'exclude_keyword'">
+    <label>Terms (comma or newline separated)</label>
+    <textarea name="keyword_terms" rows="2"></textarea>
+    <label><input type="checkbox" name="keyword_fields" value="title" checked> title</label>
+    <label><input type="checkbox" name="keyword_fields" value="description" checked> description</label>
+    <p class="rule-help">
+      A match anywhere in a listed field excludes the listing.
+    </p>
+  </div>
+
+  <div class="rule-fields rule-location" x-show="kind === 'location'">
+    <label>Allowed locations (comma separated)</label>
+    <textarea name="location_allow" rows="2"></textarea>
+    <label>Mode</label>
+    <select name="location_mode">
+      <option value="substring">substring</option>
+    </select>
+    <p class="rule-help">
+      A listing whose location is unknown is <strong>not excluded</strong>.
+    </p>
+  </div>
+
+  <div class="rule-fields rule-remote" x-show="kind === 'remote'">
+    <label><input type="checkbox" name="remote_require" value="1" checked> Require remote</label>
+    <p class="rule-help">
+      A listing whose remote flag is unknown is <strong>not excluded</strong>.
+    </p>
+  </div>
+
+  <div class="rule-fields rule-seniority" x-show="kind === 'seniority'">
+    <label>Allow (comma separated)</label>
+    <textarea name="seniority_allow" rows="2"></textarea>
+    <label>Deny (comma separated)</label>
+    <textarea name="seniority_deny" rows="2"></textarea>
+    <label>
+      <input type="checkbox" name="seniority_unknown_passes" value="1" checked>
+      Unknown seniority passes
+    </label>
+    <p class="rule-help">
+      A listing whose seniority is unknown is <strong>not excluded</strong>.
+    </p>
+  </div>
+
+  <div class="rule-fields rule-company_blocklist" x-show="kind === 'company_blocklist'">
+    <label>Companies (comma separated)</label>
+    <textarea name="company_companies" rows="2"></textarea>
+    <label>Match</label>
+    <select name="company_match">
+      <option value="norm_equals">exact (normalised)</option>
+      <option value="token">word</option>
+    </select>
+    <p class="rule-help">
+      A listing whose company is unknown is <strong>not excluded</strong>.
+    </p>
+  </div>
+
+  <button type="button"
+          class="rule-submit"
+          hx-post="{{ action }}"
+          hx-target="#criteria-list"
+          hx-swap="innerHTML">
+    Add rule
+  </button>
+</div>
+{% endmacro %}
+
+{% macro criteria_list(searches, errors=None, note=None) %}
+<div id="criteria-list">
+  {% if note %}
+  <p class="criteria-note" id="criteria-note">{{ note }}</p>
+  {% endif %}
+
+  {% if errors %}
+  <ul class="criteria-errors" id="criteria-errors">
+    {% for error in errors %}
+    <li class="criteria-error">{{ error }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <section id="new-search">
+    <h3>New search</h3>
+    <form class="search-create"
+          hx-post="/searches"
+          hx-target="#criteria-list"
+          hx-swap="innerHTML">
+      <label for="new-search-name">Name</label>
+      <input type="text" id="new-search-name" name="name" maxlength="255">
+
+      <label for="new-search-keywords">Keywords</label>
+      <input type="text" id="new-search-keywords" name="keywords">
+
+      <label for="new-search-location">Location</label>
+      <input type="text" id="new-search-location" name="location">
+
+      <label class="search-remote" for="new-search-remote">
+        <input type="checkbox" id="new-search-remote" name="remote_only" value="1"> Remote only
+      </label>
+
+      <label for="new-search-salary">Salary floor</label>
+      <input type="number" id="new-search-salary" name="salary_floor" min="0" step="1" inputmode="numeric">
+
+      <label for="new-search-seniority">Seniority (comma separated)</label>
+      <input type="text" id="new-search-seniority" name="seniority">
+
+      <button type="submit" id="new-search-submit">Save search</button>
+    </form>
+  </section>
+
+  {% if not searches %}
+  <p class="empty-state" id="criteria-empty">
+    No saved searches yet. Create one above; its exclusion rules can then be tuned
+    here without touching any code.
+  </p>
+  {% endif %}
+
+  {% for search in searches %}
+  <section class="search-card{% if not search.enabled %} search-disabled{% endif %}"
+           id="search-{{ search.id }}"
+           data-search-id="{{ search.id }}">
+    <header class="search-header">
+      <h3 class="search-name">{{ search.name }}</h3>
+      <span class="search-version">v{{ search.version }}</span>
+      <span class="search-state">{% if search.enabled %}enabled{% else %}disabled{% endif %}</span>
+      {% if search.last_run_at %}
+      <span class="search-last-run">last run {{ search.last_run_at }}</span>
+      {% endif %}
+    </header>
+
+    {% if search.warnings %}
+    <div class="capability-warnings" id="capability-warnings-{{ search.id }}">
+      {% for warning in search.warnings %}
+      <p class="capability-warning">
+        <strong>{{ warning.board }}</strong> cannot honour
+        <code>{{ warning.filter }}</code>: {{ warning.reason }}.
+        This rule will still be enforced locally after the fetch.
+      </p>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if search.rules %}
+    <ul class="rule-list" id="rule-list-{{ search.id }}">
+      {% for rule in search.rules %}
+      <li class="rule-row{% if not rule.enabled %} rule-disabled{% endif %}"
+          id="rule-{{ rule.id }}">
+        <span class="rule-kind">{{ rule.kind }}</span>
+        <span class="rule-summary">{{ rule.summary }}</span>
+        <span class="rule-state">{% if rule.enabled %}on{% else %}off{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="rule-none" id="rule-none-{{ search.id }}">No rules yet.</p>
+    {% endif %}
+
+    {{ rule_form("/searches/" ~ search.id ~ "/rules") }}
+  </section>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<section id="criteria">
+  <h2>Criteria</h2>
+  <p class="criteria-intro">
+    Saved searches hold the fetch query and their own exclusion rules. The queue is
+    the union of every enabled search; a listing removed by any enabled search's rule
+    leaves the queue. Rules are re-evaluated from scratch each run, so retuning one
+    can bring a listing back.
+  </p>
+  {{ criteria_list(searches, errors, note) }}
+</section>
+{% endblock %}
