@@ -2,8 +2,10 @@
 
 The per-search run is the *same* `run_pipeline` callable with `search_id` set: it
 snapshots exactly one search, fetches with that search's query, applies only that
-search's rules, and stamps only that search's `last_run_at`. With `search_id=None`
-the union behaviour is unchanged.
+search's rules, and stamps only that search's `last_run_at`. A union run
+(`search_id=None`) fetches the union of every enabled search's criteria, so it stamps
+every search it actually fetched; an explicit `query` and the zero-enabled
+`default_query()` fallback are not attributable to a search and stamp nothing.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import FilterRule, ListingExclusion, Run, Search, Source
-from app.pipeline.run import run_pipeline
+from app.pipeline.run import default_query, run_pipeline
 from app.sources import registry
 from app.sources.base import (
     FetchBudget,
@@ -185,13 +187,87 @@ async def test_the_union_run_still_unions_every_enabled_search(
     assert set(snapshot) == {str(first_id), str(second_id)}, "the union is unchanged"
     assert exclusions == 1, "in the union, the second search's rule does apply"
 
-    # A union run is not a per-search run: it stamps no single search's freshness.
+    # Deliberate relabel: this used to assert that a union run stamps NO search,
+    # because it fetched the hardcoded `default_query()`. A union run now fetches
+    # both searches' criteria, so both record their freshness.
     async with session_factory() as session:
         first = await session.get(Search, first_id)
         second = await session.get(Search, second_id)
     assert first is not None and second is not None
+    assert first.last_run_at is not None
+    assert second.last_run_at is not None
+
+
+async def test_a_union_run_stamps_every_search_it_fetched(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Each enabled search the global run fetched is fresh on `/searches`."""
+    first_id, second_id = await _seed_searches(session_factory)
+    adapter = CapturingAdapter()
+
+    await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        first = await session.get(Search, first_id)
+        second = await session.get(Search, second_id)
+
+    assert first is not None and second is not None
+    assert first.last_run_at is not None
+    assert second.last_run_at is not None
+    assert first.last_run_at == second.last_run_at, "one run records one timestamp"
+
+
+async def test_a_union_run_with_no_enabled_searches_stamps_nothing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A run that falls back to `default_query()` belongs to no saved search."""
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        session.add(Source(name="linkedin", display_name="LinkedIn"))
+        disabled = Search(
+            name="Disabled",
+            enabled=False,
+            criteria_json={"keywords": "python"},
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(disabled)
+        await session.commit()
+        disabled_id = int(disabled.id)
+
+    adapter = CapturingAdapter()
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[adapter])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        row = await session.get(Search, disabled_id)
+
+    assert run is not None
+    assert run.status in {"done", "partial"}, "a zero-enabled run still succeeds"
+    assert adapter.queries[0] == default_query(), "the Phase-1 fallback was used"
+    assert row is not None
+    assert row.last_run_at is None, "a search that was not fetched must not be stamped"
+
+
+async def test_an_explicit_query_run_stamps_no_search(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """An injected query is not attributable to a saved search, even when one exists."""
+    first_id, second_id = await _seed_searches(session_factory)
+    adapter = CapturingAdapter()
+    explicit = SearchQuery(keywords="explicit-query")
+
+    await run_pipeline("manual", None, session_factory, adapters=[adapter], query=explicit)
+
+    async with session_factory() as session:
+        first = await session.get(Search, first_id)
+        second = await session.get(Search, second_id)
+
+    assert first is not None and second is not None
     assert first.last_run_at is None
     assert second.last_run_at is None
+    assert adapter.queries == [explicit]
 
 
 #: The exact pattern `scripts/compose-smoke.sh` reads out of a run response.

@@ -597,20 +597,29 @@ async def _finish(
 
 async def _stamp_last_run(
     session_factory: async_sessionmaker[AsyncSession],
-    search_id: int,
+    search_ids: Sequence[int],
     *,
     now: datetime | None = None,
 ) -> None:
-    """Record the per-search `last_run_at` — never a global one (PITFALLS m10).
+    """Record the per-search `last_run_at` for the searches this run fetched for.
 
-    Only a per-search run (`search_id` set) stamps here: the union run's behaviour
-    is unchanged, and a per-search run's freshness belongs to that search alone.
+    The union run now fetches every enabled search's criteria, so each of those
+    searches is fresh and must say so on `/searches`; PITFALLS m10 is about never
+    inventing a *global* freshness, not about withholding a per-search one. A search
+    the run did not fetch is never touched — the explicit-`query` path and the
+    zero-enabled `default_query()` fallback are not attributable to a saved search.
+    One timestamp is applied to every row, so a multi-search run's freshness is a
+    single fact rather than N near-identical ones.
     """
+    if not search_ids:
+        return
+    moment = now or datetime.now(UTC)
     async with session_factory() as session:
-        row = await session.get(Search, search_id)
-        if row is None:
-            return
-        row.last_run_at = now or datetime.now(UTC)
+        for search_id in search_ids:
+            row = await session.get(Search, search_id)
+            if row is None:
+                continue
+            row.last_run_at = moment
         await session.commit()
 
 
@@ -690,6 +699,10 @@ async def run_pipeline(
     adapters_resolved = 0
     stage_log: list[dict[str, Any]] = []
     compile_warnings: list[dict[str, Any]] = []
+    # The searches this run's fetch plan actually used, for the post-run
+    # `last_run_at` stamp. Pre-declared so a failure before the plan resolves leaves
+    # it empty rather than raising in the `finally`-style tail below.
+    stamped_search_ids: list[int] = []
 
     try:
         # Criteria snapshot (D-33 / CRIT-02): BEFORE the fetch, never rewritten, so
@@ -703,6 +716,13 @@ async def run_pipeline(
         # plan is a list of (search_id, query) rather than one query. An explicit
         # query and a per-search run still resolve to exactly one entry.
         fetch_plan = await _resolve_fetch_queries(session_factory, query, search_id)
+        # The saved searches this run used: an explicit `query` is not attributable to
+        # a search, and a zero-enabled run falls back to `default_query()` with a
+        # `None` id, so neither contributes a search to stamp.
+        if query is None:
+            stamped_search_ids = [
+                scoped_id for scoped_id, _ in fetch_plan if scoped_id is not None
+            ]
         if not selected:
             # Zero adapters resolved: the run fetched nothing, so `done` would be a
             # false success — the badge reads clean while the queue stays empty (and
@@ -870,10 +890,11 @@ async def run_pipeline(
         reason=reason,
         reason_counts=reason_counts,
     )
-    # A per-search run records that search's freshness; the union run does not, so
-    # the one-tap trigger's behaviour is unchanged (PITFALLS m10).
-    if search_id is not None:
-        await _stamp_last_run(session_factory, search_id)
+    # Every search this run actually fetched records its freshness: the global run
+    # now fetches each enabled search's criteria, so a blank "last run" line on
+    # `/searches` would be a false signal that the run ignored them. An explicit
+    # query and the zero-enabled `default_query()` fallback stamp nothing.
+    await _stamp_last_run(session_factory, stamped_search_ids)
     log.info(
         "pipeline.finished",
         run_id=resolved_run_id,
