@@ -31,6 +31,9 @@ EXPECTED_TABLES = (
     "application_events",
     "llm_calls",
     "source_request_log",
+    # Migration 0002 (Phase 2): typed filter rules + the last-visit watermark.
+    "filter_rules",
+    "queue_state",
     "listing_fts",
 )
 
@@ -55,7 +58,7 @@ def _norm(**overrides: object) -> dict[str, object]:
     return base
 
 
-def test_migration_creates_every_table_at_revision_0001(migrated_db: Path) -> None:
+def test_migration_creates_every_table_at_latest_revision(migrated_db: Path) -> None:
     connection = sqlite3.connect(migrated_db)
     try:
         rows = connection.execute(
@@ -68,7 +71,7 @@ def test_migration_creates_every_table_at_revision_0001(migrated_db: Path) -> No
         version = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        assert version == [("0001",)]
+        assert version == [("0002",)]
     finally:
         connection.close()
 
