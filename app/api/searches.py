@@ -490,6 +490,14 @@ async def create_rule_route(
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     """Create one rule of the selected kind from that kind's form fields."""
+    # Resolve the parent before writing, like every other criteria sub-route
+    # (`toggle_search_route`, `edit_search_route`, `_owned_rule`): inserting a
+    # rule for an absent search would raise the foreign-key IntegrityError,
+    # which surfaces as a 500 rather than the 404 the siblings produce.
+    record = await search_repo.search_by_id(session, search_id)
+    if record is None:
+        return await _not_found(session, "Unknown search.")
+
     form = await read_form(request)
     kind = _field(form, "kind")
     params = rule_params_from_form(form, kind)

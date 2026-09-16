@@ -107,6 +107,19 @@ async def test_a_malformed_salary_floor_is_reported_once(
     assert await _search_rows(session_factory) == []
 
 
+async def test_posting_a_rule_to_an_unknown_search_is_404_not_500(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """WR-06: the parent is resolved before writing, like every sibling route."""
+    response = await client.post(
+        "/searches/9999/rules", data={"kind": "remote", "remote_require": "1"}
+    )
+
+    assert response.status_code == 404
+    assert "Unknown search" in response.text
+    assert await _rule_rows(session_factory) == []
+
+
 async def test_post_rule_round_trips_and_bumps_the_owning_search_version(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
