@@ -183,7 +183,10 @@ def criteria_from_form(form: Mapping[str, Any]) -> tuple[dict[str, Any], list[st
 
     salary_floor, salary_error = _int_field(form, "salary_floor")
     if salary_error:
-        errors.append("Salary floor " + salary_error[0].lower() + salary_error[1:])
+        # `_int_field` already returns a complete sentence ("salary floor must be
+        # a whole number."), so capitalise it rather than prefixing the field name
+        # again — the latter rendered "Salary floor salary floor must be ...".
+        errors.append(salary_error[0].upper() + salary_error[1:])
     elif salary_floor is not None:
         criteria["salary_floor"] = salary_floor
 

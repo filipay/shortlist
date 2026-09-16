@@ -91,6 +91,22 @@ async def test_a_negative_salary_floor_in_the_search_form_writes_no_row(
     assert await _search_rows(session_factory) == []
 
 
+async def test_a_malformed_salary_floor_is_reported_once(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """WR-04: the field name must not be prefixed onto an already-complete sentence."""
+    response = await client.post(
+        "/searches", data={"name": "Bad", "salary_floor": "abc"}
+    )
+
+    assert response.status_code == 200
+    assert "Salary floor must be a whole number." in response.text
+    assert "salary floor salary floor" not in response.text.lower(), (
+        "the field name was duplicated onto the message"
+    )
+    assert await _search_rows(session_factory) == []
+
+
 async def test_post_rule_round_trips_and_bumps_the_owning_search_version(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
