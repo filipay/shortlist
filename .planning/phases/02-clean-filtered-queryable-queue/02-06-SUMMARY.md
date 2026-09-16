@@ -174,7 +174,7 @@ Each task was committed atomically:
 1. **Task 1 (tracer): End-to-end — the Merges page lists a merge, shows the twin, and reverts it** - `a1d44bb` (feat)
 2. **Task 2: Revert is durable — the pair is never silently re-merged** - `99f0f74` (test)
 
-**Plan metadata:** `_pending_` (docs: complete 02-06 plan)
+**Plan metadata:** _committed with STATE/ROADMAP/REQUIREMENTS after this file_
 
 _Note: `commits: 2` and `plan_head_before: 5bedcfa76df04bdebab70f5404bf64841cff1e62` are measured from the on-disk per-plan ledger at `.git/gsd-plan-head-before-02-06`, not narrated (#3968)._
 
