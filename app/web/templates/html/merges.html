@@ -14,7 +14,7 @@
   marked safe, and the page loads no remote script or stylesheet.
 #}
 {% macro merges_table(merges, rate, note=None) %}
-<div id="merges-table">
+<div id="merges-table" aria-live="polite">
   <p class="merge-rate" id="merge-rate">
     Merge rate — {{ rate.window }}:
     {%- if rate.rate is none %}

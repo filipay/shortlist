@@ -29,9 +29,16 @@
 </button>
 
 {% if is_empty %}
+{% if page.query.q or page.query.excluded or page.query.hidden or page.query.saved or page.query.scope_search_id %}
+<p class="empty-state filtered-empty-state" id="queue-empty-filtered">
+  No listings match these filters.
+  <a href="/" id="queue-clear-filters">Clear filters</a>
+</p>
+{% else %}
 <p class="empty-state" id="queue-empty">
   No listings yet. Once a search runs, its normalised results appear here.
 </p>
+{% endif %}
 {% else %}
 <table class="queue-table">
   <thead>

@@ -38,12 +38,12 @@
   </select>
 
   <div class="rule-fields rule-salary_floor" x-show="kind === 'salary_floor'">
-    <label>Amount</label>
-    <input type="number" name="salary_amount" min="0" step="1" inputmode="numeric">
-    <label>Currency</label>
-    <input type="text" name="salary_currency" value="EUR">
-    <label>Interval</label>
-    <select name="salary_interval">
+    <label for="rule-amount-{{ action }}">Amount</label>
+    <input type="number" id="rule-amount-{{ action }}" name="salary_amount" min="0" step="1" inputmode="numeric">
+    <label for="rule-currency-{{ action }}">Currency</label>
+    <input type="text" id="rule-currency-{{ action }}" name="salary_currency" value="EUR">
+    <label for="rule-interval-{{ action }}">Interval</label>
+    <select id="rule-interval-{{ action }}" name="salary_interval">
       <option value="year">year</option>
       <option value="month">month</option>
       <option value="day">day</option>
@@ -56,8 +56,8 @@
   </div>
 
   <div class="rule-fields rule-exclude_keyword" x-show="kind === 'exclude_keyword'">
-    <label>Terms (comma or newline separated)</label>
-    <textarea name="keyword_terms" rows="2"></textarea>
+    <label for="rule-terms-{{ action }}">Terms (comma or newline separated)</label>
+    <textarea id="rule-terms-{{ action }}" name="keyword_terms" rows="2"></textarea>
     {{ _keyword_fields([]) }}
     <p class="rule-help">
       A match anywhere in a listed field excludes the listing.
@@ -65,10 +65,10 @@
   </div>
 
   <div class="rule-fields rule-location" x-show="kind === 'location'">
-    <label>Allowed locations (comma separated)</label>
-    <textarea name="location_allow" rows="2"></textarea>
-    <label>Mode</label>
-    <select name="location_mode">
+    <label for="rule-locations-{{ action }}">Allowed locations (comma separated)</label>
+    <textarea id="rule-locations-{{ action }}" name="location_allow" rows="2"></textarea>
+    <label for="rule-location-mode-{{ action }}">Mode</label>
+    <select id="rule-location-mode-{{ action }}" name="location_mode">
       <option value="substring">substring</option>
     </select>
     <p class="rule-help">
@@ -84,10 +84,10 @@
   </div>
 
   <div class="rule-fields rule-seniority" x-show="kind === 'seniority'">
-    <label>Allow (comma separated)</label>
-    <textarea name="seniority_allow" rows="2"></textarea>
-    <label>Deny (comma separated)</label>
-    <textarea name="seniority_deny" rows="2"></textarea>
+    <label for="rule-seniority-allow-{{ action }}">Allow (comma separated)</label>
+    <textarea id="rule-seniority-allow-{{ action }}" name="seniority_allow" rows="2"></textarea>
+    <label for="rule-seniority-deny-{{ action }}">Deny (comma separated)</label>
+    <textarea id="rule-seniority-deny-{{ action }}" name="seniority_deny" rows="2"></textarea>
     <label>
       <input type="checkbox" name="seniority_unknown_passes" value="1" checked>
       Unknown seniority passes
@@ -98,10 +98,10 @@
   </div>
 
   <div class="rule-fields rule-company_blocklist" x-show="kind === 'company_blocklist'">
-    <label>Companies (comma separated)</label>
-    <textarea name="company_companies" rows="2"></textarea>
-    <label>Match</label>
-    <select name="company_match">
+    <label for="rule-companies-{{ action }}">Companies (comma separated)</label>
+    <textarea id="rule-companies-{{ action }}" name="company_companies" rows="2"></textarea>
+    <label for="rule-company-match-{{ action }}">Match</label>
+    <select id="rule-company-match-{{ action }}" name="company_match">
       <option value="norm_equals">exact (normalised)</option>
       <option value="token">word</option>
     </select>
@@ -126,47 +126,47 @@
 <div class="rule-edit"
      data-rule-id="{{ rule.id }}"
      x-data="{ shown: false }">
-  <button type="button" class="rule-edit-toggle" @click="shown = !shown">Edit</button>
-  <div class="rule-edit-fields" x-show="shown">
+  <button type="button" class="rule-edit-toggle" @click="shown = !shown" :aria-expanded="shown.toString()">Edit</button>
+  <div class="rule-edit-fields" x-show="shown" x-cloak>
     {% if rule.kind == 'salary_floor' %}
-    <label>Amount</label>
-    <input type="number" name="salary_amount" min="0" step="1"
+    <label for="rule-edit-amount-{{ rule.id }}">Amount</label>
+    <input type="number" id="rule-edit-amount-{{ rule.id }}" name="salary_amount" min="0" step="1"
            value="{{ rule.params.get('amount', '') }}">
-    <label>Currency</label>
-    <input type="text" name="salary_currency" value="{{ rule.params.get('currency', 'EUR') }}">
-    <label>Interval</label>
-    <select name="salary_interval">
+    <label for="rule-edit-currency-{{ rule.id }}">Currency</label>
+    <input type="text" id="rule-edit-currency-{{ rule.id }}" name="salary_currency" value="{{ rule.params.get('currency', 'EUR') }}">
+    <label for="rule-edit-interval-{{ rule.id }}">Interval</label>
+    <select id="rule-edit-interval-{{ rule.id }}" name="salary_interval">
       {% for interval in ['year', 'month', 'day', 'hour'] %}
       <option value="{{ interval }}"
         {% if rule.params.get('interval', 'year') == interval %}selected{% endif %}>{{ interval }}</option>
       {% endfor %}
     </select>
     {% elif rule.kind == 'exclude_keyword' %}
-    <label>Terms</label>
-    <textarea name="keyword_terms" rows="2">{{ rule.params.get('terms', []) | join(', ') }}</textarea>
+    <label for="rule-edit-terms-{{ rule.id }}">Terms</label>
+    <textarea id="rule-edit-terms-{{ rule.id }}" name="keyword_terms" rows="2">{{ rule.params.get('terms', []) | join(', ') }}</textarea>
     {{ _keyword_fields(rule.params.get('fields')) }}
     {% elif rule.kind == 'location' %}
-    <label>Allowed locations</label>
-    <textarea name="location_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
+    <label for="rule-edit-locations-{{ rule.id }}">Allowed locations</label>
+    <textarea id="rule-edit-locations-{{ rule.id }}" name="location_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
     <input type="hidden" name="location_mode" value="{{ rule.params.get('mode', 'substring') }}">
     {% elif rule.kind == 'remote' %}
     <label><input type="checkbox" name="remote_require" value="1"
       {% if rule.params.get('require', True) %}checked{% endif %}> Require remote</label>
     {% elif rule.kind == 'seniority' %}
-    <label>Allow</label>
-    <textarea name="seniority_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
-    <label>Deny</label>
-    <textarea name="seniority_deny" rows="2">{{ rule.params.get('deny', []) | join(', ') }}</textarea>
+    <label for="rule-edit-seniority-allow-{{ rule.id }}">Allow</label>
+    <textarea id="rule-edit-seniority-allow-{{ rule.id }}" name="seniority_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
+    <label for="rule-edit-seniority-deny-{{ rule.id }}">Deny</label>
+    <textarea id="rule-edit-seniority-deny-{{ rule.id }}" name="seniority_deny" rows="2">{{ rule.params.get('deny', []) | join(', ') }}</textarea>
     <label><input type="checkbox" name="seniority_unknown_passes" value="1"
       {% if rule.params.get('unknown_passes', True) %}checked{% endif %}> Unknown passes</label>
     {% elif rule.kind == 'company_blocklist' %}
-    <label>Companies</label>
-    <textarea name="company_companies" rows="2">{{ rule.params.get('companies', []) | join(', ') }}</textarea>
+    <label for="rule-edit-companies-{{ rule.id }}">Companies</label>
+    <textarea id="rule-edit-companies-{{ rule.id }}" name="company_companies" rows="2">{{ rule.params.get('companies', []) | join(', ') }}</textarea>
     <input type="hidden" name="company_match" value="{{ rule.params.get('match', 'norm_equals') }}">
     {% endif %}
 
-    <label>Position</label>
-    <input type="number" name="position" min="0" step="1" value="{{ rule.position }}">
+    <label for="rule-edit-position-{{ rule.id }}">Position</label>
+    <input type="number" id="rule-edit-position-{{ rule.id }}" name="position" min="0" step="1" value="{{ rule.position }}">
 
     <button type="button"
             class="rule-edit-save"
@@ -180,7 +180,7 @@
 {% endmacro %}
 
 {% macro criteria_list(searches, errors=None, note=None) %}
-<div id="criteria-list">
+<div id="criteria-list" aria-live="polite">
   {% if note %}
   <p class="criteria-note" id="criteria-note">{{ note }}</p>
   {% endif %}
@@ -251,7 +251,7 @@
               hx-swap="innerHTML">
         {% if search.enabled %}Disable{% else %}Enable{% endif %}
       </button>
-      <button type="button" class="search-edit-toggle" @click="editing = !editing">Edit</button>
+      <button type="button" class="search-edit-toggle" @click="editing = !editing" :aria-expanded="editing.toString()">Edit</button>
       <button type="button" class="search-delete" @click="confirming = true">Delete</button>
       <span class="search-delete-confirm" x-show="confirming">
         <button type="button"
@@ -276,26 +276,26 @@
               hx-swap="innerHTML">
         Run this one
       </button>
-      <div id="search-status-{{ search.id }}"></div>
+      <div id="search-status-{{ search.id }}" aria-live="polite"></div>
     </div>
 
-    <form class="search-edit" x-show="editing"
+    <form class="search-edit" x-show="editing" x-cloak
           hx-post="/searches/{{ search.id }}"
           hx-target="#criteria-list"
           hx-swap="innerHTML">
-      <label>Name</label>
-      <input type="text" name="name" value="{{ search.name }}" maxlength="255">
-      <label>Keywords</label>
-      <input type="text" name="keywords" value="{{ search.criteria.get('keywords', '') }}">
-      <label>Location</label>
-      <input type="text" name="location" value="{{ search.criteria.get('location', '') }}">
+      <label for="search-edit-name-{{ search.id }}">Name</label>
+      <input type="text" id="search-edit-name-{{ search.id }}" name="name" value="{{ search.name }}" maxlength="255">
+      <label for="search-edit-keywords-{{ search.id }}">Keywords</label>
+      <input type="text" id="search-edit-keywords-{{ search.id }}" name="keywords" value="{{ search.criteria.get('keywords', '') }}">
+      <label for="search-edit-location-{{ search.id }}">Location</label>
+      <input type="text" id="search-edit-location-{{ search.id }}" name="location" value="{{ search.criteria.get('location', '') }}">
       <label><input type="checkbox" name="remote_only" value="1"
         {% if search.criteria.get('remote_only') %}checked{% endif %}> Remote only</label>
-      <label>Salary floor</label>
-      <input type="number" name="salary_floor" min="0" step="1"
+      <label for="search-edit-salary-{{ search.id }}">Salary floor</label>
+      <input type="number" id="search-edit-salary-{{ search.id }}" name="salary_floor" min="0" step="1"
              value="{{ search.criteria.get('salary_floor', '') }}">
-      <label>Seniority</label>
-      <input type="text" name="seniority"
+      <label for="search-edit-seniority-{{ search.id }}">Seniority</label>
+      <input type="text" id="search-edit-seniority-{{ search.id }}" name="seniority"
              value="{{ search.criteria.get('seniority', []) | join(', ') }}">
       <button type="submit" class="search-save">Save search</button>
     </form>

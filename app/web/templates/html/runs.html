@@ -98,7 +98,7 @@
 {% endmacro %}
 
 {% macro run_detail(detail) %}
-<div id="run-detail-{{ detail.id }}" class="run-detail">
+<div id="run-detail-{{ detail.id }}" class="run-detail" aria-live="polite">
   <h3>Run #{{ detail.id }} — {{ detail.status }}</h3>
   <p class="run-detail-sentence" id="run-detail-sentence-{{ detail.id }}">{{ detail.sentence }}</p>
 

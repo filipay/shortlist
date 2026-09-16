@@ -11,7 +11,7 @@
           hx-swap="innerHTML">
     Run search now
   </button>
-  <div id="run-status-slot"></div>
+  <div id="run-status-slot" aria-live="polite"></div>
 </section>
 
 {# The last-run strip (D-43 / D-44). Rendered by `render_run_fragment`, so the run
@@ -97,7 +97,7 @@
     </label>
   </form>
 
-  <div id="queue-list">
+  <div id="queue-list" aria-live="polite">
     {% include "html/queue_list.html" %}
   </div>
 </section>
