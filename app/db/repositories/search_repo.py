@@ -271,6 +271,12 @@ async def rules_for_search(session: AsyncSession, search_id: int) -> list[RuleRe
     return [_rule_record(row) for row in rows]
 
 
+async def rule_by_id(session: AsyncSession, rule_id: int) -> RuleRecord | None:
+    """One rule by id, or `None`. The route needs its kind to parse an edit form."""
+    row = await session.get(FilterRule, int(rule_id))
+    return _rule_record(row) if row is not None else None
+
+
 async def active_listings(session: AsyncSession, *, run_id: int) -> list[ListingRecord]:
     """The listings this run touched, excluding absorbed twins, ordered by id.
 
@@ -726,6 +732,7 @@ __all__ = [
     "delete_rule",
     "delete_search",
     "enabled_searches",
+    "rule_by_id",
     "rules_for_search",
     "rules_for_searches",
     "search_by_id",

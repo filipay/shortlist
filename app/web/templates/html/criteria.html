@@ -14,8 +14,16 @@
   anywhere, and no raw-JSON control: each rule kind has its own purpose-built form.
 
   No filter semantics are evaluated here (D-34). The template renders a view model
-  the route built; the only conditionals are `x-show` toggles over a kind string.
+  the route built; the only conditionals are `x-show` toggles over a kind string and
+  `{% if rule.kind == ... %}` blocks choosing which field group to draw.
 #}
+{% macro _keyword_fields(selected) %}
+<label><input type="checkbox" name="keyword_fields" value="title"
+  {% if not selected or 'title' in selected %}checked{% endif %}> title</label>
+<label><input type="checkbox" name="keyword_fields" value="description"
+  {% if not selected or 'description' in selected %}checked{% endif %}> description</label>
+{% endmacro %}
+
 {% macro rule_form(action) %}
 <div class="rule-form" x-data="{ kind: 'salary_floor' }">
   <h4>Add a rule</h4>
@@ -50,8 +58,7 @@
   <div class="rule-fields rule-exclude_keyword" x-show="kind === 'exclude_keyword'">
     <label>Terms (comma or newline separated)</label>
     <textarea name="keyword_terms" rows="2"></textarea>
-    <label><input type="checkbox" name="keyword_fields" value="title" checked> title</label>
-    <label><input type="checkbox" name="keyword_fields" value="description" checked> description</label>
+    {{ _keyword_fields([]) }}
     <p class="rule-help">
       A match anywhere in a listed field excludes the listing.
     </p>
@@ -113,6 +120,65 @@
 </div>
 {% endmacro %}
 
+{% macro rule_edit_form(rule, action) %}
+{# A per-kind edit form, pre-filled from the stored params. It posts to the same
+   rule route; the route reads the rule's stored kind, not a field here. #}
+<div class="rule-edit"
+     data-rule-id="{{ rule.id }}"
+     x-data="{ shown: false }">
+  <button type="button" class="rule-edit-toggle" @click="shown = !shown">Edit</button>
+  <div class="rule-edit-fields" x-show="shown">
+    {% if rule.kind == 'salary_floor' %}
+    <label>Amount</label>
+    <input type="number" name="salary_amount" min="0" step="1"
+           value="{{ rule.params.get('amount', '') }}">
+    <label>Currency</label>
+    <input type="text" name="salary_currency" value="{{ rule.params.get('currency', 'EUR') }}">
+    <label>Interval</label>
+    <select name="salary_interval">
+      {% for interval in ['year', 'month', 'day', 'hour'] %}
+      <option value="{{ interval }}"
+        {% if rule.params.get('interval', 'year') == interval %}selected{% endif %}>{{ interval }}</option>
+      {% endfor %}
+    </select>
+    {% elif rule.kind == 'exclude_keyword' %}
+    <label>Terms</label>
+    <textarea name="keyword_terms" rows="2">{{ rule.params.get('terms', []) | join(', ') }}</textarea>
+    {{ _keyword_fields(rule.params.get('fields')) }}
+    {% elif rule.kind == 'location' %}
+    <label>Allowed locations</label>
+    <textarea name="location_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
+    <input type="hidden" name="location_mode" value="{{ rule.params.get('mode', 'substring') }}">
+    {% elif rule.kind == 'remote' %}
+    <label><input type="checkbox" name="remote_require" value="1"
+      {% if rule.params.get('require', True) %}checked{% endif %}> Require remote</label>
+    {% elif rule.kind == 'seniority' %}
+    <label>Allow</label>
+    <textarea name="seniority_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
+    <label>Deny</label>
+    <textarea name="seniority_deny" rows="2">{{ rule.params.get('deny', []) | join(', ') }}</textarea>
+    <label><input type="checkbox" name="seniority_unknown_passes" value="1"
+      {% if rule.params.get('unknown_passes', True) %}checked{% endif %}> Unknown passes</label>
+    {% elif rule.kind == 'company_blocklist' %}
+    <label>Companies</label>
+    <textarea name="company_companies" rows="2">{{ rule.params.get('companies', []) | join(', ') }}</textarea>
+    <input type="hidden" name="company_match" value="{{ rule.params.get('match', 'norm_equals') }}">
+    {% endif %}
+
+    <label>Position</label>
+    <input type="number" name="position" min="0" step="1" value="{{ rule.position }}">
+
+    <button type="button"
+            class="rule-edit-save"
+            hx-post="{{ action }}"
+            hx-target="#criteria-list"
+            hx-swap="innerHTML">
+      Save rule
+    </button>
+  </div>
+</div>
+{% endmacro %}
+
 {% macro criteria_list(searches, errors=None, note=None) %}
 <div id="criteria-list">
   {% if note %}
@@ -166,7 +232,8 @@
   {% for search in searches %}
   <section class="search-card{% if not search.enabled %} search-disabled{% endif %}"
            id="search-{{ search.id }}"
-           data-search-id="{{ search.id }}">
+           data-search-id="{{ search.id }}"
+           x-data="{ confirming: false, editing: false }">
     <header class="search-header">
       <h3 class="search-name">{{ search.name }}</h3>
       <span class="search-version">v{{ search.version }}</span>
@@ -175,6 +242,49 @@
       <span class="search-last-run">last run {{ search.last_run_at }}</span>
       {% endif %}
     </header>
+
+    <div class="search-controls">
+      <button type="button"
+              class="search-toggle"
+              hx-post="/searches/{{ search.id }}/toggle"
+              hx-target="#criteria-list"
+              hx-swap="innerHTML">
+        {% if search.enabled %}Disable{% else %}Enable{% endif %}
+      </button>
+      <button type="button" class="search-edit-toggle" @click="editing = !editing">Edit</button>
+      <button type="button" class="search-delete" @click="confirming = true">Delete</button>
+      <span class="search-delete-confirm" x-show="confirming">
+        <button type="button"
+                class="search-delete-yes"
+                hx-post="/searches/{{ search.id }}/delete"
+                hx-target="#criteria-list"
+                hx-swap="innerHTML">
+          Confirm delete
+        </button>
+        <button type="button" class="search-delete-no" @click="confirming = false">Cancel</button>
+      </span>
+    </div>
+
+    <form class="search-edit" x-show="editing"
+          hx-post="/searches/{{ search.id }}"
+          hx-target="#criteria-list"
+          hx-swap="innerHTML">
+      <label>Name</label>
+      <input type="text" name="name" value="{{ search.name }}" maxlength="255">
+      <label>Keywords</label>
+      <input type="text" name="keywords" value="{{ search.criteria.get('keywords', '') }}">
+      <label>Location</label>
+      <input type="text" name="location" value="{{ search.criteria.get('location', '') }}">
+      <label><input type="checkbox" name="remote_only" value="1"
+        {% if search.criteria.get('remote_only') %}checked{% endif %}> Remote only</label>
+      <label>Salary floor</label>
+      <input type="number" name="salary_floor" min="0" step="1"
+             value="{{ search.criteria.get('salary_floor', '') }}">
+      <label>Seniority</label>
+      <input type="text" name="seniority"
+             value="{{ search.criteria.get('seniority', []) | join(', ') }}">
+      <button type="submit" class="search-save">Save search</button>
+    </form>
 
     {% if search.warnings %}
     <div class="capability-warnings" id="capability-warnings-{{ search.id }}">
@@ -196,6 +306,23 @@
         <span class="rule-kind">{{ rule.kind }}</span>
         <span class="rule-summary">{{ rule.summary }}</span>
         <span class="rule-state">{% if rule.enabled %}on{% else %}off{% endif %}</span>
+        <span class="rule-controls">
+          <button type="button"
+                  class="rule-toggle"
+                  hx-post="/searches/{{ search.id }}/rules/{{ rule.id }}/toggle"
+                  hx-target="#criteria-list"
+                  hx-swap="innerHTML">
+            {% if rule.enabled %}Disable{% else %}Enable{% endif %}
+          </button>
+          <button type="button"
+                  class="rule-delete"
+                  hx-post="/searches/{{ search.id }}/rules/{{ rule.id }}/delete"
+                  hx-target="#criteria-list"
+                  hx-swap="innerHTML">
+            Delete
+          </button>
+        </span>
+        {{ rule_edit_form(rule, "/searches/" ~ search.id ~ "/rules/" ~ rule.id) }}
       </li>
       {% endfor %}
     </ul>

@@ -444,6 +444,194 @@ async def create_rule_route(
     return await _render_list(request, session, note="Rule added.")
 
 
+async def _not_found(session: AsyncSession, message: str) -> HTMLResponse:  # noqa: ARG001
+    return HTMLResponse(
+        render_criteria_list(await build_search_views(session), errors=[message]),
+        status_code=404,
+    )
+
+
+@router.post("/searches/{search_id}/toggle", response_class=HTMLResponse)
+async def toggle_search_route(
+    search_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Flip a search's `enabled` state. Deliberately does not touch `version`."""
+    record = await search_repo.search_by_id(session, search_id)
+    if record is None:
+        return await _not_found(session, "Unknown search.")
+
+    updated = await search_repo.set_search_enabled(
+        session, search_id=search_id, enabled=not record.enabled, now=datetime.now(UTC)
+    )
+    await session.commit()
+    state = "enabled" if (updated and updated.enabled) else "disabled"
+    return await _render_list(request, session, note=f"Search {state}.")
+
+
+@router.post("/searches/{search_id}", response_class=HTMLResponse)
+async def edit_search_route(
+    search_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Edit a search's name and/or criteria; the version moves only on a real change."""
+    record = await search_repo.search_by_id(session, search_id)
+    if record is None:
+        return await _not_found(session, "Unknown search.")
+
+    form = await read_form(request)
+    errors: list[str] = []
+
+    name = _field(form, "name")
+    if not name:
+        errors.append("A search needs a name.")
+
+    criteria, criteria_errors = criteria_from_form(form)
+    errors.extend(criteria_errors)
+
+    if not errors:
+        try:
+            updated = await search_repo.update_search(
+                session,
+                search_id=search_id,
+                name=name,
+                criteria=criteria,
+                now=datetime.now(UTC),
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+        else:
+            await session.commit()
+            if updated is not None and updated.version != record.version:
+                return await _render_list(
+                    request, session, note=f"Saved (version {updated.version})."
+                )
+            return await _render_list(request, session, note="No change.")
+
+    return await _render_list(request, session, errors=errors, status_code=400)
+
+
+@router.post("/searches/{search_id}/delete", response_class=HTMLResponse)
+async def delete_search_route(
+    search_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Delete a search and its rules only; listings and runs are untouched."""
+    deleted = await search_repo.delete_search(session, search_id=search_id)
+    if not deleted:
+        return await _not_found(session, "Unknown search.")
+
+    await session.commit()
+    return await _render_list(request, session, note="Search deleted.")
+
+
+async def _owned_rule(search_id: int, rule_id: int, session: AsyncSession):  # noqa: ANN202
+    """The rule, but only when it belongs to the search in the path."""
+    rule = await search_repo.rule_by_id(session, rule_id)
+    if rule is None or rule.search_id != int(search_id):
+        return None
+    return rule
+
+
+@router.post("/searches/{search_id}/rules/{rule_id}", response_class=HTMLResponse)
+async def edit_rule_route(
+    search_id: int,
+    rule_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Edit a rule's parameters, enabled state or position."""
+    rule = await _owned_rule(search_id, rule_id, session)
+    if rule is None:
+        return await _not_found(session, "Unknown rule.")
+
+    form = await read_form(request)
+    params = rule_params_from_form(form, rule.kind)
+    errors = search_repo.validate_rule_params(rule.kind, params)
+    if errors:
+        return await _render_list(request, session, errors=errors, status_code=400)
+
+    enabled_raw = form.get("enabled")
+    enabled = None if enabled_raw is None else _checkbox(form, "enabled")
+    position = None
+    raw_position = _field(form, "position")
+    if raw_position:
+        try:
+            position = max(0, int(raw_position))
+        except ValueError:
+            return await _render_list(
+                request, session, errors=["Position must be a whole number."], status_code=400
+            )
+
+    try:
+        await search_repo.update_rule(
+            session,
+            rule_id=rule_id,
+            params=params,
+            enabled=enabled,
+            position=position,
+            now=datetime.now(UTC),
+        )
+    except ValueError as exc:
+        return await _render_list(request, session, errors=[str(exc)], status_code=400)
+
+    await session.commit()
+    return await _render_list(request, session, note="Rule saved.")
+
+
+@router.post("/searches/{search_id}/rules/{rule_id}/toggle", response_class=HTMLResponse)
+async def toggle_rule_route(
+    search_id: int,
+    rule_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Enable/disable one rule; the owning search's version moves either way.
+
+    Unlike a whole-search toggle, which rules are enabled changes the effective
+    criteria, so it is recorded in the version a run's snapshot references.
+    """
+    rule = await _owned_rule(search_id, rule_id, session)
+    if rule is None:
+        return await _not_found(session, "Unknown rule.")
+
+    updated = await search_repo.update_rule(
+        session,
+        rule_id=rule_id,
+        enabled=not rule.enabled,
+        now=datetime.now(UTC),
+    )
+    await session.commit()
+    state = "on" if (updated and updated.enabled) else "off"
+    return await _render_list(request, session, note=f"Rule {state}.")
+
+
+@router.post("/searches/{search_id}/rules/{rule_id}/delete", response_class=HTMLResponse)
+async def delete_rule_route(
+    search_id: int,
+    rule_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Delete one rule; the owning search's version moves."""
+    rule = await _owned_rule(search_id, rule_id, session)
+    if rule is None:
+        return await _not_found(session, "Unknown rule.")
+
+    await search_repo.delete_rule(session, rule_id=rule_id)
+    await session.commit()
+    return await _render_list(request, session, note="Rule deleted.")
+
+
 __all__ = [
     "CRITERIA_ROOT_ID",
     "build_search_views",

@@ -208,3 +208,155 @@ async def test_a_search_name_containing_a_tag_is_escaped_on_the_page(
     assert response.status_code == 200
     assert ESCAPED_XSS_NAME in response.text
     assert XSS_NAME not in response.text
+
+
+# --- task 2: enable/disable, edit, delete, rule controls ----------------------
+
+
+async def _stored_search(
+    session_factory: async_sessionmaker[AsyncSession], search_id: int
+) -> Search:
+    async with session_factory() as session:
+        row = await session.get(Search, search_id)
+    assert row is not None
+    return row
+
+
+async def test_toggling_a_search_flips_enabled_without_moving_the_version(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+
+    response = await client.post(f"/searches/{search_id}/toggle")
+
+    assert response.status_code == 200
+    assert 'id="criteria-list"' in response.text
+    stored = await _stored_search(session_factory, search_id)
+    assert stored.enabled is False
+    assert stored.version == 1
+
+    await client.post(f"/searches/{search_id}/toggle")
+    stored = await _stored_search(session_factory, search_id)
+    assert stored.enabled is True
+    assert stored.version == 1
+
+
+async def test_editing_a_search_moves_the_version_on_a_real_change(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python", "keywords": "python"})
+    search_id = await _only_search_id(session_factory)
+
+    response = await client.post(
+        f"/searches/{search_id}",
+        data={"name": "Dublin Python", "keywords": "python", "location": "Dublin"},
+    )
+
+    assert response.status_code == 200
+    stored = await _stored_search(session_factory, search_id)
+    assert stored.version == 2
+    assert stored.criteria_json == {"keywords": "python", "location": "Dublin"}
+
+    # An identical re-submit must not churn the version.
+    await client.post(
+        f"/searches/{search_id}",
+        data={"name": "Dublin Python", "keywords": "python", "location": "Dublin"},
+    )
+    assert (await _stored_search(session_factory, search_id)).version == 2
+
+
+async def test_deleting_a_search_removes_it_and_its_rules(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+    await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "remote", "remote_require": "1"},
+    )
+
+    response = await client.post(f"/searches/{search_id}/delete")
+
+    assert response.status_code == 200
+    assert await _search_rows(session_factory) == []
+    assert await _rule_rows(session_factory) == []
+
+
+async def test_toggling_a_rule_moves_the_owning_searchs_version(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+    await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "remote", "remote_require": "1"},
+    )
+    rule_id = (await _rule_rows(session_factory))[0].id
+
+    response = await client.post(f"/searches/{search_id}/rules/{rule_id}/toggle")
+
+    assert response.status_code == 200
+    rules = await _rule_rows(session_factory)
+    assert rules[0].enabled is False
+    assert (await _stored_search(session_factory, search_id)).version == 3
+
+
+async def test_editing_a_rule_replaces_its_params(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+    await client.post(
+        f"/searches/{search_id}/rules", data={"kind": "exclude_keyword", "keyword_terms": "crypto"}
+    )
+    rule_id = (await _rule_rows(session_factory))[0].id
+
+    response = await client.post(
+        f"/searches/{search_id}/rules/{rule_id}",
+        data={
+            "kind": "exclude_keyword",
+            "keyword_terms": "crypto, nft",
+            "keyword_fields": ["title"],
+        },
+    )
+
+    assert response.status_code == 200
+    rules = await _rule_rows(session_factory)
+    assert rules[0].params_json == {"terms": ["crypto", "nft"], "fields": ["title"]}
+
+
+async def test_deleting_a_rule_removes_it(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+    await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "remote", "remote_require": "1"},
+    )
+    rule_id = (await _rule_rows(session_factory))[0].id
+
+    response = await client.post(f"/searches/{search_id}/rules/{rule_id}/delete")
+
+    assert response.status_code == 200
+    assert await _rule_rows(session_factory) == []
+    assert (await _stored_search(session_factory, search_id)).version == 3
+
+
+async def test_rule_routes_404_for_a_rule_that_belongs_to_another_search(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await client.post("/searches", data={"name": "One"})
+    first_id = await _only_search_id(session_factory)
+    await client.post(f"/searches/{first_id}/rules", data={"kind": "remote", "remote_require": "1"})
+    rule_id = (await _rule_rows(session_factory))[0].id
+
+    await client.post("/searches", data={"name": "Two"})
+    other_id = [row.id for row in await _search_rows(session_factory)][1]
+
+    response = await client.post(f"/searches/{other_id}/rules/{rule_id}/toggle")
+
+    assert response.status_code == 404
+    assert (await _rule_rows(session_factory))[0].enabled is True
+
