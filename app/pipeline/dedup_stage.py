@@ -29,6 +29,7 @@ from app.db.models import Listing, Run
 from app.db.repositories.dupe_repo import (
     apply_merge,
     candidates_for_block,
+    merged_pairs,
     reverted_pairs,
 )
 from app.domain.dedup import CandidateFacts, candidate_merges
@@ -104,13 +105,22 @@ async def run_dedup_stage(
         if not decisions:
             return StageResult(DEDUP_STAGE, counts.counts, counts.errors)
 
-        blocked = await reverted_pairs(session, listing_ids=[item.listing_id for item in facts])
+        listing_ids = [item.listing_id for item in facts]
+        # Two pre-checks before scoring: a reverted pair (the user's explicit undo,
+        # D-28) and a pair already merged and not reverted. The second keeps a
+        # re-run from re-proposing a correct merge and recording a spurious error.
+        reverted = await reverted_pairs(session, listing_ids=listing_ids)
+        already_merged = await merged_pairs(session, listing_ids=listing_ids)
         by_id = {item.listing_id: item for item in facts}
 
         diagnostic_max = 0.0
         for decision in decisions:
-            if (decision.survivor_id, decision.absorbed_id) in blocked:
+            pair = (decision.survivor_id, decision.absorbed_id)
+            if pair in reverted:
                 counts.bump("skipped_reverted")
+                continue
+            if pair in already_merged:
+                counts.bump("skipped_already_merged")
                 continue
             try:
                 async with session.begin_nested():

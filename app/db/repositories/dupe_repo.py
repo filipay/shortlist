@@ -114,6 +114,38 @@ async def reverted_pairs(
     return pairs
 
 
+async def merged_pairs(
+    session: AsyncSession, *, listing_ids: Iterable[int]
+) -> set[tuple[int, int]]:
+    """Pairs already merged and not reverted, in **both** orientations.
+
+    Symmetric to `reverted_pairs` and needed for the same reason: the merge is
+    re-planned from scratch every run (D-36), so without this the same pair is
+    proposed again on every re-run. The unique index would refuse the duplicate
+    insert, but as a *per-run error* — a misleading warning recorded every day for
+    a merge that is already correct. Filtering here keeps the run log honest.
+    """
+    ids = {int(listing_id) for listing_id in (listing_ids or ())}
+    if len(ids) < 2:
+        return set()
+
+    rows = (
+        await session.execute(
+            select(ListingDupe.listing_id, ListingDupe.dup_listing_id).where(
+                ListingDupe.reverted_at.is_(None),
+                ListingDupe.listing_id.in_(ids),
+                ListingDupe.dup_listing_id.in_(ids),
+            )
+        )
+    ).all()
+
+    pairs: set[tuple[int, int]] = set()
+    for survivor_id, absorbed_id in rows:
+        pairs.add((int(survivor_id), int(absorbed_id)))
+        pairs.add((int(absorbed_id), int(survivor_id)))
+    return pairs
+
+
 async def apply_merge(
     session: AsyncSession,
     *,
@@ -204,5 +236,6 @@ __all__ = [
     "apply_merge",
     "candidates_for_block",
     "count_merges_for_run",
+    "merged_pairs",
     "reverted_pairs",
 ]

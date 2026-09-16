@@ -160,6 +160,33 @@ async def test_a_merge_retains_both_sources_rows(
     assert sorted(sources_by_listing.values()) == ["indeed", "linkedin"]
 
 
+async def test_a_second_run_does_not_re_merge_or_record_a_spurious_error(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """D-36 re-plans every run, so the already-merged pair must be filtered.
+
+    Without the `merged_pairs` pre-check the pair is re-proposed, the unique index
+    refuses the duplicate insert, and every re-run records a misleading dedup
+    error for a merge that is already correct.
+    """
+    await _register_sources(session_factory, "linkedin", "indeed")
+    linkedin = SameJobAdapter("linkedin", _raw("linkedin", with_salary=False))
+    indeed = SameJobAdapter("indeed", _raw("indeed", with_salary=True))
+
+    first_run = await run_pipeline("manual", None, session_factory, adapters=[linkedin, indeed])
+    second_run = await run_pipeline("manual", None, session_factory, adapters=[linkedin, indeed])
+
+    async with session_factory() as session:
+        first = await session.get(Run, first_run)
+        second = await session.get(Run, second_run)
+
+    assert first is not None and first.deduped_count == 1
+    assert second is not None and second.deduped_count == 0
+    assert await _count(session_factory, ListingDupe) == 1
+    dedup_errors = [entry for entry in (second.errors_json or []) if entry.get("source") == "dedup"]
+    assert dedup_errors == [], "an already-merged pair must not be recorded as an error"
+
+
 async def test_a_run_with_no_duplicate_reports_zero_merges(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

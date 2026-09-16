@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Listing, ListingDupe, ListingSource, Source
-from app.db.repositories.dupe_repo import apply_merge, reverted_pairs
+from app.db.repositories.dupe_repo import apply_merge, merged_pairs, reverted_pairs
 from app.db.repositories.listing_repo import _LISTING_FIELDS, upsert_listing_source
 from app.domain.dedup import MergeDecision
 
@@ -69,9 +69,7 @@ def _pair_norms(
     return survivor_norm, twin_norm
 
 
-async def _register_sources(
-    session_factory: async_sessionmaker[AsyncSession], *names: str
-) -> None:
+async def _register_sources(session_factory: async_sessionmaker[AsyncSession], *names: str) -> None:
     async with session_factory() as session:
         for name in names:
             session.add(Source(name=name, display_name=name.title()))
@@ -132,13 +130,19 @@ async def test_reverted_pairs_is_empty_then_returns_both_orientations(
 
     async with session_factory() as session:
         assert await reverted_pairs(session, listing_ids={survivor_id, twin_id}) == set()
+        assert await merged_pairs(session, listing_ids={survivor_id, twin_id}) == {
+            (survivor_id, twin_id),
+            (twin_id, survivor_id),
+        }
         dupe = (await session.execute(select(ListingDupe))).scalar_one()
         dupe.reverted_at = MERGE_NOW
         await session.commit()
 
     async with session_factory() as session:
         pairs = await reverted_pairs(session, listing_ids={survivor_id, twin_id})
+        still_merged = await merged_pairs(session, listing_ids={survivor_id, twin_id})
     assert pairs == {(survivor_id, twin_id), (twin_id, survivor_id)}
+    assert still_merged == set(), "a reverted pair is no longer an already-merged pair"
 
     # The orientation of the query set does not matter.
     async with session_factory() as session:
@@ -250,9 +254,7 @@ async def test_the_merge_deletes_nothing_and_re_points_no_source_rows(
     async with session_factory() as session:
         rows = (
             await session.execute(
-                select(ListingSource.listing_id, ListingSource.source).order_by(
-                    ListingSource.id
-                )
+                select(ListingSource.listing_id, ListingSource.source).order_by(ListingSource.id)
             )
         ).all()
         twin = await session.get(Listing, twin_id)
