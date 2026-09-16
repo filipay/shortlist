@@ -1226,9 +1226,9 @@ def compute_empty_reason(c: RunCounts) -> str:
 A1, A2, A4 and A6 before locking the corresponding tasks** — A2/A3 are product
 policy, A4/A6 are structural.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Which ranking function is the primary gate?**
+1. **[RESOLVED]** **Which ranking function is the primary gate?**
    - What we know: D-31 names token-set ratio; verified subset-forgiving behaviour
      makes it unsafe alone.
    - What's unclear: whether the user wants token-set *specifically* or the outcome
@@ -1238,26 +1238,26 @@ policy, A4/A6 are structural.
      D-31's intent (rapidfuzz over the normalised tuple, θ as a setting) without
      reproducing P3.
 
-2. **Multi-search rule scope (union vs per-search).**
+2. **[RESOLVED]** **Multi-search rule scope (union vs per-search).**
    - What we know: `filter_rules` FKs to `searches`; the queue unions enabled searches.
    - What's unclear: whether an exclusion from search A should remove a listing that
      search B retrieved.
    - Recommendation: union-of-rules (deterministic, no schema change) and document
      it in `filter.py` + the criteria UI copy.
 
-3. **Load-more vs the excluded toggle.**
+3. **[RESOLVED]** **Load-more vs the excluded toggle.**
    - What we know: both change the row set; offset pagination is page-local.
    - What's unclear: whether toggling `Show excluded` resets the page or preserves offset.
    - Recommendation: any predicate change resets `offset=0` (the `hx-get` URL carries
      the offset, so resetting is a one-line template change) — otherwise page N of
      the filtered set is meaningless.
 
-4. **Run retention/pruning.**
+4. **[RESOLVED]** **Run retention/pruning.**
    - What we know: `runs` grows once per manual trigger (and later, per day).
    - Recommendation: no pruning in Phase 2; add a bounded `GET /runs?limit=` and a
      note that pruning is a Phase-8 ops item.
 
-5. **Does "Show excluded" also list excluded-but-merged rows?** (CONTEXT discretion)
+5. **[RESOLVED]** **Does "Show excluded" also list excluded-but-merged rows?** (CONTEXT discretion)
    - Recommendation: no — a merged twin is not "excluded by a rule"; the Merges view
      is its home. Show it dimmed under the excluded toggle only if it also has an
      exclusion row, which the union-of-rules model permits naturally.

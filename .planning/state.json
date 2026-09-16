@@ -1,0 +1,53 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Walking Skeleton + Foundations",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Clean, Filtered, Queryable Queue",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "LLM Port + Structured Output",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "CV Fact Store + LaTeX Compile Spike",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Ranking — CORE VALUE",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Tailoring + Verification",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "Assisted Apply + Tracker",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "Operations + Polish",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 02 of 8 · 0% · executing"
+  },
+  "updated_at": "2026-09-16T08:40:17.909Z"
+}
