@@ -75,9 +75,9 @@ DEFAULT_KEYWORD_FIELDS = ("title", "description")
 
 #: The `location` rule's `mode` values. `substring` (the default) matches a
 #: casefolded term anywhere in `location_norm`. `county` keeps that rule and also
-#: matches an Irish county when a term equals the county name or its
-#: ISO 3166-2:IE subdivision code, resolved from `location_norm` by
-#: `_county_from_location`. Any unrecognised value degrades to `substring`.
+#: matches an Irish county when a term equals the county name or one of its
+#: subdivision/plate codes, resolved from `location_norm` by `_county_from_location`.
+#: Any unrecognised value degrades to `substring`.
 LOCATION_MODES = ("substring", "county")
 
 #: ISO 3166-2:IE subdivision code (lowercase, without the `ie-` prefix) -> county
@@ -114,8 +114,45 @@ IE_COUNTY_NAME_BY_CODE: dict[str, str] = {
     "ww": "wicklow",
 }
 
-#: The inverse of `IE_COUNTY_NAME_BY_CODE` (the mapping is a bijection), so
-#: `county` mode can match a bare code term without re-scanning the table.
+#: Vehicle-registration-plate county codes that DIVERGE from the ISO 3166-2:IE code
+#: for the same county. The boards emit plate codes on the code segment, not ISO
+#: codes (verified against the live corpus: `midleton, c, ie` is Cork), while ISO
+#: 3166-2:IE remains the documented reference. For *most* counties the two coincide
+#: (`d`, `g`, `wd`, `ww`, `so`, `lk`, `ky`, ...), which is why Dublin appeared to
+#: work; only the divergences are listed here. Strictly additive — the ISO table
+#: above is never re-keyed or emptied, because a silent false *accept* (failing to
+#: exclude a listing outside the allowed county) is this project's worst failure
+#: mode. Widening only lets `county` mode resolve an area it previously could not.
+IE_COUNTY_PLATE_CODE_BY_NAME: dict[str, tuple[str, ...]] = {
+    # ISO `co`; Cork vehicles are registered `c`.
+    "cork": ("c",),
+    # ISO `ta`; Tipperary plates are `t` since 2014, older `tn` (North) / `ts` (South).
+    "tipperary": ("t", "tn", "ts"),
+    # ISO `lk`; Limerick plates are `l` since 2014.
+    "limerick": ("l",),
+}
+
+#: Every code a location segment may carry -> county name: the ISO table plus the
+#: divergent plate codes. No plate code collides with an ISO code, so this is a pure
+#: widening of the ISO lookup rather than a redefinition of any existing key.
+_COUNTY_NAME_BY_ANY_CODE: dict[str, str] = {
+    **IE_COUNTY_NAME_BY_CODE,
+    **{
+        code: name
+        for name, codes in IE_COUNTY_PLATE_CODE_BY_NAME.items()
+        for code in codes
+    },
+}
+
+#: The county names, so a `county <name>` segment (`county dublin`) resolves even
+#: though only the name — never the qualifier — is a table key.
+_COUNTY_NAMES: frozenset[str] = frozenset(IE_COUNTY_NAME_BY_CODE.values())
+
+#: The inverse of `IE_COUNTY_NAME_BY_CODE` (the ISO mapping is a bijection), so
+#: `county` mode can match a bare ISO code term without re-scanning the table.
+#: Plate-only codes are intentionally not inverted here: they are resolved to a
+#: county *name* by `_county_from_location`, and a bare plate term already matches
+#: the raw location string via the substring branch.
 _COUNTY_CODE_BY_NAME: dict[str, str] = {
     name: code for code, name in IE_COUNTY_NAME_BY_CODE.items()
 }
@@ -285,18 +322,30 @@ def _eval_exclude_keyword(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | 
 def _county_from_location(location_norm: str | None) -> str | None:
     """Resolve an Irish county *name* from a normalised location string.
 
-    The boards normalise as `<area>, <county-code>, <country>`; this returns the
-    county name for the first comma-separated segment that is an ISO 3166-2:IE
-    subdivision code (`d` -> `dublin`). A location that names the county instead
-    (`galway, county galway, ireland`) has no code segment, so it resolves to
-    `None` — an absent county is never itself a rejection reason.
+    The boards normalise as `<area>, <county-code>, <country>`, and the code is a
+    vehicle-registration plate (`d` -> `dublin`), which is *not* always the ISO
+    3166-2:IE code (`midleton, c, ie` is Cork, whose ISO code is `co`). A segment may
+    instead name the county (`swords, county dublin, ireland`); the leading
+    `county ` qualifier is stripped and the remainder matched against the county
+    names. The country segment (`ireland` or `ie`) never resolves. Returns the county
+    name for the first comma-separated segment that carries county evidence, or
+    `None` when there is none — an absent county is never itself a rejection reason.
     """
     if not location_norm:
         return None
-    for segment in location_norm.split(","):
-        name = IE_COUNTY_NAME_BY_CODE.get(segment.strip().casefold())
+    for raw_segment in location_norm.split(","):
+        segment = raw_segment.strip().casefold()
+        if not segment:
+            continue
+        name = _COUNTY_NAME_BY_ANY_CODE.get(segment)
         if name is not None:
             return name
+        if segment in _COUNTY_NAMES:
+            return segment
+        if segment.startswith("county "):
+            candidate = segment[len("county ") :].strip()
+            if candidate in _COUNTY_NAMES:
+                return candidate
     return None
 
 

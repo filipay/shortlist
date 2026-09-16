@@ -284,6 +284,84 @@ def test_location_county_mode_detail_keys_are_exact() -> None:
     assert set(outcome.detail) == {"location_norm", "allowed"}
 
 
+def test_location_county_mode_accepts_a_cork_plate_code_suburb() -> None:
+    """REGRESSION (real corpus): the boards emit vehicle-plate codes, not ISO codes.
+
+    Cork's ISO 3166-2:IE code is `co`, but its registration plate is `c`, so
+    `midleton, c, ie` resolved to no county and `allow=["cork"]` wrongly excluded the
+    suburb. The plate in the `cork, c, ie` form must keep passing too.
+    """
+    county = {"allow": ["cork"], "mode": "county"}
+
+    assert (
+        evaluate([_spec(kind="location", params=county)], _facts(location_norm="midleton, c, ie"))
+        == []
+    )
+    assert (
+        evaluate([_spec(kind="location", params=county)], _facts(location_norm="cork, c, ie")) == []
+    )
+
+
+def test_location_county_mode_accepts_tipperary_plate_codes() -> None:
+    """Tipperary plates are `t` (since 2014) and `tn`/`ts` (older); the ISO code is `ta`."""
+    county = {"allow": ["Tipperary"], "mode": "county"}
+
+    for location in ("clonmel, t, ie", "clonmel, tn, ie", "clonmel, ts, ie"):
+        assert (
+            evaluate([_spec(kind="location", params=county)], _facts(location_norm=location)) == []
+        ), location
+
+
+def test_location_county_mode_accepts_a_limerick_plate_code() -> None:
+    """Limerick plates are `l` (since 2014); the ISO code is `lk`."""
+    county = {"allow": ["Limerick"], "mode": "county"}
+
+    assert (
+        evaluate([_spec(kind="location", params=county)], _facts(location_norm="abbeyfeale, l, ie"))
+        == []
+    )
+
+
+def test_location_county_mode_accepts_a_county_name_second_segment() -> None:
+    """`swords, county dublin, ireland` names the county in the middle segment."""
+    county = {"allow": ["Dublin"], "mode": "county"}
+
+    assert (
+        evaluate(
+            [_spec(kind="location", params=county)],
+            _facts(location_norm="swords, county dublin, ireland"),
+        )
+        == []
+    )
+
+
+def test_location_county_mode_resolves_the_county_name_branch_for_a_code_term() -> None:
+    """The `county <name>` branch is observable with a bare code term.
+
+    With only substring matching, `allow=["d"]` against `county dublin` would be
+    excluded (there is no literal `d` code segment); resolving the named county makes
+    the ISO code term match.
+    """
+    county = {"allow": ["d"], "mode": "county"}
+
+    assert (
+        evaluate(
+            [_spec(kind="location", params=county)],
+            _facts(location_norm="swords, county dublin, ireland"),
+        )
+        == []
+    )
+
+
+def test_location_county_mode_still_rejects_another_county_after_the_plate_map() -> None:
+    """The plate table widens resolution; it must not make the mode permissive."""
+    county = {"allow": ["Dublin"], "mode": "county"}
+
+    outcome = _fire("location", county, _facts(location_norm="midleton, c, ie"))
+
+    assert outcome.excluded is True
+
+
 # --- remote -------------------------------------------------------------------
 def test_remote_excludes_only_a_known_non_remote_flag() -> None:
     params = {"require": True}
