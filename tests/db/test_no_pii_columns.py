@@ -43,7 +43,19 @@ EXPECTED_JSON_COLUMNS: dict[str, frozenset[str]] = {
     "listing_events": frozenset({"context_json"}),
     "listing_exclusions": frozenset({"detail_json"}),
     "searches": frozenset({"criteria_json"}),
-    "runs": frozenset({"source_counts_json", "errors_json"}),
+    # 0002 adds filter_rules.params_json (rule vocabulary + params only — never
+    # listing text) and the three new `runs` JSON columns. The one-row watermark
+    # table has no JSON column at all, so it must NOT appear here.
+    "filter_rules": frozenset({"params_json"}),
+    "runs": frozenset(
+        {
+            "source_counts_json",
+            "errors_json",
+            "reason_counts_json",
+            "stage_log_json",
+            "criteria_snapshot_json",
+        }
+    ),
     "scores": frozenset(
         {"factor_scores_json", "weights_json", "strengths_json", "gaps_json"}
     ),

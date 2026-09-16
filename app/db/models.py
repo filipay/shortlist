@@ -65,6 +65,49 @@ class Company(Base):
     __table_args__ = (UniqueConstraint("name_norm", name="uq_companies_name_norm"),)
 
 
+class FilterRule(Base):
+    """A typed, ordered filter rule belonging to one search (D-34 / CRIT-01).
+
+    ``kind`` is constrained by the explicitly named ``ck_filter_rules_kind``, so
+    an unknown rule vocabulary cannot be persisted. The evaluators are pure
+    functions in ``app/domain/filter.py``; this row is only its storage.
+    """
+
+    __tablename__ = "filter_rules"
+
+    id = Column(Integer, primary_key=True)
+    search_id = Column(Integer, ForeignKey("searches.id"), nullable=False)
+    kind = Column(String(32), nullable=False)
+    params_json = Column(JSON)
+    enabled = Column(Boolean, nullable=False, default=True, server_default=text("1"))
+    position = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('salary_floor','exclude_keyword','location','remote',"
+            "'seniority','company_blocklist')",
+            name="ck_filter_rules_kind",
+        ),
+        Index("ix_filter_rules_search_position", "search_id", "position"),
+    )
+
+
+class QueueState(Base):
+    """The single-row last-visit watermark (D-39).
+
+    ``last_queue_view_at`` is NULLABLE: ``NULL`` means "never viewed", so every
+    listing is new until the queue is first opened.
+    """
+
+    __tablename__ = "queue_state"
+
+    id = Column(Integer, primary_key=True)
+    last_queue_view_at = Column(DateTime)
+    updated_at = Column(DateTime, nullable=False)
+
+
 class Listing(Base):
     """The canonical, deduped job."""
 
@@ -164,6 +207,20 @@ class ListingDupe(Base):
     reverted_at = Column(DateTime)
     reverted_by = Column(String(64))
 
+    __table_args__ = (
+        # Stops a same-orientation re-insert of an already-merged/reverted pair.
+        # It does NOT stop the reversed pair — the dedup stage still needs the
+        # either-orientation negative-memory pre-check (plan 02-04).
+        Index(
+            "uq_listing_dupes_pair",
+            "listing_id",
+            "dup_listing_id",
+            unique=True,
+        ),
+        # Makes the either-orientation negative-memory lookup index-usable.
+        Index("ix_listing_dupes_dup_listing_id", "dup_listing_id"),
+    )
+
 
 class ListingEvent(Base):
     """APPEND-ONLY event log (acceptance item 2). Enforced by DB triggers."""
@@ -198,6 +255,8 @@ class ListingExclusion(Base):
     rule_kind = Column(String(32))
     detail_json = Column(JSON)
     created_at = Column(DateTime, nullable=False)
+    # D-33 — the criteria version this rejection was observed against.
+    criteria_version = Column(Integer)
 
 
 class Search(Base):
@@ -236,6 +295,12 @@ class Run(Base):
     llm_calls = Column(Integer)
     llm_tokens = Column(Integer)
     errors_json = Column(JSON)
+    # D-44 / RUN-03 — NULL reason legitimately means "the queue was not empty".
+    reason = Column(String(32))
+    reason_counts_json = Column(JSON)
+    stage_log_json = Column(JSON)
+    # D-33 — the exact query + rules this run used.
+    criteria_snapshot_json = Column(JSON)
 
     __table_args__ = (
         CheckConstraint(
@@ -245,6 +310,11 @@ class Run(Base):
         CheckConstraint(
             "status IN ('running','done','failed','partial')",
             name="ck_runs_status",
+        ),
+        CheckConstraint(
+            "reason IS NULL OR reason IN ('no_sources_enabled','all_sources_failed',"
+            "'zero_fetched','all_filtered','nothing_new','mixed')",
+            name="ck_runs_reason",
         ),
     )
 
