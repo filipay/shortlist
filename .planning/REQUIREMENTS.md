@@ -90,7 +90,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RUN-01**: User can trigger a search run manually from the UI
 - [x] **RUN-02**: Runs execute in the background without freezing the UI
 - [x] **RUN-03**: Every run records what it did, what it found, and — when the queue is empty — why
-- [ ] **RUN-04**: User can see run history
+- [x] **RUN-04**: User can see run history
 - [ ] **RUN-05**: User can schedule recurring runs
 - [ ] **RUN-06**: User can see when the next scheduled run will happen
 - [ ] **RUN-07**: User can check system and source health from a health endpoint surfaced in the UI
@@ -230,7 +230,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUN-01 | Phase 1 | Complete |
 | RUN-02 | Phase 1 | Complete |
 | RUN-03 | Phase 2 | Complete |
-| RUN-04 | Phase 2 | Pending |
+| RUN-04 | Phase 2 | Complete |
 | RUN-05 | Phase 8 | Pending |
 | RUN-06 | Phase 8 | Pending |
 | RUN-07 | Phase 8 | Pending |

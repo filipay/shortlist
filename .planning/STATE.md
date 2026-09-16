@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
-status: executing
-stopped_at: Completed 02-09-PLAN.md
-last_updated: "2026-09-16T12:14:01.101Z"
+status: verifying
+stopped_at: Completed 02-10-PLAN.md
+last_updated: "2026-09-16T12:32:45.764Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: b24478202f9f55214407a066ef1ee831203b7a6d
+state_head: d2f0656a1481e4e796a8fd42d980ec418997c124
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
 Plan: 10 of 10
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-16 — Phase 2 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P07 | 22 min | 3 tasks | 13 files |
 | Phase 02 P08 | 32 min | 3 tasks | 10 files |
 | Phase 02 P09 | 20 min | 2 tasks | 8 files |
+| Phase 02 P10 | 17 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,11 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-09: state_for_listings is ONE query for a whole page (a per-row query is forbidden) and every requested id gets an entry, NO_STATE when it has no events, so 'no events' can never look like 'unreadable'.
 - [Phase 2]: 02-09: the events POST validates the vocabulary against EVENT_TYPES (mirroring the CHECK) and the listing's existence BEFORE writing — 422/404 append nothing — and occurred_at is server-side so an event's time cannot be forged.
 - [Phase 2]: 02-09: reuses app.api.searches.read_form for urlencoded bodies because request.form() requires python-multipart, which this project deliberately does not depend on.
+- [Phase 2]: 02-10: the history page renders only what a run persisted — runs.status verbatim (never re-derived, so Phase 1's done-means-it-ran rule survives), the stored reason value and that run's own counts. The ONLY derived value is the sentence, computed with the pure reason_sentence from reason_counts_json plus runs.fetched_count.
+- [Phase 2]: 02-10: duration_seconds is None (an em dash) for an unfinished run, never 0.0; every nullable JSON column on runs defaults to an empty mapping/list so a run that died mid-flight renders; and the stage log is bounded AGAIN on read (STAGE_LOG_RENDER_LIMIT/STAGE_LOG_ERROR_LIMIT) independently of the writer's caps.
+- [Phase 2]: 02-10: render_run_fragment is annotated with a structural RunFragmentSource Protocol (id/status/errors_json) and RunSummary mirrors the errors_json column name, so ONE renderer and ONE partial serve the run control and the queue's last-run strip with no shim object or second template (D-43).
+- [Phase 2]: 02-10: the pre-rendered strip fragment is wrapped in Markup in Python — Jinja would otherwise escape it into visible text — which keeps every template free of a safe-marking filter without an exception.
+- [Phase 2]: 02-10: the strip's reason value, derived sentence and /runs link sit OUTSIDE the fragment root so the strip's own 286 poll can swap the status block without dropping the explanation; the strip is a sibling of #run-control so the polling fragment keeps its #run-status-slot target.
 
 ### Pending Todos
 
@@ -178,6 +184,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T12:14:00.423Z
-Stopped at: Completed 02-09-PLAN.md
+Last session: 2026-09-16T12:32:45.686Z
+Stopped at: Completed 02-10-PLAN.md
 Resume file: None
