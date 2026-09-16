@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **QUEUE-01**: User can browse a persisted queue of listings that survives restarts
 - [x] **QUEUE-02**: Re-running a search never creates a duplicate row for the same listing on the same source
-- [ ] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
+- [x] **QUEUE-03**: The same job found on two sources is merged rather than double-listed, with a reversible audit record
 - [ ] **QUEUE-04**: User can revert an incorrect merge
 - [x] **QUEUE-05**: Every listing records first-seen and last-seen timestamps and a content hash
 - [ ] **QUEUE-06**: User can full-text search the queue
@@ -185,7 +185,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRC-10 | Phase 1 | Complete |
 | QUEUE-01 | Phase 1 | Complete |
 | QUEUE-02 | Phase 1 | Complete |
-| QUEUE-03 | Phase 2 | Pending |
+| QUEUE-03 | Phase 2 | Complete |
 | QUEUE-04 | Phase 2 | Pending |
 | QUEUE-05 | Phase 1 | Complete |
 | QUEUE-06 | Phase 2 | Pending |

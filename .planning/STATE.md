@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-16T09:35:14.967Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-09-16T09:55:35.259Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: acf02389b41956cad53d1ecbb86525f7a39e7bf2
+state_head: 49863f2299e12386308ae30689444d732e2fea67
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P01 | 8 min | 3 tasks | 8 files |
 | Phase 02 P02 | 4 min | 2 tasks | 3 files |
 | Phase 02 P03 | 15 min | 3 tasks | 6 files |
+| Phase 02 P04 | 15 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ Recent decisions affecting current work:
 - [Phase 2]: rapidfuzz is installed in BOTH .venv-host (the plan must-have) and .venv (the only venv the suite runs in), because .venv-host has a broken pydantic_core compiled dependency
 - [Phase 2]: The six filter-rule evaluators and the criteria assemblers are total pure functions: an absent value is never a rejection reason (A2/A3), a malformed rule is skipped with no outcome (never silently applied), and salary_floor consults the best known annualised figure so a straddling range is not rejected
 - [Phase 2]: The injection catalogue flags and counts, never redacts: no re.sub is added, so the sanitised description and content_hash stay byte-identical to Phase 1; the Apache-2.0 s4(c) origin and significant-change notice lives in app/domain/sanitize.py and never in a template
+- [Phase 2]: Tier-2 dedup merges automatically during the run (D-25) with a component gate primary and the fuzzy score secondary: token_sort_ratio gates, token_set_ratio is diagnostic only because it is subset-forgiving, and a grade conflict refuses before any score is computed
+- [Phase 2]: listing_sources rows stay on the absorbed twin (A5, amending ARCHITECTURE 8.3) so a revert stays a flag flip; deduped_count now counts rows absorbed by a merge, and both reverted_pairs and merged_pairs are filtered in both orientations before scoring
 
 ### Pending Todos
 
@@ -145,6 +148,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T09:35:14.904Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-09-16T09:55:35.195Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
