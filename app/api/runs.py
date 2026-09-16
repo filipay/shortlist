@@ -13,8 +13,10 @@ battery/latency leak that is invisible until the machine is on battery.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -54,7 +56,27 @@ RUN_TEMPLATE = "html/runs.html"
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
-def render_run_fragment(request: Request, run: Run, source_counts: dict | None) -> str:
+class RunFragmentSource(Protocol):
+    """What `_run_status.html` actually reads.
+
+    Deliberately structural: the ORM `Run` row and `run_repo.RunSummary` both satisfy
+    it, which is what lets ONE renderer serve the run control's polling fragment and
+    the queue's last-run strip (D-43) without a shim object or a second template.
+    """
+
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def errors_json(self) -> object: ...
+
+
+def render_run_fragment(
+    request: Request, run: RunFragmentSource, source_counts: Mapping[str, Any] | None
+) -> str:
     template = templates.get_template("html/_run_status.html")
     return template.render(request=request, run=run, sources=source_counts or {})
 

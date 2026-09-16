@@ -28,12 +28,15 @@ import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
+from app.api.runs import render_run_fragment
 from app.config import settings
-from app.db.repositories import state_repo
+from app.db.repositories import run_repo, state_repo
 from app.db.repositories.queue_repo import QueuePage, QueueQuery, read_queue
+from app.db.repositories.run_repo import RunSummary
 from app.db.repositories.source_repo import SourceHealth, get_source_health
 from app.db.session import get_session
 from app.domain.models import User
@@ -136,6 +139,38 @@ async def _read_queue_page(
     )
 
 
+async def _last_run_strip(
+    request: Request, session: AsyncSession
+) -> tuple[RunSummary | None, Markup | None]:
+    """`(latest run, its pre-rendered fragment)` — never raises.
+
+    A decorative strip must not 500 the product page (the same rule `_health_strip`
+    follows), so any failure yields `(None, None)` and the queue simply renders without
+    a strip.
+
+    The fragment is produced by `render_run_fragment` from `app/api/runs.py`, which
+    renders the existing `_run_status.html` — so the queue strip and the run control's
+    polling fragment are one renderer and one partial, never a parallel copy (D-43).
+    `RunSummary` exposes the `errors_json` name that partial reads, so the renderer
+    needs no shim.
+
+    It is wrapped in `Markup` because it IS markup: Jinja would otherwise escape the
+    whole fragment into visible text. `Markup` keeps the escaping decision in Python,
+    where it was made by the renderer, and keeps the template free of a safe-marking
+    filter — so the "no `|safe`" rule holds without an exception.
+    """
+    try:
+        runs = await run_repo.list_runs(session, limit=1)
+    except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the queue
+        log.warning("queue.last_run_read_failed", error=type(exc).__name__)
+        return None, None
+
+    latest = runs[0] if runs else None
+    if latest is None:
+        return None, None
+    return latest, Markup(render_run_fragment(request, latest, latest.sources))
+
+
 @router.get("/", response_class=HTMLResponse)
 async def queue(
     request: Request,
@@ -160,6 +195,7 @@ async def queue(
     await state_repo.advance_watermark(session, now=now)
     await session.commit()
 
+    last_run, last_run_fragment = await _last_run_strip(request, session)
     source_health, reachable, version, error = await _health_strip(session, backend)
 
     return templates.TemplateResponse(
@@ -168,6 +204,8 @@ async def queue(
         {
             **_queue_context(page),
             "user": user,
+            "last_run": last_run,
+            "last_run_fragment": last_run_fragment,
             "source_health": source_health,
             "opencode_reachable": reachable,
             "opencode_version": version,
