@@ -108,7 +108,7 @@ Plans:
 - [x] 02-05-PLAN.md
 - [x] 02-06-PLAN.md
 - [x] 02-07-PLAN.md
-- [ ] 02-08-PLAN.md
+- [x] 02-08-PLAN.md
 - [ ] 02-09-PLAN.md
 - [ ] 02-10-PLAN.md
 
@@ -229,7 +229,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
-| 2. Clean, Filtered, Queryable Queue | 7/10 | In Progress|  |
+| 2. Clean, Filtered, Queryable Queue | 8/10 | In Progress|  |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |

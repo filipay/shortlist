@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-09-16T11:10:50.407Z"
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-09-16T11:51:32.945Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: 6500823e77fe537939a24be51fbbb1cdc305a60b
+state_head: 9a6dbd41a5e69df7f24228f83317fe57d7f5c630
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 8 of 10
+Plan: 9 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P05 | 22 min | 3 tasks | 10 files |
 | Phase 02 P06 | 15 min | 2 tasks | 5 files |
 | Phase 02 P07 | 22 min | 3 tasks | 13 files |
+| Phase 02 P08 | 32 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,11 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-07: the queue watermark is a DB row with exactly two writers (opening the queue, after the read; and Mark all as seen) and never moves backwards; GET /queue/list deliberately does not advance it.
 - [Phase 2]: 02-07: new and stale are independent flags (a listing can be both); stale is last_seen_at <= now - Settings.stale_after_days OR is_active false.
 - [Phase 2]: 02-07: the exclusion predicate is a correlated NOT EXISTS against the LATEST run only, so an older run's exclusion stops applying; chips group the count over the run; and #queue-list swaps use hx-swap=innerHTML because the wrapper lives in queue.html.
+- [Phase 2]: A whole-search enable/disable does NOT bump searches.version, but a rule toggle DOES — which rules are enabled is effective criteria; whether a search is scheduled is not. Both asserted in tests/db/test_search_repo_writes.py.
+- [Phase 2]: delete_search clears the nullable runs.search_id pointer before deleting, because runs.search_id has no ON DELETE SET NULL and foreign_keys=ON is enforced; the run row and its criteria_snapshot_json survive the delete.
+- [Phase 2]: Forms are parsed from the urlencoded request body with urllib.parse.parse_qsl rather than adding python-multipart; htmx posts urlencoded by default, so the dependency stays out.
+- [Phase 2]: The pre-run capability report reuses compile_query_for_source (one compiler, two callers) and is wrapped so a registry failure degrades to no warnings, never a 500.
+- [Phase 2]: run_pipeline(trigger, search_id, ...) scopes the snapshot, fetch query and filter rules to one search with the same callable, budget and failure path; search_id=None still unions every enabled search.
 
 ### Pending Todos
 
@@ -166,6 +172,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T11:10:50.338Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-09-16T11:51:32.878Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None

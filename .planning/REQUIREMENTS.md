@@ -36,7 +36,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **CRIT-01**: User can create, edit, and delete named search criteria (keywords, location, remote, salary floor, seniority, exclusions)
 - [x] **CRIT-02**: Criteria are versioned so any past run is reproducible
-- [ ] **CRIT-03**: User can enable or disable a saved search without deleting it
+- [x] **CRIT-03**: User can enable or disable a saved search without deleting it
 
 ### Filtering (FILT)
 
@@ -194,7 +194,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-09 | Phase 2 | Complete |
 | CRIT-01 | Phase 2 | Complete |
 | CRIT-02 | Phase 2 | Complete |
-| CRIT-03 | Phase 2 | Pending |
+| CRIT-03 | Phase 2 | Complete |
 | FILT-01 | Phase 2 | Complete |
 | FILT-02 | Phase 2 | Complete |
 | FILT-03 | Phase 2 | Complete |
