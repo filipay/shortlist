@@ -133,7 +133,7 @@ async def test_the_search_form_criteria_reach_the_adapter_query(
     The CRUD lane pins only `keywords`/`location`; the criteria lane builds its
     mapping by hand. A form key the run assembler ignores (say a renamed
     `remote_only`) would pass both. The run is scoped to the search by id — the
-    real "Run this one" path — so `_resolve_fetch_query` reads the stored criteria.
+    real "Run this one" path — so `_resolve_fetch_queries` reads the stored criteria.
     """
     await _register_source(session_factory)
     response = await client.post(

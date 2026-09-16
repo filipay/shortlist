@@ -185,6 +185,65 @@ async def _fetch_all(
     return list(await asyncio.gather(*(_fetch_one(adapter, query) for adapter in adapters)))
 
 
+#: Fetch statuses ordered from best to worst. A source fetched once per search can
+#: report a different status each time; the merged status must be the worst one.
+_FETCH_STATUS_SEVERITY: tuple[str, ...] = (
+    "ok",
+    "partial",
+    "rate_limited",
+    "blocked",
+    "error",
+)
+_FETCH_STATUS_RANK: dict[str, int] = {
+    status: rank for rank, status in enumerate(_FETCH_STATUS_SEVERITY)
+}
+
+
+def _worst_fetch_status(statuses: Sequence[str]) -> str:
+    """The worst of several statuses for one source (lowest quality wins).
+
+    The global run fetches a source once per enabled search, so it can come back
+    `ok` for one search and `error` for another. This reduces them using the
+    documented severity order `error` > `blocked` > `rate_limited` > `partial` >
+    `ok`: `ok` only when EVERY fetch was `ok`, otherwise the strongest failure
+    signal, so a second healthy search can never launder a broken board into a
+    clean badge. An unrecognised status ranks worst (`error`) rather than being
+    silently treated as healthy.
+    """
+    worst = "ok"
+    worst_rank = 0
+    for status in statuses:
+        text = str(status)
+        rank = _FETCH_STATUS_RANK.get(text, len(_FETCH_STATUS_SEVERITY))
+        if rank >= worst_rank:
+            worst = text
+            worst_rank = rank
+    return worst
+
+
+def _merge_source_counts(
+    left: Mapping[str, Any], right: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Merge two per-fetch count dicts for the SAME source into one entry.
+
+    The union run fetches a source once per enabled search, but
+    `runs.source_counts_json` and the `persist:<source>` stage entry are a
+    one-entry-per-source contract, so the numeric counters are summed and the
+    status is reduced with `_worst_fetch_status`.
+    """
+    return {
+        "status": _worst_fetch_status(
+            (str(left.get("status", "")), str(right.get("status", "")))
+        ),
+        "fetched": int(left.get("fetched", 0)) + int(right.get("fetched", 0)),
+        "created": int(left.get("created", 0)) + int(right.get("created", 0)),
+        "updated": int(left.get("updated", 0)) + int(right.get("updated", 0)),
+        "failed": int(left.get("failed", 0)) + int(right.get("failed", 0)),
+        "requests_used": int(left.get("requests_used", 0))
+        + int(right.get("requests_used", 0)),
+    }
+
+
 async def _persist_result(
     session_factory: async_sessionmaker[AsyncSession],
     result: FetchResult,
@@ -508,6 +567,12 @@ async def _finish(
         run.finished_at = datetime.now(UTC)
         run.source_counts_json = source_counts
         run.errors_json = errors or None
+        # The sum of listings returned across EVERY fetch. A union run fetches one
+        # source once per enabled search, so the same listing can be counted more
+        # than once when two searches return it: that is intentional (the fetch
+        # happened), and Tier-1 upsert plus `duplicates_already_seen` already
+        # account for the repeated row — `created` counts it once, every later
+        # encounter is an `updated`.
         run.fetched_count = sum(int(c.get("fetched", 0)) for c in source_counts.values())
         # RETIRED MEANING (D-30 / QUEUE-03): `deduped_count` used to be
         # `sum(created)` — the number of brand-new listings, which is not a dedup
@@ -549,25 +614,39 @@ async def _stamp_last_run(
         await session.commit()
 
 
-async def _resolve_fetch_query(
+async def _resolve_fetch_queries(
     session_factory: async_sessionmaker[AsyncSession],
     query: SearchQuery | None,
     search_id: int | None,
-) -> SearchQuery:
-    """The query the fetch uses: an explicit query wins, else the scoped search.
+) -> list[tuple[int | None, SearchQuery]]:
+    """The ``(search_id, query)`` fetch plan for this run, in a deterministic order.
 
-    With neither, the Phase-1 `default_query()` applies. This is what makes D-45's
-    "Run this one" fetch with *that search's* query without touching the one-tap
-    trigger's behaviour.
+    * An explicit ``query`` wins outright: a single entry, so every injected-query
+      caller (tests, the scheduler) fetches exactly once.
+    * ``search_id`` set (D-45's "Run this one") scopes to *that* search's criteria.
+      A missing search keeps today's fallback: ``[(None, default_query())]``.
+    * Neither (the global ``POST /runs``) fetches the **union of every enabled
+      search**: one entry per search, ordered by ``searches.id`` (the repository's
+      ``enabled_searches`` order). This is the defect fix — the global run used to
+      silently fall back to the hardcoded Phase-1 ``default_query()`` and never
+      used a saved search's criteria. With **no** enabled searches it still falls
+      back to ``[(None, default_query())]`` so ``POST /runs`` and
+      ``scripts/compose-smoke.sh`` keep working with zero configuration.
     """
     if query is not None:
-        return query
+        return [(search_id, query)]
     if search_id is not None:
         async with session_factory() as session:
             record = await search_by_id(session, search_id)
         if record is not None:
-            return search_query_from(record.criteria_json)
-    return default_query()
+            return [(search_id, search_query_from(record.criteria_json))]
+        return [(None, default_query())]
+
+    async with session_factory() as session:
+        records = await enabled_searches(session)
+    if not records:
+        return [(None, default_query())]
+    return [(int(record.id), search_query_from(record.criteria_json)) for record in records]
 
 
 async def run_pipeline(
@@ -620,37 +699,90 @@ async def run_pipeline(
 
         selected = await _resolve_adapters(session_factory, adapters)
         adapters_resolved = len(selected)
-        fetch_query = await _resolve_fetch_query(session_factory, query, search_id)
-        fetched = await _fetch_all(selected, fetch_query)
+        # The global run fetches the union of every enabled search, so the fetch
+        # plan is a list of (search_id, query) rather than one query. An explicit
+        # query and a per-search run still resolve to exactly one entry.
+        fetch_plan = await _resolve_fetch_queries(session_factory, query, search_id)
         if not selected:
             # Zero adapters resolved: the run fetched nothing, so `done` would be a
             # false success — the badge reads clean while the queue stays empty (and
             # the operator would read it as a scrape-survival result). The reason is
             # machine-readable in `errors_json`, in the same shape as a source error.
             errors.append({"source": "*", "status": "partial", "error": NO_SOURCES_REASON})
+
         results: list[FetchResult] = []
-        for result, capability_warnings, warning_records in fetched:
-            # A filter the board cannot honour is recorded, never silently dropped
-            # (SRC-09/T-01-18). It is a warning, not a run failure: the fetch itself
-            # may still be healthy. The same warnings also land in the stage log
-            # below as structured triples (D-37 / T-02-19).
-            errors.extend(capability_warnings)
-            compile_warnings.extend(warning_records)
-            results.append(result)
-            source_counts[result.source] = await _persist_result(
-                session_factory, result, resolved_run_id
+        # `(adapter.name, query)` already fetched this run. Two searches whose
+        # criteria compile to an equal frozen `SearchQuery` produce the same rows
+        # (there is no listing->search link), so the second fetch is pure
+        # duplication: skipping it is equivalent and avoids the waste.
+        fetched_keys: set[tuple[str, SearchQuery]] = set()
+        # With one fetch per enabled search the same unsupported-filter warning
+        # repeats per search. It is deduped here — the warning is now per-search in
+        # principle, but the recorded shapes (one warning per triple in
+        # `errors_json`, the criteria_compile triples) must stay stable.
+        seen_compile_warnings: set[tuple[str, str, str]] = set()
+        seen_capability_errors: set[tuple[str, str]] = set()
+
+        # Sequentially ACROSS searches, concurrently within one (one `gather` per
+        # search). The order is deterministic and it is what fixes `first_seen_at` —
+        # and so the Tier-2 earliest-seen survivor — when two sources return the
+        # same listing.
+        for _scoped_search_id, scoped_query in fetch_plan:
+            adapters_for_query = [
+                adapter
+                for adapter in selected
+                if (adapter.name, scoped_query) not in fetched_keys
+            ]
+            if not adapters_for_query:
+                continue
+            fetched_keys.update(
+                (adapter.name, scoped_query) for adapter in adapters_for_query
             )
-            stage_log.append(
-                _stage_entry(f"persist:{result.source}", source_counts[result.source], [])
-            )
-            if result.status != "ok":
-                errors.append(
-                    {
-                        "source": result.source,
-                        "status": result.status,
-                        "error": result.error,
-                    }
-                )
+            batch = await _fetch_all(adapters_for_query, scoped_query)
+            for result, capability_warnings, warning_records in batch:
+                # A filter the board cannot honour is recorded, never silently
+                # dropped (SRC-09/T-01-18). It is a warning, not a run failure: the
+                # fetch itself may still be healthy. The same warnings also land in
+                # the stage log below as structured triples (D-37 / T-02-19).
+                for record in warning_records:
+                    triple = (
+                        str(record["source"]),
+                        str(record["filter_name"]),
+                        str(record["reason"]),
+                    )
+                    if triple not in seen_compile_warnings:
+                        seen_compile_warnings.add(triple)
+                        compile_warnings.append(record)
+                for capability_warning in capability_warnings:
+                    capability_key = (
+                        str(capability_warning["source"]),
+                        str(capability_warning["error"]),
+                    )
+                    if capability_key not in seen_capability_errors:
+                        seen_capability_errors.add(capability_key)
+                        errors.append(capability_warning)
+                results.append(result)
+                counts = await _persist_result(session_factory, result, resolved_run_id)
+                if result.source in source_counts:
+                    source_counts[result.source] = _merge_source_counts(
+                        source_counts[result.source], counts
+                    )
+                else:
+                    source_counts[result.source] = counts
+                if result.status != "ok":
+                    errors.append(
+                        {
+                            "source": result.source,
+                            "status": result.status,
+                            "error": result.error,
+                        }
+                    )
+
+        # Exactly one `persist:<source>` entry per source, carrying the MERGED
+        # counts — never one per search. The stage names and entry shape are pinned
+        # by the run detail UI and the 02-* tests.
+        for source_name, counts in source_counts.items():
+            stage_log.append(_stage_entry(f"persist:{source_name}", counts, []))
         # A run is only `done` when it actually ran, every board was fully
         # healthy, AND every fetched item persisted. A `partial` that renders
         # like a clean success is a trust failure (Pitfall 10) — and so is
