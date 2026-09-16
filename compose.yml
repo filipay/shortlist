@@ -18,4 +18,13 @@ services:
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-} # from an uncommitted .env
       - DATABASE_URL_ASYNC=sqlite+aiosqlite:////data/jobsearch.db
       - DATABASE_URL_SYNC=sqlite:////data/jobsearch.db # Alembic uses this
+      # Phase-2 tuning knobs, forwarded explicitly so a host `.env` actually
+      # reaches the container. Compose uses `.env` only for ${...} substitution,
+      # and the image contains no `.env` (Dockerfile does not COPY it, and only
+      # ./data is mounted), so without these passthroughs the in-code defaults
+      # silently win and a host-side override appears to be ignored.
+      - DEDUP_FUZZY_THRESHOLD=${DEDUP_FUZZY_THRESHOLD:-88}
+      - DEDUP_POSTED_WINDOW_DAYS=${DEDUP_POSTED_WINDOW_DAYS:-90}
+      - STALE_AFTER_DAYS=${STALE_AFTER_DAYS:-14}
+      - QUEUE_PAGE_SIZE=${QUEUE_PAGE_SIZE:-25}
     command: ["./entrypoint.sh"]
