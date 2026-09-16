@@ -169,7 +169,7 @@ Each task was committed atomically:
 2. **Task 2: enable, disable, edit and delete without losing history** - `2e4b47b` (feat)
 3. **Task 3: report what a board cannot honour, and run a single search** - `5f0c869` (feat)
 
-**Plan metadata:** `_PENDING_` (docs: complete plan)
+**Plan metadata:** _committed with STATE/ROADMAP/REQUIREMENTS after this file_
 
 ## Files Created/Modified
 - `app/db/repositories/search_repo.py` - extended with the write half (`create_search`, `update_search`, `set_search_enabled`, `delete_search`, `create_rule`, `update_rule`, `delete_rule`, `validate_rule_params`) and the UI reads (`all_searches`, `search_by_id`, `rules_for_search`, `rule_by_id`).
