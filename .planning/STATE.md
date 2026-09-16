@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Clean, Filtered, Queryable Queue
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-09-16T09:55:35.259Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-09-16T10:27:07.106Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 2 execution started
-state_head: 49863f2299e12386308ae30689444d732e2fea67
+state_head: e073ffff11bbdf140193e6cd6fd5a001dbe13f76
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 17
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 2 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P02 | 4 min | 2 tasks | 3 files |
 | Phase 02 P03 | 15 min | 3 tasks | 6 files |
 | Phase 02 P04 | 15 min | 2 tasks | 7 files |
+| Phase 02 P05 | 22 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,11 @@ Recent decisions affecting current work:
 - [Phase 2]: The injection catalogue flags and counts, never redacts: no re.sub is added, so the sanitised description and content_hash stay byte-identical to Phase 1; the Apache-2.0 s4(c) origin and significant-change notice lives in app/domain/sanitize.py and never in a template
 - [Phase 2]: Tier-2 dedup merges automatically during the run (D-25) with a component gate primary and the fuzzy score secondary: token_sort_ratio gates, token_set_ratio is diagnostic only because it is subset-forgiving, and a grade conflict refuses before any score is computed
 - [Phase 2]: listing_sources rows stay on the absorbed twin (A5, amending ARCHITECTURE 8.3) so a revert stays a flag flip; deduped_count now counts rows absorbed by a merge, and both reverted_pairs and merged_pairs are filtered in both orientations before scoring
+- [Phase 2]: 02-05: `all_sources_failed` requires at least one reported source status; an empty status list falls through to `mixed` rather than claiming a failure it cannot evidence (P9).
+- [Phase 2]: 02-05: `runs.reason` and `runs.reason_counts_json` are persisted on EVERY run, not only a thin/empty one — it is the run's outcome summary and plan 02-10 renders it unconditionally.
+- [Phase 2]: 02-05: the capability-warning sentence in `runs.errors_json` is EXTENDED with '(enforced locally as a hard filter after the fetch)', never replaced, so Phase-1 assertions stay valid while the meaning becomes honest.
+- [Phase 2]: 02-05: the stage log and the capability-warning list are bounded by two documented module constants (STAGE_LOG_MAX_ENTRIES=12, STAGE_LOG_MAX_ERRORS=10), deliberately not Settings knobs.
+- [Phase 2]: 02-05: `new_since_watermark` reads the queue watermark read-only and a NULL watermark means every survivor counts as new; plan 02-07 owns advancing it.
 
 ### Pending Todos
 
@@ -148,6 +154,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T09:55:35.195Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-09-16T10:27:07.035Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None

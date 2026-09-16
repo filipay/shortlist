@@ -35,13 +35,13 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Criteria (CRIT)
 
 - [x] **CRIT-01**: User can create, edit, and delete named search criteria (keywords, location, remote, salary floor, seniority, exclusions)
-- [ ] **CRIT-02**: Criteria are versioned so any past run is reproducible
+- [x] **CRIT-02**: Criteria are versioned so any past run is reproducible
 - [ ] **CRIT-03**: User can enable or disable a saved search without deleting it
 
 ### Filtering (FILT)
 
-- [ ] **FILT-01**: Deterministic rules reject listings before any LLM call is made
-- [ ] **FILT-02**: Every rejection records which rule fired and why
+- [x] **FILT-01**: Deterministic rules reject listings before any LLM call is made
+- [x] **FILT-02**: Every rejection records which rule fired and why
 - [ ] **FILT-03**: User can see why a specific listing was excluded
 - [x] **FILT-04**: User can tune filter rules from the UI without a code change
 
@@ -193,10 +193,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUEUE-08 | Phase 2 | Pending |
 | QUEUE-09 | Phase 2 | Pending |
 | CRIT-01 | Phase 2 | Complete |
-| CRIT-02 | Phase 2 | Pending |
+| CRIT-02 | Phase 2 | Complete |
 | CRIT-03 | Phase 2 | Pending |
-| FILT-01 | Phase 2 | Pending |
-| FILT-02 | Phase 2 | Pending |
+| FILT-01 | Phase 2 | Complete |
+| FILT-02 | Phase 2 | Complete |
 | FILT-03 | Phase 2 | Pending |
 | FILT-04 | Phase 2 | Complete |
 | RANK-01 | Phase 5 | Pending |
