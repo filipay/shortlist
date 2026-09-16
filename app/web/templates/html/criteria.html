@@ -90,10 +90,13 @@
       <label for="rule-location-mode-{{ action }}">Mode</label>
       <select id="rule-location-mode-{{ action }}" name="location_mode">
         <option value="substring">substring</option>
+        <option value="county">county (Irish counties)</option>
       </select>
     </div>
     <p class="rule-help">
       A listing whose location is unknown is <strong>not excluded</strong>.
+      <code>substring</code> matches a term anywhere in the location; <code>county</code>
+      also matches an Irish county by its name or its ISO 3166-2:IE code.
     </p>
   </div>
 
@@ -201,7 +204,15 @@
       <label for="rule-edit-locations-{{ rule.id }}">Allowed locations</label>
       <textarea id="rule-edit-locations-{{ rule.id }}" name="location_allow" rows="2">{{ rule.params.get('allow', []) | join(', ') }}</textarea>
     </div>
-    <input type="hidden" name="location_mode" value="{{ rule.params.get('mode', 'substring') }}">
+    <div class="field">
+      <label for="rule-edit-location-mode-{{ rule.id }}">Mode</label>
+      <select id="rule-edit-location-mode-{{ rule.id }}" name="location_mode">
+        <option value="substring"
+          {% if rule.params.get('mode', 'substring') == 'substring' %}selected{% endif %}>substring</option>
+        <option value="county"
+          {% if rule.params.get('mode') == 'county' %}selected{% endif %}>county (Irish counties)</option>
+      </select>
+    </div>
     {% elif rule.kind == 'remote' %}
     <div class="field field-check">
       <span class="field-label">Remote</span>

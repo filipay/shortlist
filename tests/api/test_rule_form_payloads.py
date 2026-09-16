@@ -481,3 +481,32 @@ async def test_each_rule_kinds_rendered_body_is_accepted_and_editable(
     assert "Rule saved." in saved.text
     rules = await _rule_rows(session_factory)
     assert rules[0].params_json == _EXPECTED_PARAMS[kind]
+
+
+async def test_the_location_edit_form_round_trips_county_mode(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """A stored `county` mode is preselected in the edit form and survives a re-save."""
+    await client.post("/searches", data={"name": "Dublin Python"})
+    search_id = await _only_search_id(session_factory)
+    created = await client.post(
+        f"/searches/{search_id}/rules",
+        data={"kind": "location", "location_allow": "Dublin", "location_mode": "county"},
+    )
+    assert created.status_code == 200, created.text
+
+    rules = await _rule_rows(session_factory)
+    assert len(rules) == 1
+
+    page = await client.get("/searches")
+    root = _parse(page.text)
+    edit_payload = _payload(_edit_save_for(root, int(rules[0].id)))
+
+    assert edit_payload["location_mode"] == ["county"]
+
+    saved = await client.post(
+        f"/searches/{search_id}/rules/{rules[0].id}", data=edit_payload
+    )
+    assert saved.status_code == 200, saved.text
+    rules = await _rule_rows(session_factory)
+    assert rules[0].params_json["mode"] == "county"
