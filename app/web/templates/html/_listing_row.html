@@ -1,0 +1,36 @@
+{# One queue row (QUEUE-06 / QUEUE-07 / FILT-03).
+
+   Included by `queue_list.html`, so it inherits the page context (`row`, `page`).
+   Every flag arrives PRECOMPUTED on the row — no date arithmetic, no settings read
+   and no lookup happens in a template.
+
+   The `listing-title` cell carries the title and NOTHING else: a pre-existing
+   determinism test reads the queue back with
+   `<td class="listing-title">([^<]+)</td>`, so badges live in their own cell rather
+   than quietly breaking a pinned Phase-1 assertion.
+
+   Jinja autoescape is the only escaping in play: titles, companies and locations are
+   untrusted job-board text and are rendered as text, never marked safe. #}
+<tr id="listing-row-{{ row.id }}"
+    class="listing-row{% if row.is_stale %} listing-stale{% endif %}{% if row.rules %} dimmed{% endif %}"
+    data-new="{{ 1 if row.is_new else 0 }}"
+    data-stale="{{ 1 if row.is_stale else 0 }}"
+    data-merged-from="{{ row.merged_from }}">
+  <td class="listing-title">{{ row.title }}</td>
+  <td class="listing-badges">
+    {% if row.is_new %}<span class="badge badge-new">new</span>{% endif %}
+    {% if row.is_stale %}<span class="badge badge-stale">stale</span>{% endif %}
+    {% if row.merged_from %}<a class="badge badge-merged" href="/merges">merged from {{ row.merged_from }} sources</a>{% endif %}
+  </td>
+  <td class="listing-company">{{ row.company }}</td>
+  <td class="listing-location">{{ row.location }}</td>
+  <td class="listing-source">{{ row.sources | join(", ") }}</td>
+  <td class="listing-posted">{{ row.posted }}</td>
+  {% if page.query.excluded %}
+  <td class="listing-exclusion">
+    {% for rule in row.rules %}
+    <span class="rule-chip rule-chip-{{ rule.kind }}">{{ rule.kind }} ({{ rule.count }})</span>
+    {% endfor %}
+  </td>
+  {% endif %}
+</tr>

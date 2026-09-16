@@ -16,36 +16,68 @@
 
 <section id="queue">
   <h2>Queue</h2>
-  <p class="queue-count" id="queue-count">{{ count }} listing{% if count != 1 %}s{% endif %}</p>
 
-  {% if is_empty %}
-  <p class="empty-state" id="queue-empty">
-    No listings yet. Once a search runs, its normalised results appear here.
-  </p>
-  {% else %}
-  <table class="queue-table">
-    <thead>
-      <tr>
-        <th scope="col">Title</th>
-        <th scope="col">Company</th>
-        <th scope="col">Location</th>
-        <th scope="col">Source</th>
-        <th scope="col">Posted</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for listing in listings %}
-      <tr class="listing-row">
-        <td class="listing-title">{{ listing.title }}</td>
-        <td class="listing-company">{{ listing.company }}</td>
-        <td class="listing-location">{{ listing.location }}</td>
-        <td class="listing-source">{{ listing.source }}</td>
-        <td class="listing-posted">{{ listing.posted }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+  <form id="queue-filters"
+        hx-get="/queue/list"
+        hx-target="#queue-list"
+        hx-swap="innerHTML">
+    <label for="queue-search">Search</label>
+    <input type="search"
+           id="queue-search"
+           name="q"
+           value="{{ page.query.q or '' }}"
+           hx-get="/queue/list"
+           hx-trigger="input changed delay:300ms, search"
+           hx-target="#queue-list"
+           hx-swap="innerHTML"
+           hx-include="closest form">
+
+    {# A predicate change RESETS the page index: page 3 of a different filtered set is
+       meaningless, so these controls emit no `offset` and the queue restarts at 0.
+       Only the Load-more control in queue_list.html carries an offset forward. #}
+    <label class="queue-toggle" for="queue-toggle-excluded">
+      <input type="checkbox"
+             id="queue-toggle-excluded"
+             name="excluded"
+             value="1"
+             {% if page.query.excluded %}checked{% endif %}
+             hx-get="/queue/list"
+             hx-target="#queue-list"
+             hx-swap="innerHTML"
+             hx-include="closest form">
+      Show excluded
+    </label>
+
+    <label class="queue-toggle" for="queue-toggle-hidden">
+      <input type="checkbox"
+             id="queue-toggle-hidden"
+             name="hidden"
+             value="1"
+             {% if page.query.hidden %}checked{% endif %}
+             hx-get="/queue/list"
+             hx-target="#queue-list"
+             hx-swap="innerHTML"
+             hx-include="closest form">
+      Hidden
+    </label>
+
+    <label class="queue-toggle" for="queue-toggle-saved">
+      <input type="checkbox"
+             id="queue-toggle-saved"
+             name="saved"
+             value="1"
+             {% if page.query.saved %}checked{% endif %}
+             hx-get="/queue/list"
+             hx-target="#queue-list"
+             hx-swap="innerHTML"
+             hx-include="closest form">
+      Saved
+    </label>
+  </form>
+
+  <div id="queue-list">
+    {% include "html/queue_list.html" %}
+  </div>
 </section>
 
 {% include "html/_health_strip.html" %}
