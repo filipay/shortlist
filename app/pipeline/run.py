@@ -23,6 +23,7 @@ from app.config import settings
 from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.ingest.sanitize import sanitize_listing
+from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
 from app.pipeline.stages import normalise_listing
 from app.probe.survival import (
     compute_fill_rates,
@@ -235,6 +236,7 @@ async def _finish(
     status: str,
     source_counts: dict[str, Any],
     errors: list[dict[str, Any]],
+    merged_count: int = 0,
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -245,7 +247,12 @@ async def _finish(
         run.source_counts_json = source_counts
         run.errors_json = errors or None
         run.fetched_count = sum(int(c.get("fetched", 0)) for c in source_counts.values())
-        run.deduped_count = sum(int(c.get("created", 0)) for c in source_counts.values())
+        # RETIRED MEANING (D-30 / QUEUE-03): `deduped_count` used to be
+        # `sum(created)` — the number of brand-new listings, which is not a dedup
+        # signal at all. It is now the number of rows ABSORBED BY A MERGE this run,
+        # so the merge rate is `deduped_count / fetched_count`. Do not restore the
+        # old meaning.
+        run.deduped_count = merged_count
         await session.commit()
 
 
@@ -285,6 +292,7 @@ async def run_pipeline(
 
     source_counts: dict[str, Any] = {}
     errors: list[dict[str, Any]] = []
+    merged_count = 0
 
     try:
         selected = await _resolve_adapters(session_factory, adapters)
@@ -330,6 +338,23 @@ async def run_pipeline(
             and persisted_failures == 0
             else "partial"
         )
+
+        # Tier-2 dedup (D-30): post-persist, so both halves of a cross-source pair
+        # exist before either is scored. The hard-filter stage (plan 02-05) inserts
+        # between this stage and `_finish` — filtering first would discard the copy
+        # that carried the salary. Dedup is best-effort on the run path: an internal
+        # failure is recorded and the run still finishes, because the listings are
+        # already persisted.
+        try:
+            dedup_result = await run_dedup_stage(session_factory, resolved_run_id)
+            merged_count = int(dedup_result.counts.get("merges", 0))
+            errors.extend(
+                {"source": DEDUP_STAGE, "status": "warning", "error": message}
+                for message in dedup_result.errors
+            )
+        except Exception as exc:  # noqa: BLE001 — dedup must not sink a saved run
+            log.exception("pipeline.dedup_failed", run_id=resolved_run_id, error=str(exc))
+            errors.append({"source": DEDUP_STAGE, "status": "failed", "error": str(exc)})
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
@@ -341,6 +366,7 @@ async def run_pipeline(
         status=status,
         source_counts=source_counts,
         errors=errors,
+        merged_count=merged_count,
     )
     log.info(
         "pipeline.finished",
