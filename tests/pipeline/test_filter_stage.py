@@ -8,6 +8,7 @@ call is made anywhere on this path.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from typing import Literal
 
@@ -23,7 +24,8 @@ from app.db.models import (
     Search,
     Source,
 )
-from app.pipeline.run import run_pipeline
+from app.domain.run_reason import REASONS
+from app.pipeline.run import NO_SOURCES_REASON, run_pipeline
 from app.sources.base import (
     FetchBudget,
     FetchResult,
@@ -261,3 +263,100 @@ async def test_no_enabled_search_means_no_filtering(
     assert run is not None
     assert run.filtered_count == 0
     assert await _count(session_factory, ListingExclusion) == 0
+
+
+# --- RUN-03 / D-44: the reason is persisted on every run -----------------------
+
+
+async def test_a_run_with_zero_resolved_adapters_is_no_sources_enabled(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The empty-corpus boundary recognises the existing `NO_SOURCES_REASON`.
+
+    No second vocabulary is minted: the machine-readable enum value names exactly
+    the condition the Phase-1 error record already describes.
+    """
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.reason == "no_sources_enabled"
+    assert isinstance(run.reason_counts_json, dict)
+    assert run.reason_counts_json["adapters_resolved"] == 0
+    assert any(
+        entry.get("error") == NO_SOURCES_REASON for entry in (run.errors_json or [])
+    ), "the Phase-1 no-sources record must still be present"
+
+
+async def test_the_run_persists_a_reason_and_its_counts_on_every_run(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Even a healthy run explains itself — the history page renders it unconditionally."""
+    await _register_sources(session_factory, "indeed")
+    await _seed_search(session_factory)
+    indeed = OneListingAdapter(
+        "indeed",
+        _raw(
+            "indeed",
+            title="Platform Engineer",
+            company="Globex",
+            description="Build the deployment platform.",
+        ),
+    )
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[indeed])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.reason in REASONS
+    counts = run.reason_counts_json
+    assert isinstance(counts, dict)
+    for key in (
+        "adapters_resolved",
+        "sources",
+        "excluded_by_rule",
+        "survivors",
+        "duplicates_already_seen",
+        "capability_warnings",
+    ):
+        assert key in counts, f"reason_counts_json is missing {key!r}"
+    assert counts["adapters_resolved"] == 1
+    assert counts["survivors"] == 1
+    assert counts["excluded_by_rule"] == {}
+    assert isinstance(counts["duplicates_already_seen"], int)
+    assert counts["sources"]["indeed"]["fetched"] == 1
+    # Plain values only: the counts round-trip through JSON unchanged.
+    assert json.loads(json.dumps(counts)) == counts
+
+
+async def test_a_run_whose_every_listing_was_filtered_is_all_filtered(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`all_filtered` is decidable because exclusions were actually recorded."""
+    await _register_sources(session_factory, "linkedin")
+    await _seed_search(session_factory)
+    linkedin = OneListingAdapter(
+        "linkedin",
+        _raw(
+            "linkedin",
+            title="Backend Engineer",
+            company="Acme",
+            description=f"We are building a {CRYPTO_TERM} trading desk.",
+        ),
+    )
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[linkedin])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    assert run.reason == "all_filtered"
+    counts = run.reason_counts_json
+    assert counts["survivors"] == 0
+    assert sum(counts["excluded_by_rule"].values()) == 1
+    assert counts["sources"]["linkedin"]["fetched"] == 1

@@ -20,13 +20,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.db.models import Run, Source
+from app.db.models import QueueState, Run, Source
+from app.db.repositories.exclusion_repo import (
+    excluded_counts_for_run,
+    rule_counts_for_listings,
+)
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.db.repositories.search_repo import (
+    active_listings,
     enabled_searches,
     rules_for_searches,
 )
 from app.domain.criteria import search_query_from
+from app.domain.run_reason import RunCounts, compute_empty_reason
 from app.ingest.sanitize import sanitize_listing
 from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
 from app.pipeline.filter_stage import FILTER_STAGE, run_filter_stage
@@ -345,6 +351,114 @@ def _stage_entry(
     }
 
 
+async def _read_watermark(session: AsyncSession) -> datetime | None:
+    """The queue's last-visit watermark, or `None` when the queue was never opened.
+
+    Read only. Advancing it is plan 02-07's queue-open behaviour: a run must never
+    move the boundary it is being measured against, or `nothing_new` would become
+    unfalsifiable.
+    """
+    row = (
+        (await session.execute(select(QueueState).order_by(QueueState.id).limit(1)))
+        .scalars()
+        .first()
+    )
+    return row.last_queue_view_at if row is not None else None
+
+
+def _is_new(first_seen_at: datetime | None, watermark: datetime | None) -> bool:
+    """True when a listing is new relative to the watermark.
+
+    `watermark is None` means "never viewed", so every listing counts as new —
+    otherwise an untouched queue would report `nothing_new` on its first run and
+    hide the very listings it is meant to show. The two values come from the same
+    SQLite file, but their `tzinfo` is normalised anyway so the comparison can
+    never raise on a mixed-naive datetime pair.
+    """
+    if watermark is None:
+        return True
+    if first_seen_at is None:
+        return False
+    left = first_seen_at.replace(tzinfo=None) if first_seen_at.tzinfo else first_seen_at
+    right = watermark.replace(tzinfo=None) if watermark.tzinfo else watermark
+    return left > right
+
+
+async def _assemble_run_reason(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: int,
+    *,
+    adapters_resolved: int,
+    source_counts: Mapping[str, Any],
+    capability_warnings: Sequence[Mapping[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    """Assemble `RunCounts`, decide the reason, and build the counts payload.
+
+    Every read here is bookkeeping, not the payload: an unreadable watermark or
+    survivor set degrades to zeroes and the run still finishes with a reason,
+    because its listings are already persisted (R1). The reason itself is decided
+    by the pure `compute_empty_reason` — no I/O, no model call, no `Settings`.
+    """
+    excluded_by_rule: dict[str, int] = {}
+    survivors = 0
+    new_since_watermark = 0
+    watermark: datetime | None = None
+
+    try:
+        async with session_factory() as session:
+            watermark = await _read_watermark(session)
+            excluded_by_rule = await excluded_counts_for_run(session, run_id=run_id)
+            listings = await active_listings(session, run_id=run_id)
+            excluded_ids = await rule_counts_for_listings(session, run_id=run_id)
+
+        # A survivor is a listing this run touched that no firing rule removed.
+        # `active_listings` already skips absorbed twins, so this matches what the
+        # queue will actually show (plan 02-07's visibility predicate is additive).
+        surviving = [record for record in listings if record.id not in excluded_ids]
+        survivors = len(surviving)
+        new_since_watermark = sum(
+            1 for record in surviving if _is_new(record.first_seen_at, watermark)
+        )
+    except Exception as exc:  # noqa: BLE001 — bookkeeping is not the payload
+        log.warning("pipeline.reason_counts_failed", run_id=run_id, error=type(exc).__name__)
+
+    counts = RunCounts(
+        adapters_resolved=int(adapters_resolved),
+        statuses=tuple(str(values.get("status", "")) for values in source_counts.values()),
+        fetched=sum(int(values.get("fetched", 0)) for values in source_counts.values()),
+        excluded_by_rule=dict(excluded_by_rule),
+        survivors=int(survivors),
+        new_since_watermark=int(new_since_watermark),
+    )
+    reason = compute_empty_reason(counts)
+
+    # The decomposition behind the reason. `sources` and `excluded_by_rule` are
+    # plain-value copies so the payload is JSON-serialisable by construction.
+    payload: dict[str, Any] = {
+        "adapters_resolved": counts.adapters_resolved,
+        "sources": {name: _plain_values(values) for name, values in source_counts.items()},
+        "excluded_by_rule": {
+            str(rule_id): int(value) for rule_id, value in counts.excluded_by_rule.items()
+        },
+        "survivors": counts.survivors,
+        # Tier-1 key hits: rows this run saw before and updated, not new listings.
+        "duplicates_already_seen": sum(
+            int(values.get("updated", 0)) for values in source_counts.values()
+        ),
+        "new_since_watermark": counts.new_since_watermark,
+        "watermark": watermark.isoformat() if watermark is not None else None,
+        "capability_warnings": [
+            dict(warning) for warning in list(capability_warnings)[:STAGE_LOG_MAX_ERRORS]
+        ],
+    }
+    return reason, payload
+
+
+def _plain_values(values: Mapping[str, Any]) -> dict[str, Any]:
+    """A JSON-plain copy of a per-source counts mapping."""
+    return {str(key): _plain(value) for key, value in dict(values).items()}
+
+
 async def _finish(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: int,
@@ -355,6 +469,8 @@ async def _finish(
     merged_count: int = 0,
     filtered_count: int = 0,
     stage_log: list[dict[str, Any]] | None = None,
+    reason: str | None = None,
+    reason_counts: dict[str, Any] | None = None,
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -377,6 +493,12 @@ async def _finish(
         # D-44's collapsible raw stage log, bounded so a pathological run cannot
         # write an unbounded blob.
         run.stage_log_json = stage_log or None
+        # RUN-03 / D-44 — the reason is written on EVERY run, not only when the
+        # queue is empty: it summarises the run's outcome and plan 02-10's history
+        # page renders it unconditionally. The counts are the decomposition the
+        # sentence is rendered FROM, never a stored sentence.
+        run.reason = reason
+        run.reason_counts_json = reason_counts or None
         await session.commit()
 
 
@@ -418,6 +540,7 @@ async def run_pipeline(
     errors: list[dict[str, Any]] = []
     merged_count = 0
     excluded_count = 0
+    adapters_resolved = 0
     stage_log: list[dict[str, Any]] = []
     compile_warnings: list[dict[str, Any]] = []
 
@@ -428,6 +551,7 @@ async def run_pipeline(
         await _write_criteria_snapshot(session_factory, resolved_run_id)
 
         selected = await _resolve_adapters(session_factory, adapters)
+        adapters_resolved = len(selected)
         fetched = await _fetch_all(selected, query or default_query())
         if not selected:
             # Zero adapters resolved: the run fetched nothing, so `done` would be a
@@ -520,6 +644,17 @@ async def run_pipeline(
         ),
     )
 
+    # The run's reason (RUN-03 / D-44): assembled after the filter stage from what
+    # the run already knows, decided by the pure `compute_empty_reason`, and written
+    # for every run — a thin queue and a healthy one both need to explain themselves.
+    reason, reason_counts = await _assemble_run_reason(
+        session_factory,
+        resolved_run_id,
+        adapters_resolved=adapters_resolved,
+        source_counts=source_counts,
+        capability_warnings=compile_warnings,
+    )
+
     await _finish(
         session_factory,
         resolved_run_id,
@@ -529,12 +664,15 @@ async def run_pipeline(
         merged_count=merged_count,
         filtered_count=excluded_count,
         stage_log=stage_log[-STAGE_LOG_MAX_ENTRIES:],
+        reason=reason,
+        reason_counts=reason_counts,
     )
     log.info(
         "pipeline.finished",
         run_id=resolved_run_id,
         trigger=trigger,
         status=status,
+        reason=reason,
         sources=sorted(source_counts),
     )
     return resolved_run_id
