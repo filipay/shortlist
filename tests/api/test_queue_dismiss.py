@@ -16,6 +16,7 @@ from app.db.models import Listing, ListingDupe, ListingEvent, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
+from app.web import routes
 
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
 
@@ -151,3 +152,68 @@ async def test_dismiss_does_not_touch_an_absorbed_twin(client, session_factory) 
     await client.post("/queue/dismiss")
 
     assert await _hide_count(session_factory) == 1
+
+
+async def test_dismiss_with_the_hidden_toggle_does_not_rehide_hidden_rows(
+    client, session_factory
+) -> None:
+    """`?hidden=1` shows hidden rows, but dismiss must still not re-hide them.
+
+    The hidden toggle is dropped alongside the text filter, so a bulk dismissal can
+    never append a second `hide` to a listing that already carries one.
+    """
+    await _register_sources(session_factory, "linkedin")
+    already_hidden = await _seed_listing(session_factory, index=70)
+    await _seed_listing(session_factory, index=71)
+
+    await client.post(f"/listings/{already_hidden}/events", data={"event_type": "hide"})
+    assert await _hide_count(session_factory) == 1
+
+    response = await client.post("/queue/dismiss?hidden=1")
+
+    assert response.status_code == 200
+    assert 'id="queue-dismiss"' in response.text
+    # The already-hidden listing keeps exactly its one event; only the visible row gains one.
+    assert await _hide_count(session_factory) == 2
+    async with session_factory() as session:
+        rehides = await session.scalar(
+            select(func.count())
+            .select_from(ListingEvent)
+            .where(
+                ListingEvent.listing_id == already_hidden,
+                ListingEvent.event_type == "hide",
+            )
+        )
+    assert rehides == 1
+
+
+async def test_dismiss_refuses_when_the_queue_exceeds_the_ceiling(
+    client, session_factory, monkeypatch
+) -> None:
+    """Over `_DISMISS_LIMIT`, refuse the whole action — never partially dismiss."""
+    monkeypatch.setattr(routes, "_DISMISS_LIMIT", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in (80, 81, 82):
+        await _seed_listing(session_factory, index=index)
+
+    response = await client.post("/queue/dismiss")
+
+    assert response.status_code == 400
+    assert 'data-error="dismiss-over-limit"' in response.text
+    assert await _hide_count(session_factory) == 0
+
+
+async def test_dismiss_events_record_the_bulk_surface(client, session_factory) -> None:
+    """A bulk dismissal is distinguishable from a hand-hide in the audit trail."""
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=90)
+
+    await client.post("/queue/dismiss")
+
+    async with session_factory() as session:
+        contexts = (
+            await session.scalars(
+                select(ListingEvent.context_json).where(ListingEvent.event_type == "hide")
+            )
+        ).all()
+    assert contexts == [{"surface": "queue_dismiss"}]

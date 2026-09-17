@@ -54,10 +54,16 @@ templates = make_templates(TEMPLATE_DIR)
 PAGE_TEMPLATE = "html/queue.html"
 LIST_TEMPLATE = "html/queue_list.html"
 
-#: Dismiss reads the whole queue in one pass. Bounded so a pathological corpus cannot
-#: build an unbounded IN list; 10_000 is far above any real queue and the queue's own
-#: count is surfaced on the page.
+#: Dismiss's hard CEILING, not a page size: `_queued_listing_ids` pages through the
+#: queue until it has every matched id, and refuses the whole action (writing nothing)
+#: when the match count exceeds this. 10_000 is far above any real queue.
 _DISMISS_LIMIT = 10_000
+
+#: Which surface a bulk dismissal came from — a small MACHINE fact, never listing
+#: text (mirrors `app.api.events.ACTION_CONTEXT`, which tags a per-listing hide as
+#: `surface="queue"`). This is what keeps the two kinds of hide distinguishable in
+#: the append-only audit log even though both append the same event KIND.
+_DISMISS_CONTEXT: dict[str, str] = {"surface": "queue_dismiss"}
 
 
 async def _health_strip(
@@ -145,25 +151,58 @@ async def _read_queue_page(
     )
 
 
+def _dismiss_over_limit() -> HTMLResponse:
+    """Refuse a whole-queue dismissal that exceeds `_DISMISS_LIMIT`.
+
+    Follows the app's existing refused-action convention (`app.api.events._error_row`,
+    `app.api.runs`): a 4xx status plus a small HTML fragment carrying a machine-readable
+    `data-error` reason. Nothing is written, so a refused dismissal is never partial.
+    `empty-state` is an existing class, so no stylesheet rule is needed.
+    """
+    return HTMLResponse(
+        '<p class="empty-state" id="queue-dismiss-error" '
+        'data-error="dismiss-over-limit">'
+        "Too many listings to dismiss at once. Narrow the queue with a filter and try "
+        "again."
+        "</p>",
+        status_code=400,
+    )
+
+
 async def _queued_listing_ids(
     session: AsyncSession, params: Mapping[str, str], *, now: datetime
-) -> list[int]:
-    """Every id the current predicate matches, not just the first page.
+) -> list[int] | None:
+    """Every id the current predicate matches, or `None` when the queue is too large.
 
     Dismiss is a whole-queue action, so it must not inherit the page limit the
-    fragment uses. The predicate itself is the shared `parse_queue_query`, so this
-    cannot drift from what the table shows; only the free-text search is dropped,
-    because a dismissal scoped to typed text would be ambiguous.
+    fragment uses: this pages through `read_queue` until it has collected every
+    matched id. The predicate is the shared `parse_queue_query`, so it cannot drift
+    from what the table shows, with two deliberate exceptions — the free-text search
+    is dropped (a dismissal scoped to typed text would be ambiguous) and the hidden
+    toggle is forced off (an already-hidden listing must not gain a second event).
+
+    `_DISMISS_LIMIT` is a hard ceiling, not a page size. Above it the caller must
+    abort without committing, which the `None` return signals: a "Dismiss all" that
+    silently stopped at the cap would be a lie.
     """
     query = parse_queue_query(params)
-    page = await read_queue(
-        session,
-        query=replace(query, q=None, offset=0, limit=_DISMISS_LIMIT),
-        now=now,
-        stale_after_days=settings.stale_after_days,
-        watermark=await state_repo.get_watermark(session),
-    )
-    return [row.id for row in page.rows]
+    base = replace(query, q=None, hidden=False, offset=0)
+    ids: list[int] = []
+    offset = 0
+    while True:
+        page = await read_queue(
+            session,
+            query=replace(base, offset=offset),
+            now=now,
+            stale_after_days=settings.stale_after_days,
+            watermark=await state_repo.get_watermark(session),
+        )
+        if page.total > _DISMISS_LIMIT:
+            return None
+        ids.extend(row.id for row in page.rows)
+        if not page.rows or offset + len(page.rows) >= page.total:
+            return ids
+        offset += len(page.rows)
 
 
 async def _last_run_strip(
@@ -292,21 +331,26 @@ async def queue_dismiss(
 ) -> HTMLResponse:
     """Hide every listing the user can currently see, and return the empty fragment.
 
-    Scope is the queue predicate with the free-text search dropped: what the user
-    would see with an empty search box and no toggles. It is deliberately NOT "every
-    row in `listings`" — an already-hidden listing must not gain a second event, and
-    an absorbed merge twin must never be dismissed.
+    Scope is the queue predicate with the free-text search dropped and the hidden
+    toggle forced off: what the user would see with an empty search box and the
+    default toggles. It is deliberately NOT "every row in `listings`" — an
+    already-hidden listing must not gain a second event, and an absorbed merge twin
+    must never be dismissed. If the matched set exceeds `_DISMISS_LIMIT` the action is
+    refused outright and nothing is committed.
 
     The page is read AFTER the write, so the returned fragment already shows the empty
     queue; otherwise Dismiss would look like a no-op until the next reload.
     """
     now = datetime.now(UTC)
     ids = await _queued_listing_ids(session, request.query_params, now=now)
+    if ids is None:
+        return _dismiss_over_limit()
     if ids:
         await event_repo.hide_listings(
             session,
             listing_ids=ids,
             occurred_at=now,
+            context=_DISMISS_CONTEXT,
         )
         await session.commit()
 
