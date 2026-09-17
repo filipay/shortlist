@@ -160,6 +160,22 @@ class QueueRule:
 
 
 @dataclass(frozen=True)
+class SourceLink:
+    """One board's provenance for a listing, as the row renders it.
+
+    `url` is the board's own page for this posting (`listing_sources.source_url`).
+    `employer_url` is the employer/ATS page (`listing_sources.canonical_source_url`)
+    and is populated ONLY when it differs from `url`. That single guard is what makes
+    the rendering correct with no source-specific branching: a LinkedIn row renders
+    one link, an Indeed row renders the board page plus the employer's own posting.
+    """
+
+    source: str
+    url: str
+    employer_url: str | None = None
+
+
+@dataclass(frozen=True)
 class QueueRow:
     """One queue row, fully resolved: nothing is computed in the template."""
 
@@ -177,6 +193,10 @@ class QueueRow:
     saved: bool = False
     hidden: bool = False
     rules: tuple[QueueRule, ...] = ()
+    #: The posting page (`listings.canonical_url`), or None when the row has none.
+    url: str | None = None
+    #: One entry per `listing_sources` row, so a merge never hides half its provenance.
+    source_links: tuple[SourceLink, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -393,15 +413,32 @@ async def _enrich(
         listings[int(listing.id)] = listing
         companies[int(listing.id)] = company
 
-    grouped: dict[int, list[str]] = {}
-    for listing_id, source in (
+    grouped: dict[int, list[SourceLink]] = {}
+    for listing_id, source, source_url, canonical_source_url in (
         await session.execute(
-            select(ListingSource.listing_id, ListingSource.source)
+            select(
+                ListingSource.listing_id,
+                ListingSource.source,
+                ListingSource.source_url,
+                ListingSource.canonical_source_url,
+            )
             .where(ListingSource.listing_id.in_(list(ids)))
             .order_by(ListingSource.listing_id, ListingSource.source)
         )
     ).all():
-        grouped.setdefault(int(listing_id), []).append(str(source))
+        board_url = str(source_url or "")
+        employer_url = str(canonical_source_url or "")
+        grouped.setdefault(int(listing_id), []).append(
+            SourceLink(
+                source=str(source),
+                url=board_url,
+                employer_url=(
+                    employer_url
+                    if employer_url and employer_url != board_url
+                    else None
+                ),
+            )
+        )
 
     # The merge indicator and the firing-rule ids both come from the repositories
     # that own those queries (plans 02-06 and 02-05); neither join is rebuilt here.
@@ -440,13 +477,14 @@ async def _enrich(
                 )
         state = states.get(listing_id, event_repo.NO_STATE)
         company = companies.get(listing_id)
+        links = tuple(grouped.get(listing_id, ()))
         rows.append(
             QueueRow(
                 id=listing_id,
                 title=listing.title or "",
                 company=(company.name if company else None) or listing.company_norm or "",
                 location=listing.location_raw or "",
-                sources=tuple(grouped.get(listing_id, ())),
+                sources=tuple(link.source for link in links),
                 posted=listing.posted_at.isoformat() if listing.posted_at else "",
                 first_seen=(
                     listing.first_seen_at.isoformat() if listing.first_seen_at else ""
@@ -457,6 +495,8 @@ async def _enrich(
                 saved=state.saved,
                 hidden=state.hidden,
                 rules=tuple(chips),
+                url=listing.canonical_url or None,
+                source_links=links,
             )
         )
     return rows
@@ -536,6 +576,7 @@ __all__ = [
     "QueueQuery",
     "QueueRow",
     "QueueRule",
+    "SourceLink",
     "read_queue",
     "read_row",
 ]
