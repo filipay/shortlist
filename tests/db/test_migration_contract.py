@@ -2,8 +2,9 @@
 
 Items 1-9 are the original migration-0001 checklist; items 10-13 are the
 migration-0002 additions (`filter_rules`, the last-visit watermark, the four new
-`runs` columns and the `listing_dupes` uniqueness index). Every assertion
-introspects the database produced by **`alembic upgrade head`** on a temp file —
+`runs` columns and the `listing_dupes` uniqueness index); item 14 is the
+migration-0003 addition (`llm_calls.server_version`, D-12 / PITFALLS M9). Every
+assertion introspects the database produced by **`alembic upgrade head`** on a temp file —
 `PRAGMA table_info` / `PRAGMA index_list` / `PRAGMA index_info` / `sqlite_master`
 — never the ORM metadata. The point is to prove the *migrated* schema, not the
 model definitions: a model/DDL drift must fail here.
@@ -291,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0002"], "expected exactly one recorded revision: 0002"
+    assert versions == ["0003"], "expected exactly one recorded revision: 0003"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -302,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0002"), head_lines[0]
+    assert head_lines[0].startswith("0003"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -474,6 +475,33 @@ def test_criteria_version_and_dupes_unique_index(migrated_db: Path) -> None:
         connection.close()
 
 
+# --- Item 14 (0003) — llm_calls.server_version (D-12 / PITFALLS M9) -----------
+def test_llm_calls_server_version_column_is_nullable(migrated_db: Path) -> None:
+    connection = _connect(migrated_db)
+    try:
+        columns = _table_info(connection, "llm_calls")
+        assert "server_version" in columns, (
+            "migration 0003 must add llm_calls.server_version"
+        )
+        assert columns["server_version"]["notnull"] == 0, (
+            "server_version must be nullable — rows written before 0003 have no value"
+        )
+        assert columns["server_version"]["type"].upper().startswith("VARCHAR"), (
+            f"expected a bounded VARCHAR, saw {columns['server_version']['type']}"
+        )
+
+        # A row with no recorded version still persists (the column is optional).
+        connection.execute(
+            "INSERT INTO llm_calls (purpose, status, created_at) VALUES ('probe', 'ok', ?)",
+            ("2026-09-17 00:00:00",),
+        )
+        connection.commit()
+        stored = connection.execute("SELECT server_version FROM llm_calls").fetchone()
+        assert stored["server_version"] is None
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -497,7 +525,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0002"], f"expected exactly 0002, saw {versions}"
+        assert versions == ["0003"], f"expected exactly 0003, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

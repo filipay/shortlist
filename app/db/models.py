@@ -449,6 +449,10 @@ class LlmCall(Base):
     provider = Column(String(64))
     model = Column(String(128))
     agent = Column(String(64))
+    #: D-12 / PITFALLS M9 — the opencode server version this call ran against,
+    #: read from `GET /global/health` (never `/doc`'s static spec version, P12).
+    #: Migration 0003 adds it; nullable because older rows have no recorded value.
+    server_version = Column(String(32))
     prompt_tokens = Column(Integer)
     completion_tokens = Column(Integer)
     latency_ms = Column(Integer)
