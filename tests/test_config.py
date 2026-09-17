@@ -58,6 +58,26 @@ LIMIT_FIELDS = (
     "queue_page_size",
 )
 
+#: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
+#: edit that drops one from either guard below fails loudly rather than silently
+#: un-covering it.
+#:
+#: The completion ceiling is deliberately a SEPARATE field from
+#: `opencode_timeout_seconds`, which stays scoped to health/discovery (Pitfall P4):
+#: a real structured completion is a different order of magnitude, so do not
+#: "simplify" the two back into one field.
+PHASE_THREE_CEILINGS = (
+    "opencode_completion_timeout_seconds",
+    "opencode_max_retries",
+    "opencode_structured_retry_count",
+)
+
+#: The Phase-3 ceilings that are integers (the completion timeout is a float).
+PHASE_THREE_INTEGER_CEILINGS = (
+    "opencode_max_retries",
+    "opencode_structured_retry_count",
+)
+
 #: Values below this are too common in ordinary code (counts, indexes, 0/1) to
 #: attribute to a hard-coded threshold; the distinctive ceilings are still caught.
 DISTINCTIVE_THRESHOLD_FLOOR = 3
@@ -79,6 +99,30 @@ def test_documented_defaults() -> None:
     assert Settings.model_fields["probe_country_indeed"].default == "ireland"
     assert Settings.model_fields["probe_max_detail_fetches"].default == 0
     assert Settings.model_fields["dedup_fuzzy_threshold"].default == 88
+
+
+def test_the_phase_three_ceilings_are_guarded() -> None:
+    """Every Phase-3 ceiling must be asserted by the surface guard (PLAT-04)."""
+    for field in PHASE_THREE_CEILINGS:
+        assert field in REQUIRED_SETTINGS_FIELDS, (
+            f"{field} is a Phase-3 ceiling but REQUIRED_SETTINGS_FIELDS omits it"
+        )
+    for field in PHASE_THREE_INTEGER_CEILINGS:
+        assert field in LIMIT_FIELDS, (
+            f"{field} is a numeric ceiling but LIMIT_FIELDS does not cover it"
+        )
+
+
+def test_every_limit_field_is_a_required_numeric_ceiling() -> None:
+    """A ceiling the surface guard does not assert is a knob nobody checks."""
+    for field in LIMIT_FIELDS:
+        assert field in REQUIRED_SETTINGS_FIELDS, (
+            f"{field} is in LIMIT_FIELDS but missing from REQUIRED_SETTINGS_FIELDS"
+        )
+        default = Settings.model_fields[field].default
+        assert isinstance(default, (int, float)) and not isinstance(default, bool), (
+            f"{field} is listed as a ceiling but its default is {default!r}"
+        )
 
 
 # --- 2. behaviour -------------------------------------------------------------
@@ -110,6 +154,25 @@ def test_the_new_queue_knobs_are_environment_tunable(
 
     assert refreshed.stale_after_days == 30
     assert refreshed.dedup_fuzzy_threshold == 95
+
+
+def test_the_phase_three_ceilings_are_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config field no test can override is only half a config field."""
+    assert Settings.model_fields["opencode_completion_timeout_seconds"].default == 120.0
+    assert Settings.model_fields["opencode_max_retries"].default == 2
+    assert Settings.model_fields["opencode_structured_retry_count"].default == 2
+
+    monkeypatch.setenv("OPENCODE_COMPLETION_TIMEOUT_SECONDS", "7.5")
+    monkeypatch.setenv("OPENCODE_MAX_RETRIES", "5")
+    monkeypatch.setenv("OPENCODE_STRUCTURED_RETRY_COUNT", "4")
+
+    refreshed = Settings()
+
+    assert refreshed.opencode_completion_timeout_seconds == 7.5
+    assert refreshed.opencode_max_retries == 5
+    assert refreshed.opencode_structured_retry_count == 4
 
 
 def test_build_budget_reads_every_ceiling_from_settings(
