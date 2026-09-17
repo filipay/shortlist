@@ -1,17 +1,17 @@
 ---
 phase: 02-clean-filtered-queryable-queue
-verified: 2026-09-17T15:06:06Z
+verified: 2026-09-17T15:10:04Z
 status: passed
 score: 61/61 must-haves verified
 re_verification: true
 re_verification_details:
   delta_reverification: true
-  re_verification_scope: "delta only (5726cd3 → 502fae1); unchanged truths were not re-derived"
+  re_verification_scope: "delta only (502fae1 → a138d18); unchanged truths were not re-derived"
   previous_status: passed
-  previous_score: 54/54 must-haves verified
-  previous_verified: 2026-09-16T22:42:00Z
-  previous_commit: 5726cd3
-  current_commit: 502fae1
+  previous_score: 61/61 must-haves verified
+  previous_verified: 2026-09-17T15:06:06Z
+  previous_commit: 502fae1
+  current_commit: a138d18
   gaps_closed: []
   gaps_remaining: []
   regressions: []
@@ -137,7 +137,7 @@ covered_files:
   - tests/test_config.py
   - tests/test_dependency_pins.py
   - tests/test_stylesheet_coverage.py
-covered_digest: "v1:sha256:fd427cbde1357054ce1fa4b9f041dc072ea2293c263e1ab12f30ee9355dc45c2"
+covered_digest: "v1:sha256:45456fa41e602c069324788cfd1d47f7aa7172f49655e132b01355764bea62d9"
 behavior_unverified: 0
 overrides_applied: 0
 gaps: []
@@ -163,12 +163,21 @@ advisory:
 # Phase 2: Clean, Filtered, Queryable Queue — Verification Report
 
 **Phase Goal:** A deduplicated, deterministically filtered, searchable queue the user trusts — with every rejection explained and every run observable.
-**Verified:** 2026-09-17T15:06:06Z
+**Verified:** 2026-09-17T15:10:04Z
 **Status:** passed
-**Re-verification:** Yes — a **third** targeted **delta** re-verification. Baseline: the report previously certified at `5726cd3` (54/54, `passed`). This pass covers only `5726cd3 → 502fae1` (the `2026-09-17` SDD cycle, its post-completion fix arc, and the completed UAT); unchanged truths were not re-derived.
-**Score:** 61/61 must-have truths verified (0 present-but-behavior-unverified). The denominator grew from 54 to 61 because plan `02-11` adds **7** must-have truths; **no truth's pass/fail verdict changed** in this delta (`verdicts_changed: 0`). Two prior advisory items carry forward; two new advisory observations are recorded — none is a blocker.
+**Re-verification:** Yes — a **fourth** targeted **delta** re-verification. The substantive code delta remains `5726cd3 → 502fae1` (certified 61/61, `passed`; method preserved below). This pass covers the **docs-only phase transition** `502fae1 → a138d18` and exists solely to make the covered-input digest consistent with the post-transition artifact set. Phase 2 is now marked **complete in `ROADMAP.md` as of 2026-09-17** (`- [x] **Phase 2: Clean, Filtered, Queryable Queue** - … (completed 2026-09-17)` and the `| 2. Clean, Filtered, Queryable Queue | 11/11 | Complete | 2026-09-17 |` row). Nothing in this delta touches verified behaviour.
+**Score:** 61/61 must-have truths verified (0 present-but-behavior-unverified). The denominator grew from 54 to 61 because plan `02-11` adds **7** must-have truths; **no truth's pass/fail verdict changed** in any delta (`verdicts_changed: 0`). Two prior advisory items carry forward; two new advisory observations are recorded — none is a blocker.
 
-## Method — this delta (`5726cd3 → 502fae1`)
+## Transition delta (`502fae1 → a138d18`) — docs only
+
+This pass re-derives no truth. It exists because the phase-transition commit `a138d18` (`docs(02): complete phase 2 — UAT 9/9 and verification 61/61 at HEAD`) edited `.planning/ROADMAP.md`, which is a covered input, so the prior digest no longer recomputed (`verification.status` read `stale`).
+
+- `git diff --stat 502fae1..a138d18` lists **four** paths, all under `.planning/`: `ROADMAP.md` (4 lines), `STATE.md` (46), `state.json` (8) from the transition commit, plus `02-VERIFICATION.md` from the prior report's own docs commit `728ca1d`. A path filter for `app/`, `tests/`, `alembic/`, `assets/` or `static/` returns **nothing** — no code, test, migration or template changed.
+- `git show --stat a138d18` confirms the transition commit itself touched only `ROADMAP.md`, `STATE.md` and `state.json`.
+- Because no executable or template file changed, **the `502fae1` behavioural evidence is reused unchanged**: full suite `712 passed, 2 deselected in 162.99s`; the six 02-11 feature lanes `52 passed`; the four guard lanes `21 passed`; the truth-5 discriminator `1 passed`; `ruff check app tests` clean. Re-running the suite would exercise byte-identical code and yield no new evidence, so it was deliberately **not** re-run for this docs-only delta.
+- `.planning/ROADMAP.md` is **kept in `covered_files`** (not dropped to make the check pass); the digest below recomputes over the current content of all 119 covered inputs, including the post-transition roadmap.
+
+## Method — code delta (`5726cd3 → 502fae1`)
 
 Independent, goal-backward verification against the codebase — not against the SUMMARYs or the UAT:
 
@@ -596,7 +605,7 @@ None is a phase gap; each is a non-blocking cleanup/semantics item.
 
 ## Gaps Summary
 
-**No must-have gap was found.** All **61** plan `must_haves.truths` (54 previously certified + 7 from 02-11), all five roadmap Success Criteria, all required artifacts (Levels 1–2), all key links (Level 3) and the dynamic data flows (Level 4) hold at HEAD `502fae1`. All 15 Phase-2 requirement IDs are accounted for and satisfied. `ruff` is clean; no debt markers exist; the suite is 712 passed / 2 deselected. **No truth's verdict changed in this delta** (`verdicts_changed: 0`).
+**No must-have gap was found.** All **61** plan `must_haves.truths` (54 previously certified + 7 from 02-11), all five roadmap Success Criteria, all required artifacts (Levels 1–2), all key links (Level 3) and the dynamic data flows (Level 4) hold at HEAD `a138d18` (code byte-identical to `502fae1`; this delta is docs-only). All 15 Phase-2 requirement IDs are accounted for and satisfied. `ruff` is clean; no debt markers exist; the suite is 712 passed / 2 deselected. **No truth's verdict changed in any delta** (`verdicts_changed: 0`).
 
 The 02-11 delta is verified end to end: the http(s)-gated posting links, the whole-default-queue dismiss through the append-only event path, the settings page and its four ordered refusals, and the reset that snapshots with `VACUUM INTO`, suspends the append-only trigger inside its own transaction and re-arms it before commit. **Truth 5 — the discriminator** — is backed by a committed test that forces a delete-phase failure after the `DROP TRIGGER` and asserts the deletes and the suspension roll back together; that test is run green in this pass. The `build_engine` transaction change (truth 6) is the precondition that makes it safe, and its blast radius is recorded as a deliberate decision.
 
@@ -609,9 +618,9 @@ Observations that do **not** block the phase:
 - **Pre-existing, intentionally unfixed (recorded, not new):** the `(QUEUE-06)` mislabel in `tests/api/test_queue_links.py`'s docstring; the SDD ledger's stale "11 commits" line.
 - **Info (follow-ups, non-blocking):** the six follow-ups tabulated above.
 
-Status is **passed**: automated verification is complete and green at HEAD `502fae1`, the 9/9 UAT items are `pass`, the 02-11 fix arc is verified against the code and its discriminator test, and no outstanding human-verification item remains. The phase's completion is still gated on `/gsd-verify-work`.
+Status is **passed**: automated verification is complete and green, the 9/9 UAT items are `pass`, the 02-11 fix arc is verified against the code and its discriminator test, and no outstanding human-verification item remains. The phase is marked **complete in `ROADMAP.md` as of 2026-09-17**; this report is fresh at HEAD `a138d18`, whose only changes since the certified `502fae1` are planning docs.
 
 ---
 
-_Verified: 2026-09-17T15:06:06Z_
+_Verified: 2026-09-17T15:10:04Z_
 _Verifier: the agent (gsd-verifier)_
