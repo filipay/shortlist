@@ -26,6 +26,42 @@
   </ul>
 </section>
 
+<section class="settings-card" id="llm-backend">
+  <h3>LLM backend</h3>
+  <p class="settings-note">
+    One schema-constrained call through your own opencode server. It records a
+    single audit row and creates no run. The user turn below is canned
+    instruction-like test content — the system prompt stays constant.
+  </p>
+  <form method="post" action="/settings/llm-test">
+    <div class="form-actions">
+      <button type="submit" id="llm-test-submit">Test LLM backend</button>
+    </div>
+  </form>
+
+  {% if probe %}
+  <div class="settings-result" id="llm-test-result">
+    <p class="settings-note" id="probe-status">
+      Call {{ probe.id }}: status <strong>{{ probe.status }}</strong>{% if probe_error_kind %} ({{ probe_error_kind }}){% endif %}.
+    </p>
+    <ul class="settings-counts" id="probe-detail">
+      <li>Attempts: {{ probe.attempts }}</li>
+      <li>Latency: {% if probe.latency_ms is not none %}{{ probe.latency_ms }} ms{% else %}not reported{% endif %}</li>
+      <li>Provider: {{ probe.provider or "not reported" }}</li>
+      <li>Model: {{ probe.model or "not reported" }}</li>
+      <li>Server version: {{ probe.server_version or "not reported" }}</li>
+    </ul>
+    {% if probe.error %}
+    <p class="settings-note" id="probe-error">Cause: {{ probe.error }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <p class="settings-note" id="probe-system-prompt">
+    System prompt held constant: <code>{{ system_prompt }}</code>
+  </p>
+</section>
+
 <section class="danger-card" id="danger-zone">
   <h3>Danger zone</h3>
   <p class="settings-note">

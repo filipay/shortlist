@@ -34,11 +34,11 @@ import structlog
 
 from app.config import settings
 from app.llm.base import (
-    T,
     DiscoveryResult,
     ProbeOutcome,
     ProviderModel,
     StructuredCallResult,
+    T,
 )
 from app.llm.builders import to_message_body
 from app.llm.contract import (

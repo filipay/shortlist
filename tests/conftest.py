@@ -25,7 +25,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.llm import get_llm_backend
-from app.llm.base import DiscoveryResult, ProbeOutcome
+from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +42,16 @@ class OfflineLLMBackend:
 
     async def discover_models(self) -> DiscoveryResult:
         return DiscoveryResult(reachable=False, error="offline-test-lane")
+
+    async def complete_structured(self, **kwargs: object) -> StructuredCallResult:
+        """Present so the selftest route cannot AttributeError — or reach a socket.
+
+        Without this the default lane overrides `get_llm_backend` with a stub that
+        lacks the method, and a careless test could fall through to the real
+        `OpenCodeServerBackend` (Pitfall P10). The failure is the honest offline
+        outcome, never a network call.
+        """
+        return StructuredCallResult(ok=False, status="error", error="offline-test-lane")
 
 
 

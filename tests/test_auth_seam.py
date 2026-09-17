@@ -25,10 +25,20 @@ from fastapi.routing import APIRoute
 from app.api.deps import current_user
 from app.main import create_app
 
-#: The four application routes Phase 1 ships. Used to prove the walk is not
-#: vacuous. A route added later *with* the seam still passes the per-route
-#: assertion; one added without it fails.
-EXPECTED_SEAM_ROUTES = frozenset({"/", "/runs", "/runs/{run_id}/status", "/health"})
+#: Routes whose seam membership is asserted explicitly, so the walk's
+#: non-vacuity claim covers them. A route added later *with* the seam still
+#: passes the per-route assertion; one added without it fails.
+EXPECTED_SEAM_ROUTES = frozenset(
+    {
+        "/",
+        "/runs",
+        "/runs/{run_id}/status",
+        "/health",
+        # Phase 3's on-demand LLM backend selftest (D-48): it spends tokens, so it
+        # must go through the identity seam like every other route.
+        "/settings/llm-test",
+    }
+)
 
 #: Speculative identity columns that must not exist in v1 (AP14).
 FORBIDDEN_IDENTITY_COLUMNS = frozenset({"user_id", "user_uuid", "owner_id", "tenant_id"})
