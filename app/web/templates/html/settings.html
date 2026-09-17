@@ -54,6 +54,23 @@
     {% if probe.error %}
     <p class="settings-note" id="probe-error">Cause: {{ probe.error }}</p>
     {% endif %}
+
+    {% if probe_observation %}
+    <div id="probe-observation">
+      <p class="settings-note" id="probe-observation-parts">
+        Returned part types: {% if probe_part_types %}{{ probe_part_types | join(", ") }}{% else %}not reported{% endif %}
+      </p>
+      <p class="settings-note" id="probe-observation-keys">
+        Response keys: {% if probe_info_keys %}{{ probe_info_keys | join(", ") }}{% else %}not reported{% endif %}
+      </p>
+      <p class="settings-note" id="probe-observation-structured">
+        Structured payload: {% if probe_structured %}present{% else %}absent{% endif %}.
+        A healthy successful call returns the text part and a <code>structured</code>
+        key; any other part type, or a missing <code>structured</code> key on a
+        success, is a finding — not a guess.
+      </p>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 

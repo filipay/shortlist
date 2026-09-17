@@ -132,6 +132,81 @@ async def test_the_page_renders_every_recorded_value(client, monkeypatch) -> Non
     assert "Server version: 1.18.31" in response.text
 
 
+# --- success criterion 4: the trust-boundary observation -----------------------
+
+
+async def test_the_page_renders_the_observation_labels(client) -> None:
+    """The observation block is rendered for the current call, always."""
+    response = await client.post(LLM_TEST_PATH)
+
+    assert response.status_code == 200
+    assert "Returned part types:" in response.text
+    assert "Response keys:" in response.text
+    assert "Structured payload:" in response.text
+    # D-52's detail still renders beside it.
+    assert "status <strong>error</strong>" in response.text
+    assert "Attempts: 0" in response.text
+
+
+async def test_the_page_shows_the_parts_and_info_keys_for_the_current_call(
+    client, monkeypatch
+) -> None:
+    async def _observed(self, **kwargs: object) -> StructuredCallResult:
+        return StructuredCallResult(
+            ok=True,
+            data=ProbeResult(acknowledged=True),
+            status="ok",
+            part_types=["text"],
+            info_keys=["id", "structured"],
+            provider="opencode-go",
+            model="m",
+            server_version="1.18.31",
+        )
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _observed)
+
+    response = await client.post(LLM_TEST_PATH)
+
+    assert "Returned part types: text" in response.text
+    assert "Response keys: id, structured" in response.text
+    assert "Structured payload: present" in response.text
+
+    # The observation is TRANSIENT: a reload shows D-52's persisted detail only.
+    reloaded = await client.get("/settings")
+    assert "Returned part types:" not in reloaded.text
+    assert "status <strong>ok</strong>" in reloaded.text
+
+
+async def test_a_payload_value_never_reaches_the_page_or_the_recorded_row(
+    client, session_factory, monkeypatch
+) -> None:
+    """T-3-19: only part TYPE names and `info` KEY names are rendered."""
+    sentinel = "SENTINEL-PAYLOAD-VALUE-DO-NOT-LEAK"
+
+    async def _leaky(self, **kwargs: object) -> StructuredCallResult:
+        return StructuredCallResult(
+            ok=True,
+            data=ProbeResult(acknowledged=True, echo=sentinel),
+            status="ok",
+            part_types=["text"],
+            info_keys=["id", "structured"],
+            provider="opencode-go",
+            model="m",
+            server_version="1.18.31",
+        )
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _leaky)
+
+    response = await client.post(LLM_TEST_PATH)
+
+    assert response.status_code == 200
+    assert sentinel not in response.text
+
+    async with session_factory() as session:
+        row = (await session.execute(select(LlmCall))).scalar_one()
+    assert sentinel not in repr(vars(row))
+
+
 # --- the prompt boundary -------------------------------------------------------
 
 

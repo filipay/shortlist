@@ -39,6 +39,7 @@ from app.domain.models import User
 from app.domain.schemas.probe import ProbeResult
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
+from app.llm.contract import STRUCTURED_RESPONSE_PATH
 from app.pipeline.run import TERMINAL_STATUSES
 from app.web.template_env import make_templates
 
@@ -124,6 +125,10 @@ async def _settings_context(
     error: bool = False,
     probe: llm_call_repo.LlmCallRecord | None = None,
     probe_error_kind: str | None = None,
+    probe_observation: bool = False,
+    probe_part_types: list[str] | None = None,
+    probe_info_keys: list[str] | None = None,
+    probe_structured: bool = False,
 ) -> dict[str, Any]:
     backend = session.get_bind()
     database_path = Path(str(backend.url.database or ""))
@@ -139,11 +144,18 @@ async def _settings_context(
         "kept_tables": RESET_KEPT_TABLES,
         "backup_dir": str(database_path.parent / "reset-backups"),
         "confirm_token": RESET_CONFIRM_TOKEN,
-        # The selftest surface (D-48/D-52). `probe_error_kind` is only available on
-        # the immediate render — `llm_calls` has no such column, and the failure
-        # taxonomy/persistence lands with plans 03-03/03-04.
+        # The selftest surface (D-48/D-52). `probe_error_kind` and the observation
+        # are only available on the immediate render — `llm_calls` has no column for
+        # either, so a reload shows D-52's PERSISTED detail only.
         "probe": probe,
         "probe_error_kind": probe_error_kind,
+        # The trust-boundary observation (success criterion 4 / T-3-19): part TYPE
+        # names and `info` KEY names only. Transient for this request; part text and
+        # payload values are never placed here, persisted or logged.
+        "probe_observation": probe_observation,
+        "probe_part_types": probe_part_types,
+        "probe_info_keys": probe_info_keys,
+        "probe_structured": probe_structured,
         "system_prompt": SELFTEST_SYSTEM_PROMPT,
     }
 
@@ -427,6 +439,13 @@ async def test_llm_backend(
         attempts=record.attempts,
         latency_ms=record.latency_ms,
     )
+    # The observation of THIS call (success criterion 4): the returned part TYPE
+    # names and the `info` KEY names — names only, never text or values.
+    structured_present = bool(
+        result.ok
+        and result.info_keys
+        and STRUCTURED_RESPONSE_PATH[-1] in result.info_keys
+    )
     return templates.TemplateResponse(
         request,
         SETTINGS_TEMPLATE,
@@ -434,5 +453,9 @@ async def test_llm_backend(
             session,
             probe=record,
             probe_error_kind=result.error_kind,
+            probe_observation=True,
+            probe_part_types=result.part_types,
+            probe_info_keys=result.info_keys,
+            probe_structured=structured_present,
         ),
     )
