@@ -197,7 +197,7 @@ def test_the_system_value_is_a_bare_reference_never_a_computation() -> None:
         value
         for node in ast.walk(tree)
         if isinstance(node, ast.Dict)
-        for key, value in zip(node.keys, node.values)
+        for key, value in zip(node.keys, node.values, strict=True)
         if isinstance(key, ast.Constant) and key.value == "system"
     ]
 

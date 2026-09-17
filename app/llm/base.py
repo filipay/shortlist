@@ -90,6 +90,12 @@ class StructuredCallResult(BaseModel):
     model: str | None = None
     agent: str | None = None
     server_version: str | None = None
+    #: The trust-boundary OBSERVATION (success criterion 4 / T-3-19): the `type`
+    #: value of each returned response part — TYPE NAMES only, never the part text.
+    #: In memory for the current call; never persisted.
+    part_types: list[str] | None = None
+    #: The response `info` object's KEY names — names only, never values.
+    info_keys: list[str] | None = None
 
 
 @runtime_checkable

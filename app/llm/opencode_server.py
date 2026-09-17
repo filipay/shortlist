@@ -43,10 +43,14 @@ from app.llm.base import (
     StructuredCallResult,
     T,
 )
-from app.llm.builders import to_message_body
+from app.llm.builders import to_message_body, to_session_body
 from app.llm.contract import (
     MESSAGE_MODEL_FIELDS,
     MESSAGE_PATH,
+    PART_TYPE_FIELD,
+    PERMISSION_DENY_ACTION,
+    PERMISSION_RULE_FIELDS,
+    PERMISSION_WILDCARD,
     SESSION_ID_FIELD,
     SESSION_ID_PREFIX,
     SESSION_PATH,
@@ -84,6 +88,26 @@ NON_200_BODY_EXCERPT_CHARS = 200
 #: tell apart from a genuine low score. Widening this frozenset is a deliberate
 #: change with a matching test (tests/llm/test_salvage.py).
 TOLERATED_SCHEMA_ERRORS: frozenset[str] = frozenset({"missing", "int_parsing"})
+
+#: The default tool posture, encoded in EXACTLY one place (success criterion 4).
+#:
+#: `permission` is the server's DOCUMENTED control — the message-level `tools` map
+#: is deprecated and its wildcard semantics are undocumented (assumptions A2/A6), so
+#: the deny is enforced per SESSION here rather than per message. Every rule carries
+#: all of `PERMISSION_RULE_FIELDS` and an action of `PERMISSION_DENY_ACTION`.
+#:
+#: This is a DEFAULT, deliberately changeable (a future server may reshape the
+#: ruleset). It must also be WATCHED: opencode implements structured output through
+#: an internal tool, so an over-broad deny could break the very path this phase
+#: proves — which is why `complete_structured` records the returned part types and
+#: `info` key names (the observation) instead of assuming the deny is harmless.
+DEFAULT_DENY_RULES: tuple[dict[str, str], ...] = (
+    {
+        PERMISSION_RULE_FIELDS[0]: PERMISSION_WILDCARD,
+        PERMISSION_RULE_FIELDS[1]: PERMISSION_WILDCARD,
+        PERMISSION_RULE_FIELDS[2]: PERMISSION_DENY_ACTION,
+    },
+)
 
 
 def parse_providers(payload: object) -> list[ProviderModel]:
@@ -283,15 +307,23 @@ class OpenCodeServerBackend:
         return provider_id, model_id
 
     async def _create_session(
-        self, client: httpx.AsyncClient
+        self, client: httpx.AsyncClient, *, provider_id: str, model_id: str
     ) -> str | StructuredCallResult:
-        """`POST /session` with an empty body; read the session id.
+        """`POST /session` with the default-deny ruleset; read the session id.
 
-        An empty `{}` is schema-valid (no required properties) and selects the
-        server's defaults. A response with no usable `ses…` id is a value, not an
-        exception.
+        The body is built by the pure `to_session_body`, so the SESSION model shape
+        (`{id: modelID, providerID}` — the inverse of the message body's) and the
+        deny-only `permission` ruleset are encoded in exactly one place. A response
+        with no usable `ses…` id is a value, not an exception: this stays total.
         """
-        response = await client.post(SESSION_PATH, json={})
+        response = await client.post(
+            SESSION_PATH,
+            json=to_session_body(
+                provider_id=provider_id,
+                model_id=model_id,
+                permission=DEFAULT_DENY_RULES,
+            ),
+        )
         if response.status_code != 200:
             return StructuredCallResult(
                 ok=False,
@@ -343,9 +375,12 @@ class OpenCodeServerBackend:
         server supplies one, and the client's issued-request count otherwise.
 
         `parts` is the only channel for untrusted content; `system` is passed
-        through untouched. `tools` is accepted for the port contract (default
-        empty = deny) but is not sent yet: the documented deny encoding lands in
-        plan 03-06 (Pitfall P5).
+        through untouched. `tools` is accepted for the port contract (default empty
+        = no message-level grant); an explicit allow-list is emitted as a
+        name→boolean map, and the ENFORCED deny is the session `permission` ruleset
+        applied by `_create_session` (Pitfall P5). `part_types` / `info_keys` on the
+        result record what the call actually returned — the observation that makes a
+        broken or over-broad deny a finding rather than an assumption.
         """
         started = time.perf_counter()
         try:
@@ -370,7 +405,9 @@ class OpenCodeServerBackend:
             last_failure: StructuredCallResult | None = None
 
             async with self._completion_client() as client:
-                session_id = await self._create_session(client)
+                session_id = await self._create_session(
+                    client, provider_id=provider_id, model_id=model_id
+                )
                 if isinstance(session_id, StructuredCallResult):
                     return session_id
                 body = to_message_body(
@@ -500,11 +537,14 @@ def _failure(
     model: str | None = None,
     agent: str | None = None,
     server_version: str | None = None,
+    part_types: list[str] | None = None,
+    info_keys: list[str] | None = None,
 ) -> StructuredCallResult:
     """One classified failure. `raw` is always None here (P9 / T-3-05).
 
     The non-200 excerpt lives in `error` (bounded); the response BODY is never
-    carried on a result that a caller might persist.
+    carried on a result that a caller might persist. `part_types`/`info_keys` carry
+    TYPE and KEY names only — never part text or payload values.
     """
     return StructuredCallResult(
         ok=False,
@@ -518,6 +558,8 @@ def _failure(
         model=model,
         agent=agent,
         server_version=server_version,
+        part_types=part_types,
+        info_keys=info_keys,
     )
 
 
@@ -530,6 +572,27 @@ def _bounded_excerpt(response: object) -> str:
     if not isinstance(text, str):
         return ""
     return text[:NON_200_BODY_EXCERPT_CHARS]
+
+
+def _part_types(payload: object) -> list[str] | None:
+    """The `type` value of each top-level response part — TYPE NAMES only.
+
+    Never reads, returns or logs a part's `text`: the observation exists to show
+    which part KINDS came back (success criterion 4 / T-3-19), not what they said.
+    """
+    if not isinstance(payload, dict):
+        return None
+    parts = payload.get("parts")
+    if not isinstance(parts, list):
+        return None
+    types: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            types.append("unknown")
+            continue
+        value = part.get(PART_TYPE_FIELD)
+        types.append(value if isinstance(value, str) else "unknown")
+    return types
 
 
 def _tolerant_validator(
@@ -636,6 +699,8 @@ def _classify_message_response(
     # `payload` is model prose derived from untrusted text. It is consumed here and
     # held only on a SUCCESSFUL result's `raw` (in memory for this call) — never
     # assigned to `self`, logged, cached or persisted (P9).
+    part_types = _part_types(payload)
+
     info = payload.get("info") if isinstance(payload, dict) else None
     if not isinstance(info, dict):
         return _failure(
@@ -645,7 +710,18 @@ def _classify_message_response(
             attempts=attempts,
             started=started,
             server_version=server_version,
+            part_types=part_types,
         )
+
+    # The observation (success criterion 4): part TYPE names and `info` KEY names,
+    # nothing else. Never the part text, never a payload value.
+    info_keys = list(info.keys())
+    log.info(
+        "llm.structured_response",
+        backend="opencode_server",
+        part_types=part_types,
+        info_keys=info_keys,
+    )
 
     identity = {
         "provider": _identity(info, 0) or provider_id,
@@ -681,6 +757,8 @@ def _classify_message_response(
                 attempts=server_attempts,
                 started=started,
                 server_version=server_version,
+                part_types=part_types,
+                info_keys=info_keys,
                 **identity,
             )
         # Any other provider error envelope is a failure too, never a silent
@@ -692,6 +770,8 @@ def _classify_message_response(
             attempts=attempts,
             started=started,
             server_version=server_version,
+            part_types=part_types,
+            info_keys=info_keys,
             **identity,
         )
 
@@ -704,6 +784,8 @@ def _classify_message_response(
             attempts=attempts,
             started=started,
             server_version=server_version,
+            part_types=part_types,
+            info_keys=info_keys,
             **identity,
         )
 
@@ -722,6 +804,8 @@ def _classify_message_response(
             attempts=attempts,
             started=started,
             server_version=server_version,
+            part_types=part_types,
+            info_keys=info_keys,
             **identity,
         )
 
@@ -737,6 +821,8 @@ def _classify_message_response(
         model=identity["model"],
         agent=identity["agent"],
         server_version=server_version,
+        part_types=part_types,
+        info_keys=info_keys,
     )
 
 
@@ -768,6 +854,7 @@ def _agent(info: dict) -> str | None:
 
 __all__ = [
     "CONFIG_PROVIDERS_PATH",
+    "DEFAULT_DENY_RULES",
     "ERROR_KIND_INVALID",
     "ERROR_KIND_INVALID_SESSION",
     "ERROR_KIND_MODEL_NOT_FOUND",

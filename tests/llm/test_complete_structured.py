@@ -376,15 +376,26 @@ async def test_the_message_protocol_makes_exactly_two_posts(
     assert emitted[FORMAT_FIELD][FORMAT_RETRY_FIELD] == 2
 
 
-async def test_the_session_body_is_an_empty_object(
+async def test_the_session_body_carries_the_model_and_the_deny_ruleset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The session body is no longer empty: it selects the model and denies tools.
+
+    The SESSION model shape is `{id: modelID, providerID}` — the inverse of the
+    message body's `{providerID, modelID}`. `tests/llm/test_trust_boundary.py`
+    pins both placements together.
+    """
     recorder = Recorder(message_body=LIVE_MESSAGE_BODY)
     backend = _backend(monkeypatch, recorder)
 
     await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
 
-    assert recorder.requests[0][2] == {}
+    session_body = recorder.requests[0][2]
+    assert session_body["model"] == {
+        "id": "deepseek-v4.1-flash",
+        "providerID": "opencode-go",
+    }
+    assert session_body["permission"]
 
 
 # --- complete_structured: failure is a value ----------------------------------

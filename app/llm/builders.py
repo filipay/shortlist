@@ -31,6 +31,10 @@ from app.llm.contract import (
     FORMAT_TYPE_FIELD,
     MESSAGE_MODEL_FIELDS,
     MESSAGE_REQUIRED_FIELDS,
+    MESSAGE_TOOLS_FIELD,
+    PERMISSION_FIELD,
+    PERMISSION_WILDCARD,
+    SESSION_MODEL_FIELDS,
     TEXT_PART_FIELDS,
     TEXT_PART_TYPE,
 )
@@ -62,10 +66,18 @@ def to_message_body(
     """Emit EXACTLY the wire shape. Every key name comes from `app.llm.contract`.
 
     `parts` is the only channel for untrusted content. `system` is passed through
-    verbatim — the caller supplies a constant. `retryCount` is added only when
-    `retry_count` is not None (it is OPTIONAL on the wire). `tools` is added only
-    when explicitly supplied; the port's default is deny-by-omission and the
-    documented deny encoding lands in plan 03-06 (Pitfall P5).
+    verbatim — the caller supplies a constant, and no argument of this function can
+    alter it.
+
+    **`tools` policy (Pitfall P5).** `tools` is a `Mapping[str, bool]` of explicit
+    per-name GRANTS. `None` or an empty mapping emits NO key at all — an
+    undocumented empty map is not a deny, so it is never sent. A `"*"` key raises
+    `ValueError`: the deprecated `tools` map's wildcard semantics are undocumented
+    (the `"*"` wildcard is a `permission` key, not a `tools` key). The ENFORCED deny
+    is the session-level `permission` ruleset built by `to_session_body`, which the
+    server documents as the control to use.
+
+    `retryCount` is added only when `retry_count` is not None (OPTIONAL on the wire).
     """
     body: dict[str, Any] = {
         MESSAGE_REQUIRED_FIELDS[0]: to_message_parts(parts),
@@ -83,9 +95,53 @@ def to_message_body(
         body[FORMAT_FIELD][FORMAT_RETRY_FIELD] = retry_count
     if agent is not None:
         body["agent"] = agent
-    if tools is not None:
-        body["tools"] = dict(tools)
+    if tools:
+        if PERMISSION_WILDCARD in tools:
+            raise ValueError(
+                f"the deprecated {MESSAGE_TOOLS_FIELD!r} map does not support a "
+                f"{PERMISSION_WILDCARD!r} wildcard (its semantics are undocumented); "
+                f"use the session {PERMISSION_FIELD!r} ruleset for the enforced deny"
+            )
+        body[MESSAGE_TOOLS_FIELD] = {
+            name: bool(granted) for name, granted in tools.items()
+        }
     return body
 
 
-__all__ = ["to_message_body", "to_message_parts"]
+def to_session_body(
+    *,
+    provider_id: str,
+    model_id: str,
+    permission: Sequence[Mapping[str, str]] | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Emit the `POST /session` body — whose `model` shape is the INVERSE.
+
+    The live 1.18.31 `POST /session` takes
+    ``model: {"id": <modelID>, "providerID": <providerID>}`` (research §1), i.e. the
+    **model id under `id`** and the **provider id under `providerID`**. The message
+    body is ``{"providerID": <providerID>, "modelID": <modelID>}``. Both objects are
+    ``additionalProperties: false``, so a wrong placement is a silent 400 — and the
+    two shapes look deceptively similar, which is why
+    `tests/llm/test_trust_boundary.py` asserts both key sets AND both value
+    placements together. **Do not collapse or invert them.**
+
+    `permission` is the DOCUMENTED tool control (`tools` is deprecated): an array of
+    `PermissionRule` objects, each `{permission, pattern, action}`. `title` is
+    optional. This builder emits no untrusted content: nothing here comes from a
+    listing.
+    """
+    body: dict[str, Any] = {
+        "model": {
+            SESSION_MODEL_FIELDS[0]: model_id,
+            SESSION_MODEL_FIELDS[1]: provider_id,
+        },
+    }
+    if title is not None:
+        body["title"] = title
+    if permission is not None:
+        body[PERMISSION_FIELD] = [dict(rule) for rule in permission]
+    return body
+
+
+__all__ = ["to_message_body", "to_message_parts", "to_session_body"]

@@ -65,8 +65,31 @@ SESSION_ID_FIELD = "id"
 #: `Session.id` has `pattern: "^ses"`.
 SESSION_ID_PREFIX = "ses"
 TEXT_PART_TYPE = "text"
+#: The `parts[].type` discriminator: used to BUILD a text part and to OBSERVE the
+#: returned part types. This phase emits and accepts text parts only.
+PART_TYPE_FIELD = "type"
 #: `TextPartInput` requires `type` and `text`; `additionalProperties: false`.
-TEXT_PART_FIELDS = ("type", "text")
+TEXT_PART_FIELDS = (PART_TYPE_FIELD, "text")
+
+# --- the tool-deny control surface (success criterion 4 / Pitfall P5) ---------
+#
+#: `POST /session` accepts a `permission` ruleset (`PermissionRuleset`): an array of
+#: `PermissionRule` objects, each requiring ALL THREE of `permission`, `pattern` and
+#: `action` (verified against the live 1.18.31 `/doc`, 2026-09-17). This is the
+#: DOCUMENTED, non-deprecated tool control; the message-level `tools` map is
+#: deprecated and its wildcard semantics are undocumented (A2), so `permission` is
+#: where the enforced deny lives.
+PERMISSION_FIELD = "permission"
+PERMISSION_RULE_FIELDS = ("permission", "pattern", "action")
+#: The only action this phase emits. `allow`/`ask` are never sent.
+PERMISSION_DENY_ACTION = "deny"
+#: A bare `"*"` is legal as a `permission` key/pattern. It is deliberately NOT
+#: legal in the deprecated `tools` map — hence no `TOOLS_WILDCARD` constant exists.
+PERMISSION_WILDCARD = "*"
+#: The deprecated message-level `tools` field: a name→boolean map of explicit
+#: per-name GRANTS. Never a bare `"*"`, and never an empty map (an undocumented
+#: empty map is not a deny).
+MESSAGE_TOOLS_FIELD = "tools"
 
 __all__ = [
     "DOC_PATH",
@@ -81,6 +104,12 @@ __all__ = [
     "MESSAGE_MODEL_FIELDS",
     "MESSAGE_PATH",
     "MESSAGE_REQUIRED_FIELDS",
+    "MESSAGE_TOOLS_FIELD",
+    "PART_TYPE_FIELD",
+    "PERMISSION_DENY_ACTION",
+    "PERMISSION_FIELD",
+    "PERMISSION_RULE_FIELDS",
+    "PERMISSION_WILDCARD",
     "SESSION_ID_FIELD",
     "SESSION_ID_PREFIX",
     "SESSION_MODEL_FIELDS",
