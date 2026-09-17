@@ -49,15 +49,18 @@ URL renders the title/source as plain text.
 
 ### 2. Dismiss the whole queue
 
-`POST /queue/dismiss` hides **every listing matching the queue's current
-predicate set**, not just the rendered page. The row count in the button label
-was dropped deliberately: the label's count described the rendered predicate,
-while the action drops the free-text search and the hidden toggle, so a number
-there would have disagreed with what actually happened.
+`POST /queue/dismiss` hides **every listing in the default queue**, not just the
+rendered page. The row count in the button label was dropped deliberately: the
+label's count described the rendered predicate, while the action drops the
+free-text search and **all UI toggles** (`excluded`, `hidden`, `saved`, `scope`),
+so a number there would have disagreed with what actually happened. Dismiss acts on
+the queue as it appears with an empty search box and no toggles selected.
 
-The free-text search is dropped, but the **hidden gate is respected** — an
-already-hidden listing must never gain a second `hide` event, which would have
-polluted the append-only event log.
+The inherent gates are still respected — an already-hidden listing must never gain
+a second `hide` event (it would have polluted the append-only event log), an
+absorbed merge twin is never dismissed, and a listing excluded by the latest run is
+not in the queue. Only the search text and the toggles are dropped; those gates are
+built into `read_queue` rather than carried as toggles.
 
 `DISMISS_LIMIT` is a hard ceiling, not a page size. Every matching page is read
 until the total is covered; if the total exceeds the ceiling the route refuses and

@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import structlog
@@ -62,8 +63,9 @@ _DISMISS_LIMIT = 10_000
 #: Which surface a bulk dismissal came from — a small MACHINE fact, never listing
 #: text (mirrors `app.api.events.ACTION_CONTEXT`, which tags a per-listing hide as
 #: `surface="queue"`). This is what keeps the two kinds of hide distinguishable in
-#: the append-only audit log even though both append the same event KIND.
-_DISMISS_CONTEXT: dict[str, str] = {"surface": "queue_dismiss"}
+#: the append-only audit log even though both append the same event KIND. Frozen so a
+#: write path can never mutate the shared constant (`append_event` copies it anyway).
+_DISMISS_CONTEXT: Mapping[str, str] = MappingProxyType({"surface": "queue_dismiss"})
 
 
 async def _health_strip(
@@ -172,21 +174,31 @@ def _dismiss_over_limit() -> HTMLResponse:
 async def _queued_listing_ids(
     session: AsyncSession, params: Mapping[str, str], *, now: datetime
 ) -> list[int] | None:
-    """Every id the current predicate matches, or `None` when the queue is too large.
+    """Every id the default queue shows, or `None` when the queue is too large.
 
     Dismiss is a whole-queue action, so it must not inherit the page limit the
     fragment uses: this pages through `read_queue` until it has collected every
-    matched id. The predicate is the shared `parse_queue_query`, so it cannot drift
-    from what the table shows, with two deliberate exceptions — the free-text search
-    is dropped (a dismissal scoped to typed text would be ambiguous) and the hidden
-    toggle is forced off (an already-hidden listing must not gain a second event).
+    matched id. The predicate comes from the shared `parse_queue_query`, but the
+    free-text search and **every UI toggle** are dropped (`excluded`, `hidden`,
+    `saved`, `scope`), so dismiss acts on the queue as it appears with an empty search
+    box and no toggles selected. The inherent gates still apply unchanged — already-
+    hidden exclusion, absorbed-twin absorption and the latest-run exclusion — because
+    they are built into `read_queue` rather than carried as toggles.
 
     `_DISMISS_LIMIT` is a hard ceiling, not a page size. Above it the caller must
     abort without committing, which the `None` return signals: a "Dismiss all" that
     silently stopped at the cap would be a lie.
     """
     query = parse_queue_query(params)
-    base = replace(query, q=None, hidden=False, offset=0)
+    base = replace(
+        query,
+        q=None,
+        excluded=False,
+        hidden=False,
+        saved=False,
+        scope_search_id=None,
+        offset=0,
+    )
     ids: list[int] = []
     offset = 0
     while True:
@@ -329,17 +341,18 @@ async def queue_dismiss(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
-    """Hide every listing the user can currently see, and return the empty fragment.
+    """Hide every listing the default queue shows, and return the refreshed fragment.
 
-    Scope is the queue predicate with the free-text search dropped and the hidden
-    toggle forced off: what the user would see with an empty search box and the
-    default toggles. It is deliberately NOT "every row in `listings`" — an
-    already-hidden listing must not gain a second event, and an absorbed merge twin
-    must never be dismissed. If the matched set exceeds `_DISMISS_LIMIT` the action is
-    refused outright and nothing is committed.
+    Scope is the queue predicate with the free-text search and **every UI toggle**
+    dropped (`excluded`, `hidden`, `saved`, `scope`): what the user would see with an
+    empty search box and no toggles selected. It is deliberately NOT "every row in
+    `listings`" — an already-hidden listing must not gain a second event, an absorbed
+    merge twin must never be dismissed, and a listing excluded by the latest run is
+    not in the queue; those inherent gates stay in force. If the matched set exceeds
+    `_DISMISS_LIMIT` the action is refused outright and nothing is committed.
 
-    The page is read AFTER the write, so the returned fragment already shows the empty
-    queue; otherwise Dismiss would look like a no-op until the next reload.
+    The page is read AFTER the write, so the returned fragment already reflects the
+    dismissal; otherwise Dismiss would look like a no-op until the next reload.
     """
     now = datetime.now(UTC)
     ids = await _queued_listing_ids(session, request.query_params, now=now)

@@ -1,18 +1,29 @@
 """Dismiss the queue: one hide event per queued listing, and the fragment comes back empty.
 
-Scope is "what the user sees with no filters applied" — NOT "every row in `listings`".
-An already-hidden listing must not gain a second event, and an absorbed merge twin must
-never be dismissed (it is not in the queue).
+Scope is "what the user sees with an empty search box and no toggles selected": the
+free-text search and every UI toggle (`excluded`, `hidden`, `saved`, `scope`) are
+dropped — NOT "every row in `listings`". An already-hidden listing must not gain a
+second event, and an absorbed merge twin must never be dismissed (it is not in the
+queue).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import Listing, ListingDupe, ListingEvent, Source
+from app.db.models import (
+    FilterRule,
+    Listing,
+    ListingDupe,
+    ListingEvent,
+    ListingExclusion,
+    Run,
+    Search,
+    Source,
+)
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
@@ -217,3 +228,126 @@ async def test_dismiss_events_record_the_bulk_surface(client, session_factory) -
             )
         ).all()
     assert contexts == [{"surface": "queue_dismiss"}]
+
+
+async def test_dismiss_ignores_the_saved_toggle(client, session_factory) -> None:
+    """`?saved=1` must not narrow the dismissal to only the saved listings."""
+    await _register_sources(session_factory, "linkedin")
+    saved = await _seed_listing(session_factory, index=100)
+    await _seed_listing(session_factory, index=101)
+
+    await client.post(f"/listings/{saved}/events", data={"event_type": "save"})
+
+    await client.post("/queue/dismiss?saved=1")
+
+    # Both listings are hidden: the saved toggle was dropped, not honoured.
+    assert await _hide_count(session_factory) == 2
+
+
+async def test_dismiss_ignores_the_scope_toggle(client, session_factory) -> None:
+    """`?scope=N` must not narrow the dismissal to that search's scope."""
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=110)
+    out_of_scope = await _seed_listing(session_factory, index=111)
+
+    async with session_factory() as session:
+        scoped = Search(
+            name="Scoped", enabled=True, criteria_json={}, created_at=NOW, updated_at=NOW
+        )
+        other = Search(
+            name="Other", enabled=True, criteria_json={}, created_at=NOW, updated_at=NOW
+        )
+        session.add_all([scoped, other])
+        await session.flush()
+        rule = FilterRule(
+            search_id=int(other.id),
+            kind="location",
+            params_json={"location": "Cork"},
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        session.add(rule)
+        await session.flush()
+        # An OLD run excluded the listing through the other search's rule, so it is out
+        # of `scoped` but still in the default queue (the exclusion is not from the
+        # latest run). A newer run is the latest and excludes nothing.
+        old_run = Run(
+            search_id=None,
+            trigger="manual",
+            status="done",
+            started_at=NOW,
+            finished_at=NOW,
+        )
+        latest_run = Run(
+            search_id=None,
+            trigger="manual",
+            status="done",
+            started_at=NOW + timedelta(hours=1),
+            finished_at=NOW + timedelta(hours=1),
+        )
+        session.add_all([old_run, latest_run])
+        await session.flush()
+        session.add(
+            ListingExclusion(
+                listing_id=out_of_scope,
+                run_id=int(old_run.id),
+                rule_id=str(int(rule.id)),
+                created_at=NOW,
+            )
+        )
+        await session.commit()
+        scope_id = int(scoped.id)
+
+    response = await client.post(f"/queue/dismiss?scope={scope_id}")
+
+    assert response.status_code == 200
+    # Both listings are hidden: the scope toggle was dropped, not honoured.
+    assert await _hide_count(session_factory) == 2
+
+
+async def test_dismiss_ignores_the_excluded_toggle_and_spares_excluded_rows(
+    client, session_factory
+) -> None:
+    """`?excluded=1` must not drag latest-run-excluded rows into the dismissal.
+
+    This is the over-dismissal direction: honouring the excluded toggle would hide
+    listings that are not in the queue at all, not merely leave some behind.
+    """
+    await _register_sources(session_factory, "linkedin")
+    excluded = await _seed_listing(session_factory, index=120)
+    visible = await _seed_listing(session_factory, index=121)
+
+    async with session_factory() as session:
+        run = Run(
+            search_id=None,
+            trigger="manual",
+            status="done",
+            started_at=NOW,
+            finished_at=NOW,
+        )
+        session.add(run)
+        await session.flush()
+        session.add(
+            ListingExclusion(
+                listing_id=excluded,
+                run_id=int(run.id),
+                created_at=NOW,
+            )
+        )
+        await session.commit()
+
+    response = await client.post("/queue/dismiss?excluded=1")
+
+    assert response.status_code == 200
+    async with session_factory() as session:
+        hides_by_listing = dict(
+            (
+                await session.execute(
+                    select(ListingEvent.listing_id, func.count())
+                    .where(ListingEvent.event_type == "hide")
+                    .group_by(ListingEvent.listing_id)
+                )
+            ).all()
+        )
+    # The excluded row is not in the queue, so it must not have gained a hide event.
+    assert hides_by_listing == {visible: 1}
