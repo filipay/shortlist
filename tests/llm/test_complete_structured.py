@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app.config import Settings
+from app.config import Settings, settings
 from app.domain.schemas.probe import ProbeResult
 from app.llm import opencode_server
 from app.llm.base import (
@@ -46,6 +46,7 @@ from app.llm.contract import (
     MESSAGE_PATH,
     SESSION_MODEL_FIELDS,
     SESSION_PATH,
+    STRUCTURED_ERROR_NAME,
 )
 from app.llm.opencode_server import OpenCodeServerBackend, parse_providers
 
@@ -92,20 +93,34 @@ class Recorder:
 
     Records `(method, url, json_body)` for every call so a test can assert the
     exact request sequence and the emitted body. Nothing here opens a socket.
+
+    The knobs are per-endpoint on purpose: `message_status` / `message_error`
+    apply only to the completion POST, so a test can make the session succeed and
+    the completion fail (or vice versa) without conflating the two.
     """
 
     def __init__(
         self,
         *,
         message_body: Any = None,
-        status_code: int = 200,
+        session_status: int = 200,
+        message_status: int = 200,
+        get_status: int = 200,
         error: BaseException | None = None,
+        message_error: BaseException | None = None,
+        json_error: BaseException | None = None,
+        text: str = "",
     ) -> None:
         self.requests: list[tuple[str, str, Any]] = []
         self.client_kwargs: list[dict[str, Any]] = []
         self._message_body = message_body
-        self._status_code = status_code
+        self._session_status = session_status
+        self._message_status = message_status
+        self._get_status = get_status
         self._error = error
+        self._message_error = message_error
+        self._json_error = json_error
+        self._text = text
 
     def module(self) -> types.SimpleNamespace:
         recorder = self
@@ -115,7 +130,13 @@ class Recorder:
                 self.status_code = status_code
                 self._body = body
 
+            @property
+            def text(self) -> str:
+                return recorder._text
+
             def json(self) -> Any:
+                if recorder._json_error is not None:
+                    raise recorder._json_error
                 return self._body
 
         class FakeClient:
@@ -132,17 +153,29 @@ class Recorder:
                 recorder.requests.append(("GET", url, None))
                 if recorder._error is not None:
                     raise recorder._error
-                return FakeResponse(recorder._status_code, {"healthy": True})
+                return FakeResponse(
+                    recorder._get_status, {"healthy": True, "version": "1.18.31"}
+                )
 
             async def post(self, url: str, json: Any = None) -> Any:
                 recorder.requests.append(("POST", url, json))
                 if recorder._error is not None:
                     raise recorder._error
                 if url == SESSION_PATH:
-                    return FakeResponse(recorder._status_code, {"id": LIVE_SESSION_ID})
-                return FakeResponse(recorder._status_code, recorder._message_body)
+                    return FakeResponse(
+                        recorder._session_status, {"id": LIVE_SESSION_ID}
+                    )
+                if recorder._message_error is not None:
+                    raise recorder._message_error
+                return FakeResponse(recorder._message_status, recorder._message_body)
 
         return types.SimpleNamespace(AsyncClient=FakeClient, BasicAuth=httpx.BasicAuth)
+
+
+def _message_requests(recorder: Recorder) -> list[tuple[str, str, Any]]:
+    """Only the completion POSTs — the requests the retry loop governs."""
+    target = MESSAGE_PATH.format(session_id=LIVE_SESSION_ID)
+    return [entry for entry in recorder.requests if entry[1] == target]
 
 
 def _backend(
@@ -348,20 +381,22 @@ async def test_a_transport_failure_is_a_value_never_an_exception(
 
     assert result.ok is False
     assert result.status == "error"
-    assert result.error_kind == "ConnectError"
+    # D-52: the operator-facing cause is `unreachable`, not the exception class name.
+    assert result.error_kind == "unreachable"
     assert result.data is None
 
 
 async def test_a_non_200_message_response_is_a_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder(message_body={}, status_code=500)
+    recorder = Recorder(message_body={}, message_status=500)
     backend = _backend(monkeypatch, recorder)
 
     result = await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
 
     assert result.ok is False
     assert result.status == "error"
+    assert result.error_kind == "http_500"
     assert "500" in (result.error or "")
 
 
@@ -378,6 +413,218 @@ async def test_an_unresolvable_model_fails_loud(
     assert "deepseek-v4.1-flash" in (result.error or "")
     # Fail-loud means nothing was sent: no session, no message.
     assert recorder.requests == []
+
+
+# --- complete_structured: the classification matrix (Task 1 / D-52) ------------
+
+
+def _structured_error_body(*, retries: int, message: str) -> dict[str, Any]:
+    """A 200 whose `info.error` is the `StructuredOutputError` envelope (P7)."""
+    return {
+        "info": {
+            "providerID": "opencode-go",
+            "modelID": "deepseek-v4.1-flash",
+            "agent": "build",
+            "tokens": {
+                "input": 1,
+                "output": 2,
+                "reasoning": 0,
+                "cache": {"read": 0, "write": 0},
+            },
+            "error": {
+                "name": STRUCTURED_ERROR_NAME,
+                "data": {"message": message, "retries": retries},
+            },
+        },
+        "parts": [],
+    }
+
+
+async def test_a_structured_output_error_is_invalid_with_the_servers_attempt_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`attempts` comes from `info.error.data.retries`, not the client loop alone."""
+    recorder = Recorder(
+        message_body=_structured_error_body(retries=1, message="schema retries exhausted")
+    )
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.attempts == 1
+    assert "schema retries exhausted" in (result.error or "")
+    assert result.data is None
+
+
+async def test_a_validation_error_is_invalid_with_the_validation_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = {
+        "info": {
+            "providerID": "opencode-go",
+            "modelID": "deepseek-v4.1-flash",
+            "structured": {"acknowledged": "not-a-bool"},
+        },
+        "parts": [],
+    }
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    assert result.error
+    assert result.attempts == len(_message_requests(recorder))
+
+
+async def test_a_connect_error_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = Recorder(message_error=httpx.ConnectError("connection refused"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert result.error_kind == "unreachable"
+    # attempts is the client's own issued-request count when the server cannot
+    # supply one.
+    assert result.attempts == len(_message_requests(recorder)) == 2
+
+
+async def test_a_connect_timeout_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure to ESTABLISH a connection is 'unreachable', not a server timeout."""
+    recorder = Recorder(message_error=httpx.ConnectTimeout("connect timed out"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert result.error_kind == "unreachable"
+
+
+async def test_a_read_timeout_is_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = Recorder(message_error=httpx.ReadTimeout("slow response"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "timeout"
+    assert result.error_kind == "timeout"
+
+
+async def test_a_non_200_yields_http_kind_and_a_bounded_excerpt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(message_status=500, text="x" * 1000)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.status == "error"
+    assert result.error_kind == "http_500"
+    assert "x" * 201 not in (result.error or ""), "the body excerpt is unbounded"
+
+
+async def test_an_unparseable_json_200_is_an_error_with_the_parse_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(json_error=ValueError("not json"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert "ValueError" in (result.error or "")
+
+
+async def test_the_client_loop_is_bounded_by_the_retries_argument(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`retries=3` issues at most 3 completion requests, and `attempts` is honest."""
+    recorder = Recorder(message_error=httpx.ConnectError("refused"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=3
+    )
+
+    assert len(_message_requests(recorder)) == 3
+    assert result.attempts == 3
+
+
+async def test_a_schema_failure_is_not_retried_client_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The server already ran `format.retryCount`; the client must not double-retry."""
+    recorder = Recorder(
+        message_body=_structured_error_body(retries=2, message="exhausted")
+    )
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=3
+    )
+
+    assert len(_message_requests(recorder)) == 1
+    assert result.attempts == 2  # the SERVER's count, not the client loop's
+
+
+async def test_the_sent_body_carries_the_configured_server_retry_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(message_body=LIVE_MESSAGE_BODY)
+    backend = _backend(monkeypatch, recorder)
+
+    await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=3
+    )
+
+    emitted = _message_requests(recorder)[0][2]
+    assert (
+        emitted[FORMAT_FIELD][FORMAT_RETRY_FIELD]
+        == settings.opencode_structured_retry_count
+    )
+
+
+async def test_no_failure_branch_leaks_the_raw_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG"
+    body = _structured_error_body(retries=0, message="schema failed")
+    body["info"]["unexpected_provider_key"] = sentinel
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is False
+    assert result.raw is None, "a failure branch must not carry the response body"
+    assert sentinel not in repr(vars(result))
 
 
 # --- discovery accepts the live shape (the P1 fix) -----------------------------
