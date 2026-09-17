@@ -575,6 +575,8 @@ async def _finish(
     stage_log: list[dict[str, Any]] | None = None,
     reason: str | None = None,
     reason_counts: dict[str, Any] | None = None,
+    llm_calls: int | None = None,
+    llm_tokens: int | None = None,
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -609,6 +611,16 @@ async def _finish(
         # sentence is rendered FROM, never a stored sentence.
         run.reason = reason
         run.reason_counts_json = reason_counts or None
+        # D-49 / Phase-5 SEAM. This is the writer Phase 5's ranking caller will use,
+        # fed by `llm_call_repo.llm_totals_for_run`. Phase 3 deliberately wires NO
+        # caller: one would violate D-49 and break the `LlmCall == 0` guard in
+        # `tests/pipeline/test_filter_stage.py`. Assigned only when supplied, so a
+        # later non-LLM run never zeros a count an LLM run recorded.
+        if llm_calls is not None:
+            run.llm_calls = llm_calls
+        if llm_tokens is not None:
+            run.llm_tokens = llm_tokens
+        # `ranked_count` is deliberately NOT touched — Phase 5 owns it.
         await session.commit()
 
 
