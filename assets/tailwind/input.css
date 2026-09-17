@@ -691,6 +691,36 @@
   .listing-hide-button:hover {
     background-color: var(--color-surface-2);
   }
+
+  /* Queue row provenance links (2026-09-17). Tailwind's preflight sets
+     `a { color: inherit; text-decoration: inherit }`, so without these rules the
+     posting links would be indistinguishable from the text around them. */
+  .listing-title-link {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .listing-title-link:hover {
+    text-decoration: underline;
+  }
+  .source-link {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .source-link:hover {
+    text-decoration: underline;
+  }
+  .source-apply {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .source-apply:hover {
+    background-color: var(--color-surface);
+  }
 }
 
 /* ---------------------------------------------------------------------------

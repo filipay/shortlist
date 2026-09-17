@@ -182,10 +182,15 @@ async def test_queue_order_is_deterministic_when_first_seen_at_is_equal(
         "two identical requests must differ only in the new-since-last-visit signal"
     )
 
-    titles = re.findall(r'<td class="listing-title">([^<]+)</td>', first.text)
+    # The title cell now optionally wraps the title in the posting anchor, so the
+    # extraction tolerates the anchor rather than dropping it; the asserted titles
+    # are unchanged.
+    titles = re.findall(r'<td class="listing-title">(?:<a [^>]*>)?([^<]+)', first.text)
     assert titles == ["Platform Engineer", "Senior Python Engineer"], (
         "expected id-descending order as the tie-break on equal first_seen_at"
     )
-    assert titles == re.findall(r'<td class="listing-title">([^<]+)</td>', second.text), (
+    assert titles == re.findall(
+        r'<td class="listing-title">(?:<a [^>]*>)?([^<]+)', second.text
+    ), (
         "the order must not change between two identical requests"
     )
