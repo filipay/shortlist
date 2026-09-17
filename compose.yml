@@ -27,4 +27,12 @@ services:
       - DEDUP_POSTED_WINDOW_DAYS=${DEDUP_POSTED_WINDOW_DAYS:-90}
       - STALE_AFTER_DAYS=${STALE_AFTER_DAYS:-14}
       - QUEUE_PAGE_SIZE=${QUEUE_PAGE_SIZE:-25}
+      # Phase-3 opencode budget, forwarded for the same reason as the Phase-2
+      # knobs above. OPENCODE_TIMEOUT_SECONDS had never been forwarded at all —
+      # the identical defect class — so it is fixed here alongside its three
+      # siblings. Every default matches app/config.py exactly.
+      - OPENCODE_TIMEOUT_SECONDS=${OPENCODE_TIMEOUT_SECONDS:-5}
+      - OPENCODE_COMPLETION_TIMEOUT_SECONDS=${OPENCODE_COMPLETION_TIMEOUT_SECONDS:-120}
+      - OPENCODE_MAX_RETRIES=${OPENCODE_MAX_RETRIES:-2}
+      - OPENCODE_STRUCTURED_RETRY_COUNT=${OPENCODE_STRUCTURED_RETRY_COUNT:-2}
     command: ["./entrypoint.sh"]
