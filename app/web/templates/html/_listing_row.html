@@ -45,7 +45,7 @@
   <td class="listing-company">{{ row.company }}</td>
   <td class="listing-location">{{ row.location }}</td>
   <td class="listing-source">
-    {% for link in row.source_links %}<a class="source-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.source }}</a>{% if link.employer_url %} <a class="source-apply" href="{{ link.employer_url }}" target="_blank" rel="noopener noreferrer">Apply</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    {% for link in row.source_links %}{% if link.url %}<a class="source-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.source }}</a>{% else %}{{ link.source }}{% endif %}{% if link.employer_url %} <a class="source-apply" href="{{ link.employer_url }}" target="_blank" rel="noopener noreferrer">Apply</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
   </td>
   <td class="listing-posted">{{ row.posted | format_datetime }}</td>
   {% if show_excluded %}

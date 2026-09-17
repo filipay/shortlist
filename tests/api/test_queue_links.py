@@ -185,7 +185,44 @@ async def test_every_external_link_is_target_blank_and_rel_noopener(
     )
 
     response = await client.get("/")
+    body = response.text
 
-    for anchor in re.findall(r"<a [^>]*href=\"https?://[^\"]+\"[^>]*>", response.text):
+    # Every href in the page is either an absolute web URL or a root-relative path.
+    # A `javascript:`/`data:` href would satisfy neither, which the narrower
+    # `https?://` anchor scan below cannot even see.
+    hrefs = re.findall(r'href="([^"]*)"', body)
+    assert hrefs, "the queue page must contain at least one link"
+    for href in hrefs:
+        assert href.startswith(("http://", "https://")) or (
+            href.startswith("/") and not href.startswith("//")
+        ), href
+
+    for anchor in re.findall(r"<a [^>]*href=\"https?://[^\"]+\"[^>]*>", body):
         assert 'target="_blank"' in anchor, anchor
         assert 'rel="noopener noreferrer"' in anchor, anchor
+
+
+async def test_a_non_web_source_url_renders_the_source_name_as_plain_text(
+    client, session_factory
+) -> None:
+    """The repository gate empties a `javascript:` URL; the row must then emit no anchor."""
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=7)
+    async with session_factory() as session:
+        link = await session.scalar(
+            select(ListingSource).where(ListingSource.listing_id == listing_id)
+        )
+        assert link is not None
+        link.source_url = "javascript:alert(1)"
+        link.canonical_source_url = "javascript:alert(1)"
+        await session.commit()
+
+    response = await client.get("/")
+
+    assert response.status_code == 200
+    assert "javascript:" not in response.text
+    assert 'class="source-link"' not in response.text
+    assert re.search(
+        r'<td class="listing-source">\s*linkedin\s*</td>', response.text
+    ), response.text
+

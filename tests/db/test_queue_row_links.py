@@ -263,3 +263,85 @@ async def test_the_page_reads_provenance_in_one_query(
             )
 
     assert len(statements) == 1, statements
+
+
+async def _set_link_urls(
+    session_factory: async_sessionmaker[AsyncSession],
+    listing_id: int,
+    *,
+    source_url: str,
+    canonical_source_url: str,
+) -> None:
+    """Pin both URL columns on the listing's single source row."""
+    async with session_factory() as session:
+        link = await session.scalar(
+            select(ListingSource).where(ListingSource.listing_id == listing_id)
+        )
+        assert link is not None
+        link.source_url = source_url
+        link.canonical_source_url = canonical_source_url
+        await session.commit()
+
+
+async def test_a_non_web_scheme_source_url_is_not_a_link(session_factory) -> None:
+    """`source_url` is stored raw and `canonical_url` is not a scheme gate.
+
+    A `javascript:` board URL must reach the row as no link at all, so the template
+    renders the source name plainly rather than a live `href` — Jinja autoescaping
+    does not neutralise a scheme.
+    """
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=21)
+    await _set_link_urls(
+        session_factory,
+        listing_id,
+        source_url="javascript:alert(1)",
+        canonical_source_url="javascript:alert(1)",
+    )
+
+    row = await _read_one(session_factory, listing_id)
+
+    assert row.source_links == (SourceLink(source="linkedin", url=""),)
+
+
+async def test_a_non_web_scheme_board_url_keeps_a_valid_employer_link(
+    session_factory,
+) -> None:
+    """Sanitising the board URL to empty must NOT suppress the employer's posting.
+
+    `canonical_url("")` is `""`, which still differs from the employer page, so the
+    existing like-for-like comparison keeps the Apply link.
+    """
+    await _register_sources(session_factory, "indeed")
+    listing_id = await _seed_listing(session_factory, source="indeed", index=22)
+    await _set_link_urls(
+        session_factory,
+        listing_id,
+        source_url="data:text/html,<script>alert(1)</script>",
+        canonical_source_url="https://employer.example.com/careers/22",
+    )
+
+    row = await _read_one(session_factory, listing_id)
+
+    assert row.source_links == (
+        SourceLink(
+            source="indeed",
+            url="",
+            employer_url="https://employer.example.com/careers/22",
+        ),
+    )
+
+
+async def test_a_non_web_scheme_canonical_url_reports_no_title_link(
+    session_factory,
+) -> None:
+    """The title anchor uses the same gate, so a non-web `canonical_url` is None."""
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(
+        session_factory, index=23, canonical_url="javascript:alert(1)"
+    )
+
+    row = await _read_one(session_factory, listing_id)
+
+    assert row.url is None
+

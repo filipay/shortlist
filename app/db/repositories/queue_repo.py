@@ -43,7 +43,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from sqlalchemy import (
     ColumnElement,
@@ -388,6 +388,21 @@ async def read_queue(
     )
 
 
+def _http_url(value: str | None) -> str:
+    """Return `value` only when it is an http(s) URL, else "".
+
+    `listing_sources.source_url` is stored raw and `canonical_url` is not a scheme
+    gate, so a non-web scheme must render as no link at all: the row falls back to
+    a plain, unlinked title. Jinja autoescaping does not block `javascript:`.
+
+    The ORIGINAL string is returned unchanged when allowed — this is a gate, not a
+    normalisation, so tracking parameters and casing survive exactly as stored.
+    """
+    if urlsplit(value or "").scheme.casefold() not in {"http", "https"}:
+        return ""
+    return value or ""
+
+
 async def _enrich(
     session: AsyncSession,
     ids: Sequence[int],
@@ -427,8 +442,11 @@ async def _enrich(
             .order_by(ListingSource.listing_id, ListingSource.source)
         )
     ).all():
-        board_url = str(source_url or "")
-        employer_url = str(canonical_source_url or "")
+        # Both URLs are gated to http(s) before the comparison below. An empty
+        # board URL therefore cannot suppress a valid employer link: `canonical_url("")`
+        # is `""`, which still differs from the employer page.
+        board_url = _http_url(source_url)
+        employer_url = _http_url(canonical_source_url)
         # `source_url` is stored raw while `canonical_source_url` is the normalised
         # `canonical_url(source_url, direct_url)`, so compare the board page's
         # normalised form against it: raw-vs-normalised would call one page two
@@ -502,7 +520,7 @@ async def _enrich(
                 saved=state.saved,
                 hidden=state.hidden,
                 rules=tuple(chips),
-                url=listing.canonical_url or None,
+                url=_http_url(listing.canonical_url) or None,
                 source_links=links,
             )
         )
