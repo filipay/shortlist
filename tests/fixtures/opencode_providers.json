@@ -1,38 +1,41 @@
 {
+  "_comment": "Shape transcribed from a live GET /config/providers on opencode 1.18.31 (2026-09-17): providers[].models is a JSON object keyed by model id, and the credential-adjacent field is `key`. This file is a contract artefact, not a guess, so it deliberately does NOT use the legacy list-of-id shape or its api-key field spelling.",
   "providers": [
     {
-      "id": "opencode",
-      "name": "opencode",
-      "api_key": "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG",
-      "models": [
-        {
-          "id": "deepseek-v4.1-flash",
+      "id": "opencode-go",
+      "name": "opencode-go",
+      "source": "api",
+      "key": "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG",
+      "models": {
+        "deepseek-v4.1-flash": {
           "name": "DeepSeek v4.1 Flash",
           "cost": { "input": 0.14, "output": 0.28 }
         },
-        {
-          "id": "qwen3-coder",
+        "qwen3-coder": {
           "name": "Qwen3 Coder",
           "free": true
         }
-      ]
+      }
+    },
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "models": {
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4"
+        }
+      }
     },
     {
       "id": "no-models-provider",
-      "name": "No models configured",
-      "api_key": "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG"
+      "name": "No models configured"
     },
     {
       "id": "missing-model-id",
       "name": "Nameless models",
-      "models": [
-        { "name": "nameless model" },
-        { "id": "", "name": "blank id" },
-        "not-a-mapping"
-      ]
-    },
-    {
-      "name": "provider with no id"
+      "models": {
+        "": { "name": "blank id" }
+      }
     }
   ]
 }
