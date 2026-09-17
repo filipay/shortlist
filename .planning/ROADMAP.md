@@ -128,9 +128,31 @@ Plans:
   3. A CI contract test reads the installed server's `GET /doc` and fails loudly if the structured-output field name changes — resolving and pinning the `format` vs `outputFormat` ambiguity.
   4. Untrusted listing text reaches the model only as user content (never the system prompt) and tools are disabled by default.
 
-**Plans**: TBD
+**Plans:** 7 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Tracer: a schema-constrained call completes through the port, and the operator can run it
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — The pinned `/doc` contract: default-lane snapshot + operator live diff
+- [ ] 03-03-PLAN.md — Schema-violation degradation: explicit, retried outcomes + salvage
+- [ ] 03-04-PLAN.md — Per-call telemetry: migration 0003 `llm_calls.server_version` + the audit writer
+- [ ] 03-05-PLAN.md — Ceilings are configuration: Settings guards, compose passthrough, `.env.example`
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-06-PLAN.md — Trust boundary: tools denied by default, system prompt constant, import discipline
+- [ ] 03-07-PLAN.md — The finding recorded and the counter seam
 
 **Research flag:** resolve the `format` vs `outputFormat` field name against the user's own running server; plan the `/doc` contract test as a deliverable, not an assumption.
+**Resolution (recorded during planning, 2026-09-17):** the field is **`format`** and the validated
+payload arrives at **`info.structured`** (not `info.structured_output`) — both verified against the
+live opencode 1.18.31 `/doc`. Plan 03-02 pins both, with a committed snapshot, a default-lane
+negative control, and an operator live diff. `ARCHITECTURE.md` §6.2 and `STACK.md` §Q7 are
+wire-inaccurate on the response name; plan 03-02 carries the correction into the runbook.
 
 ### Phase 4: CV Fact Store + LaTeX Compile Spike
 
@@ -231,7 +253,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
-| 3. LLM Port + Structured Output | 0/0 | Not started | - |
+| 3. LLM Port + Structured Output | 0/7 | Planned | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |

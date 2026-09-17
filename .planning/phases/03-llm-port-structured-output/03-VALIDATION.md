@@ -53,29 +53,33 @@ created: "2026-09-17"
 
 ## Per-Task Verification Map
 
-*Task ID / Plan / Wave columns are seeded as `—` and are filled in once `03-*-PLAN.md` files exist.*
+*Filled 2026-09-17 from `03-01-PLAN.md` … `03-07-PLAN.md`.*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| — | — | — | PLAT-02 | T-3-01, T-3-02 | `complete_structured` returns a validated typed object from a stubbed 200 response | unit | `.venv/bin/python -m pytest -q tests/llm/test_complete_structured.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-02 | A `StructuredOutputError` envelope → `ok=False`, `status="invalid"`, `attempts` from `data.retries` | unit | `.venv/bin/python -m pytest -q tests/llm/test_complete_structured.py::test_structured_output_error_is_invalid -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-02 | Transport failure → `status="error"` / `error_kind="unreachable"`, never raises | unit | `.venv/bin/python -m pytest -q tests/llm/test_complete_structured.py::test_transport_failure_is_a_value -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-02 | Truncated JSON salvages via `from_json(allow_partial=True)` + tolerated defaults | unit | `.venv/bin/python -m pytest -q tests/llm/test_salvage.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-03 | The selftest route declares `current_user` and stays green in the seam walk | integration | `.venv/bin/python -m pytest -q tests/test_auth_seam.py -x` | ✅ guard | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-02, T-3-03 | One selftest writes exactly one `llm_calls` row with `run_id IS NULL`, `purpose='probe'`, and **no** `runs` row | integration | `.venv/bin/python -m pytest -q tests/api/test_llm_selftest.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-03 | D-52's detail is rendered (status, attempts, latency, validation message) — not a bare badge | integration | `.venv/bin/python -m pytest -q tests/api/test_llm_selftest.py::test_the_result_shows_cause_and_attempt_count -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-03 | `/health`'s shape is unchanged by the new work | integration | `.venv/bin/python -m pytest -q tests/api/test_health.py -x` | ✅ guard | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-01, T-3-04 | Untrusted text cannot reach `system`; `tools` is denied by default | unit + live | `.venv/bin/python -m pytest -q tests/llm/test_trust_boundary.py -x` + the selftest | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-01 | `parse_providers` accepts BOTH the list shape and the live dict shape | unit | `.venv/bin/python -m pytest -q tests/llm/test_discovery_redaction.py -x` | ✅ extend | ⬜ pending |
-| — | — | — | PLAT-02 | T-3-01 | No `httpx`/`subprocess` reachable from the LLM call path outside `app/llm` | guard | `.venv/bin/python -m pytest -q tests/test_import_discipline.py -x` | ✅ extend | ⬜ pending |
-| — | — | — | PLAT-05 | T-3-01 | Builder emits exactly the pinned names; snapshot contains them; negative control | unit (default lane) | `.venv/bin/python -m pytest -q tests/llm/test_contract_snapshot.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-05 | T-3-01 | Live `/doc` diffs clean against the committed slice | live (operator) | `.venv/bin/python -m pytest -q -m live tests/llm/test_contract_live.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | PLAT-05 | T-3-01 | The default lane never runs the live test | guard | `.venv/bin/python -m pytest -q tests/llm --collect-only -q` asserting the live file's tests are deselected | ❌ W0 | ⬜ pending |
-| — | — | — | D-12 | T-3-05 | `server_version` round-trips: migration 0003 → ORM → `record_llm_call` → read back | integration | `.venv/bin/python -m pytest -q tests/db/test_migration_contract.py tests/db/test_orm_drift.py tests/db/test_llm_call_repo.py -x` | ❌ W0 (repo test) | ⬜ pending |
-| — | — | — | D-12 | T-3-05 | Both new ceilings are `Settings` fields and are env-tunable | unit | `.venv/bin/python -m pytest -q tests/test_config.py -x` | ✅ extend | ⬜ pending |
-| — | — | — | §6.3 | T-3-04 | `instruction_like` / `patterns_matched` persist onto `listings.quality_signals_json` | integration | `.venv/bin/python -m pytest -q tests/pipeline/test_injection_finding.py -x` | ❌ W0 | ⬜ pending |
-| — | — | — | §6.3 | T-3-04 | The PII/JSON-column allow-list is unchanged (no new blob) | guard | `.venv/bin/python -m pytest -q tests/db/test_no_pii_columns.py -x` | ✅ unchanged | ⬜ pending |
-| — | — | — | D-49 | T-3-02 | `run_pipeline` still writes **zero** `llm_calls` rows | guard | `.venv/bin/python -m pytest -q tests/pipeline/test_filter_stage.py -x` | ✅ existing (`:197`) | ⬜ pending |
+| 01-T1 (tracer) | 03-01 | 1 | PLAT-02 | T-3-01, T-3-05 | `complete_structured` returns a validated typed object from a stubbed 200 response; builder emits the pinned wire shape | unit + tracer | `.venv/bin/python -m pytest -q tests/llm/test_complete_structured.py -x` | ❌ W0 | ⬜ pending |
+| 01-T2 | 03-01 | 1 | PLAT-02 | T-3-04 | `parse_providers` accepts BOTH the list shape and the live dict shape; the live `key` field is the scanned sentinel | unit | `.venv/bin/python -m pytest -q tests/llm/test_discovery_redaction.py -x` | ✅ extend | ⬜ pending |
+| 01-T3 | 03-01 | 1 | PLAT-02 | T-3-01, T-3-06 | One selftest writes exactly one `llm_calls` row with `run_id IS NULL`, `purpose='probe'`, and **no** `runs` row; D-52's detail is rendered | integration | `.venv/bin/python -m pytest -q tests/api/test_llm_selftest.py -x` | ❌ W0 | ⬜ pending |
+| 01-T3 | 03-01 | 1 | PLAT-02 | T-3-03 | The selftest route declares `current_user` and stays green in the seam walk | integration | `.venv/bin/python -m pytest -q tests/test_auth_seam.py -x` | ✅ guard | ⬜ pending |
+| 01-T3 | 03-01 | 1 | PLAT-02 | T-3-07 | `/health`'s shape is unchanged by the new work | integration | `.venv/bin/python -m pytest -q tests/api/test_health.py -x` | ✅ guard | ⬜ pending |
+| 01-T3 | 03-01 | 1 | D-49 | T-3-22 | `run_pipeline` still writes **zero** `llm_calls` rows | guard | `.venv/bin/python -m pytest -q tests/pipeline/test_filter_stage.py -x` | ✅ existing (`:197`) | ⬜ pending |
+| 02-T1 | 03-02 | 2 | PLAT-05 | T-3-09, T-3-10 | Builder emits exactly the pinned names; snapshot contains them; negative control over raw fixture text; guard-can-fail companion; default lane cannot run the live file | unit (default lane) | `.venv/bin/python -m pytest -q tests/llm/test_contract_snapshot.py -x` | ❌ W0 | ⬜ pending |
+| 02-T2 | 03-02 | 2 | PLAT-05 | T-3-11, T-3-12 | Live `/doc` diffs clean against the committed slice; deselectable in the default lane, collectable under `-m live` | live (operator) | `.venv/bin/python -m pytest -q -m live tests/llm/test_contract_live.py -x` | ❌ W0 | ⬜ pending |
+| 03-T1 | 03-03 | 2 | PLAT-02 | T-3-14, T-3-05 | A `StructuredOutputError` envelope → `ok=False`, `status="invalid"`, `attempts` from `data.retries`; transport failure → `status="error"` / `error_kind="unreachable"`, never raises | unit | `.venv/bin/python -m pytest -q tests/llm/test_complete_structured.py -x` | ❌ W0 | ⬜ pending |
+| 03-T2 | 03-03 | 2 | PLAT-02 | T-3-01 | Truncated JSON salvages via `from_json(allow_partial=True)` + tolerated defaults; an untolerated mismatch still fails loudly | unit | `.venv/bin/python -m pytest -q tests/llm/test_salvage.py -x` | ❌ W0 | ⬜ pending |
+| 04-T1 | 03-04 | 2 | PLAT-02 | T-3-09 | One-way-door decision gate before the schema change (checkpoint, not a test) | checkpoint | operator decision — no command | n/a | ⬜ pending |
+| 04-T2 | 03-04 | 2 | D-12 | T-3-05, T-3-15 | Migration 0003 → ORM → migrated DDL agree; `llm_calls` keeps zero JSON columns; guards updated deliberately | integration | `.venv/bin/python -m pytest -q tests/db/test_migration_contract.py tests/db/test_orm_drift.py tests/db/test_no_pii_columns.py -x` | ✅ guards | ⬜ pending |
+| 04-T3 | 03-04 | 2 | D-12, PLAT-02 | T-3-16 | `server_version` round-trips: `record_llm_call` → `latest_probe`; `purpose`/`status` validated pre-SQL; never commits | integration | `.venv/bin/python -m pytest -q tests/db/test_llm_call_repo.py -x` | ❌ W0 | ⬜ pending |
+| 05-T1 | 03-05 | 2 | PLAT-02 | T-3-06 | All three new ceilings are `Settings` fields, are in both guard tuples, and are env-tunable | unit | `.venv/bin/python -m pytest -q tests/test_config.py -x` | ✅ extend | ⬜ pending |
+| 05-T2 | 03-05 | 2 | PLAT-02 | T-3-06, T-3-17 | Every new `opencode_*` key is forwarded by `compose.yml` and documented in `.env.example` | manifest | `.venv/bin/python -m pytest -q tests/test_deploy_manifest.py -x` | ✅ extend | ⬜ pending |
+| 06-T1 | 03-06 | 3 | PLAT-02 (criterion 4) | T-3-01, T-3-03 | Untrusted text cannot reach `system`; a default session carries a deny-only `permission` ruleset; a wildcard `tools` key is rejected; text-only parts | unit + guard | `.venv/bin/python -m pytest -q tests/llm/test_trust_boundary.py -x` | ❌ W0 | ⬜ pending |
+| 06-T2 | 03-06 | 3 | PLAT-02 | T-3-18 | No `httpx` reachable from the LLM call path outside `app/llm`; `subprocess` absent outside `app/llm`; `app/sources` excluded by construction | guard | `.venv/bin/python -m pytest -q tests/test_import_discipline.py -x` | ✅ extend | ⬜ pending |
+| 06-T3 | 03-06 | 3 | PLAT-02 | T-3-19 | The returned `part_types` / `info_keys` are rendered (type names only) — the observation that closes Open Question Q1 | integration | `.venv/bin/python -m pytest -q tests/api/test_llm_selftest.py -x` | ❌ W0 | ⬜ pending |
+| 07-T1 | 03-07 | 3 | PLAT-02 | T-3-21 | `quality_signals` is a typed, counts-only field; an absent signal is `None`, never `{}`; `normalise_listing` stays pure | unit | `.venv/bin/python -m pytest -q tests/pipeline/test_injection_finding.py -x` | ❌ W0 | ⬜ pending |
+| 07-T2 | 03-07 | 3 | §6.3 | T-3-01, T-3-05 | `instruction_like` / `patterns_matched` persist onto `listings.quality_signals_json`; a clean listing leaves it NULL; the payload carries no matched text | integration | `.venv/bin/python -m pytest -q tests/pipeline/test_injection_finding.py -x` | ❌ W0 | ⬜ pending |
+| 07-T2 | 03-07 | 3 | §6.3 | T-3-23 | The PII/JSON-column allow-list is unchanged (no new blob); the queue assertions are unchanged | guard | `.venv/bin/python -m pytest -q tests/db/test_no_pii_columns.py tests/api/test_queue_links.py -x` | ✅ unchanged | ⬜ pending |
+| 07-T3 | 03-07 | 3 | D-49 | T-3-22 | `_finish` persists `llm_calls`/`llm_tokens` only when supplied; `ranked_count` untouched; the pipeline still writes zero `llm_calls` rows | unit | `.venv/bin/python -m pytest -q tests/pipeline/test_finish_llm_counters.py tests/pipeline/test_filter_stage.py -x` | ❌ W0 (new) | ⬜ pending |
+
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
