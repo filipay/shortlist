@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-09-17T22:49:52.400Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-09-17T23:08:14.823Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: c887c31074585faf007c4c7ea219fff7047753f2
+state_head: f0df570a062d60c715ca240a7584d8f31431e6dd
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-17 — Phase 03 execution started
 
@@ -82,6 +82,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P03 | 9 min | 2 tasks | 3 files |
 | Phase 03 P04 | 8 min | 3 tasks | 7 files |
 | Phase 03 P05 | 5 min | 2 tasks | 3 files |
+| Phase 03 P06 | 13 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -182,6 +183,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-05: the three Phase-3 opencode ceilings are asserted by the config guard and proven env-tunable; the completion timeout stays a separate Settings field from opencode_timeout_seconds (P4) and the LIMIT_FIELDS comment records why they must not be merged.
 - [Phase 03]: 03-05: compose.yml forwards all four opencode keys with ${VAR:-default} defaults matching app/config.py exactly — the three new ceilings plus the previously unforwarded OPENCODE_TIMEOUT_SECONDS — and .env.example documents each, so a host .env override is no longer silently defeated.
 - [Phase 03]: 03-05: probe_cache_ttl_seconds was a ceiling LIMIT_FIELDS covered but REQUIRED_SETTINGS_FIELDS omitted; it is now required, so every LIMIT_FIELDS entry is a required numeric ceiling.
+- [Phase 03]: 03-06: tools are denied by default through the session-level permission ruleset (DEFAULT_DENY_RULES), not the deprecated message-level tools map; the message body sends no tools key by default and a wildcard '*' key raises ValueError naming the permission control.
+- [Phase 03]: 03-06: the session model shape {id: modelID, providerID} is the deliberate inverse of the message shape {providerID, modelID}; both key order and values are asserted together because a wrong placement is a silent 400.
+- [Phase 03]: 03-06: the deny is observed, not asserted — StructuredCallResult.part_types/info_keys carry part TYPE names and info KEY names only (logged and rendered on /settings, transient), and a scoped import guard enforces §6.5 with a proven app/sources exclusion.
 
 ### Pending Todos
 
@@ -205,6 +209,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T22:49:52.323Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-09-17T23:08:14.745Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
