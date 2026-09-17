@@ -133,6 +133,40 @@ It refuses to overwrite an existing file. The destination is derived from the
 database actually being mutated (`session.get_bind().url.database`) rather than
 from configuration, so it can never disagree with the file it is protecting.
 
+### 4. Engine transaction semantics — a deliberate change
+
+`build_engine` (`app/db/session.py`) no longer lets the pysqlite/aiosqlite driver
+manage transactions. A second `connect` listener sets
+`dbapi_connection.isolation_level = None`, and a `begin` listener issues an
+explicit `BEGIN`; both are attached to `engine.sync_engine`.
+
+**This is not an incidental part of the reset fix — it is a change in its own
+right and should be reviewed as one.** pysqlite's default mode does not open a
+transaction for DDL and implicitly COMMITs before it, which SQLAlchemy's own docs
+describe as "incorrect support for transactional DDL". Two consequences followed:
+
+1. **A dropped trigger could not be rolled back.** `DROP TRIGGER` inside a
+   session was durable even after `session.rollback()`, so a reset that failed
+   half-way through its deletes could have left the append-only invariant
+   permanently disabled. Without this change there is no safe way for the reset
+   to suspend that trigger.
+2. **SAVEPOINTs did not participate in the enclosing transaction.** A released
+   `begin_nested()` savepoint was not undone by an outer rollback. The existing
+   `except IntegrityError`-inside-a-savepoint patterns worked for their immediate
+   purpose, so nothing was visibly broken — this closes a latent hole rather than
+   a live bug.
+
+**Blast radius, checked:** the pragma listener still runs first and is
+unaffected; `expire_on_commit=False` is orthogonal; all `begin_nested()` call
+sites now emit `BEGIN` before the SAVEPOINT, which is the correct order; Alembic
+builds its own sync engine and is untouched; the APScheduler job store does not
+exist yet (Phase 8) and will bring its own engine when it does.
+
+**The one thing to watch:** non-legacy mode is documented as more susceptible to
+locked-database errors. At a single uvicorn worker, one writer, WAL and a 5000 ms
+busy timeout this is a non-issue — reads now hold a WAL snapshot, which never
+blocks the writer. Revisit this decision if the app ever gains a second writer.
+
 ### Recovery
 
 Recovery is deliberately **not** a button. To restore a snapshot: stop the
