@@ -72,6 +72,13 @@ class NormalisedListing:
     raw_hash: str | None = None
     blocking_key: str | None = None
     source_extras: dict = field(default_factory=dict)
+    #: A counts-only finding about instruction-like text in this listing (§6.3).
+    #: Deliberately tiny — `{"instruction_like": bool, "patterns_matched": int}` —
+    #: so the sanitize module's counts-only invariant (no matched text, no excerpt,
+    #: no position) is preserved by the TYPE itself: there is no field here able to
+    #: carry prose. `None` means "no signal", which is what keeps `listing_repo`'s
+    #: `if value is not None` guard from clobbering a previously recorded finding.
+    quality_signals: dict | None = None
 
     @property
     def remote_flag(self) -> bool | None:
@@ -82,6 +89,11 @@ class NormalisedListing:
     def source_extras_json(self) -> dict | None:
         """The DB column name for `source_extras`."""
         return self.source_extras or None
+
+    @property
+    def quality_signals_json(self) -> dict | None:
+        """The DB column name for `quality_signals` — `None` when there is no signal."""
+        return self.quality_signals or None
 
 
 __all__ = ["ListingSourceRef", "NormalisedListing", "User"]

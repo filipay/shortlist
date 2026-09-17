@@ -7,8 +7,9 @@ database months later, so the observation is persisted, not just the conclusion.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from app.domain.listing import (
     annualise_salary,
@@ -57,11 +58,19 @@ class Stage(Protocol):
     async def run(self, payload: object) -> StageResult: ...
 
 
-def normalise_listing(raw: RawListing) -> NormalisedListing:
+def normalise_listing(
+    raw: RawListing, *, quality_signals: Mapping[str, Any] | None = None
+) -> NormalisedListing:
     """Board-shaped `RawListing` -> canonical `NormalisedListing`.
 
     Pure: one function, no I/O, so both dedup keys are unit-testable without a
     database or a network (Pattern 2).
+
+    `quality_signals` is a counts-only finding (§6.3) and arrives as an ARGUMENT
+    precisely so this function stays pure — the caller owns the sanitize report.
+    An empty or absent mapping both become `None`, never `{}`: `listing_repo`'s
+    `if value is not None` guard is what stops a clean listing clobbering a
+    previously recorded signal.
     """
     canonical = canonical_url(raw.source_url, raw.direct_url)
     company_norm = normalise_company_name(raw.company_name)
@@ -112,6 +121,7 @@ def normalise_listing(raw: RawListing) -> NormalisedListing:
         ),
         blocking_key=blocking_key(company_norm, title_norm),
         source_extras=dict(raw.source_extras or {}),
+        quality_signals=dict(quality_signals) if quality_signals else None,
     )
 
 
