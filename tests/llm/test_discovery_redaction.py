@@ -30,7 +30,7 @@ import pytest
 import structlog
 
 from app.llm import opencode_server
-from app.llm.base import ProviderModel
+from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
 from app.llm.opencode_server import (
     CONFIG_PROVIDERS_PATH,
     GLOBAL_HEALTH_PATH,
@@ -117,13 +117,64 @@ def _scan_every_table(db_path: Path) -> tuple[list[str], list[str]]:
 
 
 def test_discovery_returns_only_provider_and_model_identifiers() -> None:
+    """The FIXTURE is the live 1.18.31 shape: `models` is an object, `key` holds it."""
     providers = parse_providers(_fixture_payload())
 
     assert providers == [
-        ProviderModel(provider_id="opencode", model_id="deepseek-v4.1-flash"),
-        ProviderModel(provider_id="opencode", model_id="qwen3-coder"),
+        ProviderModel(provider_id="opencode", model_id="claude-sonnet-4"),
+        ProviderModel(provider_id="opencode-go", model_id="deepseek-v4.1-flash"),
+        ProviderModel(provider_id="opencode-go", model_id="qwen3-coder"),
     ]
     assert set(ProviderModel.model_fields) == {"provider_id", "model_id"}
+
+
+def test_parse_providers_still_accepts_the_legacy_list_shape() -> None:
+    """The fix is additive: the old `[{"id": …}]` shape keeps working."""
+    payload = {
+        "providers": [
+            {
+                "id": "legacy",
+                "api_key": SENTINEL,
+                "models": [{"id": "m2"}, {"id": "m1"}],
+            }
+        ]
+    }
+
+    assert parse_providers(payload) == [
+        ProviderModel(provider_id="legacy", model_id="m1"),
+        ProviderModel(provider_id="legacy", model_id="m2"),
+    ]
+
+
+def test_the_dict_shape_branch_is_actually_exercised() -> None:
+    """A guard that cannot fail is not a guard (the repo's guard-can-fail convention).
+
+    The same model ids as an OBJECT yield two pairs; as a LIST of id-less entries
+    they yield none. The lengths differ, which proves the dict branch does real
+    work rather than walking a list that happens to be empty.
+    """
+    as_dict = {"providers": [{"id": "p", "models": {"m1": {}, "m2": {}}}]}
+    as_list = {"providers": [{"id": "p", "models": [{}, {}]}]}
+
+    assert len(parse_providers(as_dict)) == 2
+    assert len(parse_providers(as_list)) == 0
+
+
+def test_the_object_branch_never_copies_model_metadata_values() -> None:
+    """Only the keys leave the parser; per-model metadata is the secret's hiding place."""
+    payload = {
+        "providers": [
+            {
+                "id": "p",
+                "models": {"m1": {"credential": SENTINEL}},
+            }
+        ]
+    }
+
+    providers = parse_providers(payload)
+
+    assert providers == [ProviderModel(provider_id="p", model_id="m1")]
+    assert SENTINEL not in repr(providers)
 
 
 def test_provider_model_cannot_carry_a_raw_provider_entry() -> None:
@@ -353,6 +404,86 @@ async def test_the_server_password_is_used_only_when_configured(
 
     assert recorder.client_kwargs[0]["auth"] is None
     assert isinstance(recorder.client_kwargs[1]["auth"], httpx.BasicAuth)
+
+
+# --- 6. model resolution is derived, and a miss fails loud --------------------
+
+
+def _discovery(*pairs: tuple[str, str]) -> DiscoveryResult:
+    return DiscoveryResult(
+        reachable=True,
+        providers=[
+            ProviderModel(provider_id=provider_id, model_id=model_id)
+            for provider_id, model_id in pairs
+        ],
+    )
+
+
+async def test_resolve_model_returns_the_provider_and_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`OPENCODE_MODEL` is a bare id; the provider is DERIVED from discovery."""
+    backend = OpenCodeServerBackend()
+
+    async def _fake_discovery() -> DiscoveryResult:
+        return _discovery(("opencode-go", "deepseek-v4.1-flash"))
+
+    monkeypatch.setattr(backend, "discover_models", _fake_discovery)
+
+    assert await backend._resolve_model() == ("opencode-go", "deepseek-v4.1-flash")
+
+
+async def test_resolve_model_fails_loud_on_a_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wrong OPENCODE_MODEL must be distinguishable from a call that worked."""
+    backend = OpenCodeServerBackend()
+
+    async def _fake_discovery() -> DiscoveryResult:
+        return _discovery(("opencode", "qwen3-coder"))
+
+    monkeypatch.setattr(backend, "discover_models", _fake_discovery)
+
+    resolved = await backend._resolve_model()
+
+    assert isinstance(resolved, StructuredCallResult)
+    assert resolved.ok is False
+    assert resolved.status == "error"
+    assert "deepseek-v4.1-flash" in (resolved.error or "")
+
+
+async def test_resolve_model_fails_loud_when_discovery_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = OpenCodeServerBackend()
+
+    async def _fake_discovery() -> DiscoveryResult:
+        return DiscoveryResult(reachable=False, error="ConnectError")
+
+    monkeypatch.setattr(backend, "discover_models", _fake_discovery)
+
+    resolved = await backend._resolve_model()
+
+    assert isinstance(resolved, StructuredCallResult)
+    assert resolved.ok is False
+    assert resolved.error_kind == "unreachable"
+
+
+async def test_resolve_model_is_deterministic_under_ambiguity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One model id under two providers resolves by sorted provider id."""
+    backend = OpenCodeServerBackend()
+
+    async def _fake_discovery() -> DiscoveryResult:
+        return _discovery(
+            ("z-provider", "deepseek-v4.1-flash"),
+            ("a-provider", "deepseek-v4.1-flash"),
+        )
+
+    monkeypatch.setattr(backend, "discover_models", _fake_discovery)
+
+    assert await backend._resolve_model() == ("a-provider", "deepseek-v4.1-flash")
 
 
 if __name__ == "__main__":  # pragma: no cover
