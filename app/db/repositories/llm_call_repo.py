@@ -16,14 +16,21 @@ than a raw `IntegrityError` (the `event_repo.append_event` pattern).
 There is deliberately **no** function here that writes to `runs`. Writing the
 run-level counters is Phase 5's caller through `_finish`; the selftest
 structurally cannot create a synthetic run because `run_id` defaults to `None`
-(D-50).
+(D-50). `llm_totals_for_run` is the READ that caller will use — this module ships
+the read only.
+
+The reads are total: a half-written row (a NULL token count, for instance) is
+summed as 0 rather than raising, exactly as `run_repo`'s tolerant accessors
+default instead of raising, because a page must still render.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import LlmCall
@@ -48,9 +55,8 @@ class LlmCallRecord:
     provider: str | None
     model: str | None
     agent: str | None
-    #: Recorded from the caller's value, not read back — the column lands in
-    #: migration 0003 (plan 03-04). Until then this is populated on the returned
-    #: record but not persisted.
+    #: The opencode server version this call ran against (D-12 / M9), persisted by
+    #: migration 0003 and read back from the row.
     server_version: str | None
     prompt_tokens: int | None
     completion_tokens: int | None
@@ -111,6 +117,7 @@ async def record_llm_call(
         provider=provider,
         model=model,
         agent=agent,
+        server_version=server_version,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         latency_ms=latency_ms,
@@ -123,6 +130,12 @@ async def record_llm_call(
         session.add(row)
         await session.flush()
 
+    return _to_record(row)
+
+
+def _to_record(row: LlmCall) -> LlmCallRecord:
+    """One ORM row as its frozen read value. The single mapping, so write and read
+    cannot disagree about a field."""
     return LlmCallRecord(
         id=int(row.id),
         purpose=row.purpose,
@@ -131,7 +144,7 @@ async def record_llm_call(
         provider=row.provider,
         model=row.model,
         agent=row.agent,
-        server_version=server_version,
+        server_version=row.server_version,
         prompt_tokens=row.prompt_tokens,
         completion_tokens=row.completion_tokens,
         latency_ms=row.latency_ms,
@@ -141,4 +154,62 @@ async def record_llm_call(
     )
 
 
-__all__ = ["PURPOSES", "STATUSES", "LlmCallRecord", "record_llm_call"]
+def _tolerant_int(value: Any) -> int:
+    """An int, or 0 for a NULL/unusable value — a half-written row still totals."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def latest_probe(session: AsyncSession) -> LlmCallRecord | None:
+    """The most recent `purpose='probe'` row, or `None` on an empty table.
+
+    Never commits and never raises (the module's house rules). Ordered by
+    `(created_at, id)` descending: two selftests within one second share a
+    `created_at`, so the unique `id` tie-break is what makes the read
+    deterministic — the same rule `event_repo`'s projection uses.
+
+    This is the read the `/settings` page renders D-52's detail from, and the one
+    Phase 5 can share rather than minting a second query.
+    """
+    row = await session.scalar(
+        select(LlmCall)
+        .where(LlmCall.purpose == "probe")
+        .order_by(LlmCall.created_at.desc(), LlmCall.id.desc())
+        .limit(1)
+    )
+    return _to_record(row) if row is not None else None
+
+
+async def llm_totals_for_run(session: AsyncSession, *, run_id: int) -> tuple[int, int]:
+    """`(call_count, total_tokens)` for one run. Never commits, never raises.
+
+    `total_tokens` sums `prompt_tokens + completion_tokens` with a NULL treated as
+    0, so a half-written row still totals. The `run_id == run_id` predicate
+    structurally excludes the `run_id IS NULL` selftest probes, so a probe can
+    never inflate a run's recorded cost.
+
+    Phase 5's `_finish` caller is the consumer; this plan ships only the read.
+    """
+    rows = (
+        await session.execute(
+            select(LlmCall.prompt_tokens, LlmCall.completion_tokens).where(
+                LlmCall.run_id == run_id
+            )
+        )
+    ).all()
+    total = sum(
+        _tolerant_int(prompt) + _tolerant_int(completion) for prompt, completion in rows
+    )
+    return len(rows), total
+
+
+__all__ = [
+    "PURPOSES",
+    "STATUSES",
+    "LlmCallRecord",
+    "latest_probe",
+    "llm_totals_for_run",
+    "record_llm_call",
+]

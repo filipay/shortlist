@@ -71,7 +71,7 @@ def test_migration_creates_every_table_at_latest_revision(migrated_db: Path) -> 
         version = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        assert version == [("0002",)]
+        assert version == [("0003",)]
     finally:
         connection.close()
 

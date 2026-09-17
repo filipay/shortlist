@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.searches import read_form
 from app.config import settings
-from app.db.models import Base, LlmCall, Run
+from app.db.models import Base, Run
 from app.db.repositories import llm_call_repo
 from app.db.session import get_session
 from app.domain.models import User
@@ -117,32 +117,20 @@ async def _counts(session: AsyncSession) -> list[dict[str, Any]]:
     return rows
 
 
-async def _latest_probe_row(session: AsyncSession) -> LlmCall | None:
-    """The most recent `purpose='probe'` row, so D-52's detail survives a reload.
-
-    NOTE: plan 03-04 moves this read behind `llm_call_repo.latest_probe`; until
-    that lands the context function owns the small query.
-    """
-    return await session.scalar(
-        select(LlmCall)
-        .where(LlmCall.purpose == "probe")
-        .order_by(LlmCall.id.desc())
-        .limit(1)
-    )
-
-
 async def _settings_context(
     session: AsyncSession,
     *,
     banner: str | None = None,
     error: bool = False,
-    probe: LlmCall | llm_call_repo.LlmCallRecord | None = None,
+    probe: llm_call_repo.LlmCallRecord | None = None,
     probe_error_kind: str | None = None,
 ) -> dict[str, Any]:
     backend = session.get_bind()
     database_path = Path(str(backend.url.database or ""))
     if probe is None:
-        probe = await _latest_probe_row(session)
+        # D-52's detail is read through the repository contract, not a second,
+        # divergent query — the same read Phase 5 can share.
+        probe = await llm_call_repo.latest_probe(session)
     return {
         "banner": banner,
         "error": error,
