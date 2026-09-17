@@ -1,0 +1,53 @@
+{% extends "html/base.html" %}
+
+{# The only destructive surface in the application. The form is a PLAIN html form, not
+   an htmx one: a reset is a full navigation, and a destructive action gains nothing
+   from a partial swap. Jinja autoescape is the only escaping in play. #}
+
+{% block title %}Settings — Job Search Copilot{% endblock %}
+
+{% block content %}
+<h2>Settings</h2>
+
+{% if banner %}
+<p class="settings-banner{% if error %} settings-banner-error{% endif %}" id="settings-banner">{{ banner }}</p>
+{% endif %}
+
+<section class="settings-card">
+  <h3>Queue data</h3>
+  <p class="settings-note">
+    A reset deletes the fetched corpus and the run history. Your saved searches and
+    their rules are kept, and so is the board list the next run needs to upsert into.
+  </p>
+  <ul class="settings-counts">
+    {% for row in counts %}
+    <li>{{ row.table }}: {{ row.count }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="danger-card" id="danger-zone">
+  <h3>Danger zone</h3>
+  <p class="settings-note">
+    Deleted: {{ deleted_tables | join(", ") }}.
+  </p>
+  <p class="settings-note">
+    Kept: {{ kept_tables | join(", ") }}.
+  </p>
+  <p class="settings-note">
+    A snapshot is written to <code>{{ backup_dir }}</code> <strong>before</strong>
+    anything is deleted. To recover, stop the container and replace the database file
+    with that snapshot — there is deliberately no restore button, because a restore is
+    a second destructive path.
+  </p>
+  <form method="post" action="/settings/reset">
+    <div class="field">
+      <label for="reset-confirm">Type {{ confirm_token }} to confirm <span class="field-note">case sensitive</span></label>
+      <input type="text" id="reset-confirm" name="confirm" autocomplete="off" placeholder="{{ confirm_token }}">
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="reset-submit">Reset queue data</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

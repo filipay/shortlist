@@ -1670,3 +1670,58 @@
     margin-bottom: 0.375rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Settings / danger zone
+ * --------------------------------------------------------------------------- */
+@layer components {
+  /* Settings / danger zone (2026-09-17). */
+  .settings-banner {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-accent);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface);
+  }
+  .settings-banner-error {
+    border-left-color: var(--color-danger);
+  }
+  .settings-card,
+  .danger-card {
+    max-width: 52rem;
+    padding: 1.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface);
+    margin-bottom: 1.5rem;
+  }
+  .danger-card {
+    border-color: var(--color-danger);
+  }
+  .settings-note {
+    color: var(--color-muted);
+  }
+  .settings-counts {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    columns: 2;
+  }
+
+  /* The danger zone's own action must read as destructive. The shared
+     `button[type="submit"]` rule paints every primary button accent blue, which is
+     the wrong signal for the one irreversible control in the application. Scoped to
+     the card (not an id) so any future control inside it keeps the same meaning.
+     Uses the existing `--color-danger` token; hover darkens rather than inventing a
+     second red. */
+  .danger-card button[type="submit"] {
+    background-color: var(--color-danger);
+    border-color: var(--color-danger);
+    color: #fff;
+  }
+  .danger-card button[type="submit"]:hover {
+    background-color: var(--color-danger);
+    border-color: var(--color-danger);
+    filter: brightness(0.9);
+  }
+}
