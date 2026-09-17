@@ -197,10 +197,11 @@ async def _suspend_append_only_trigger(session: AsyncSession) -> str | None:
 async def _restore_append_only_trigger(session: AsyncSession, ddl: str | None) -> None:
     """Re-arm the trigger suspended by `_suspend_append_only_trigger`, if it existed.
 
-    Executed at the driver level via `exec_driver_sql` rather than `text()`: the DDL
-    contains the literal `'listing_events is append-only'` and `text()` would treat a
-    `:` in a future trigger body as a bind parameter. `exec_driver_sql` bypasses
-    SQLAlchemy's bind parsing entirely, so the stored statement round-trips verbatim.
+    Executed at the driver level via `exec_driver_sql` rather than `text()`: this DDL is
+    catalog DATA read from `sqlite_master` at runtime, not a fixed literal, and
+    `text()`'s SQL-string parsing (which interprets `:` sequences as bind parameters) is
+    the wrong tool for executing arbitrary catalog text. `exec_driver_sql` bypasses that
+    parsing entirely, so the stored statement round-trips verbatim whatever it contains.
     """
     if ddl:
         connection = await session.connection()
@@ -304,7 +305,12 @@ async def reset_data(
         # Roll back BEFORE re-rendering: `_settings_context` runs count queries, and a
         # session left dirty by the failed statement would make those fail too.
         await session.rollback()
-        log.warning("reset.delete_failed", error=type(exc).__name__, detail=str(exc))
+        log.warning(
+            "reset.delete_failed",
+            error=type(exc).__name__,
+            detail=str(exc),
+            exc_info=True,
+        )
         return templates.TemplateResponse(
             request,
             SETTINGS_TEMPLATE,

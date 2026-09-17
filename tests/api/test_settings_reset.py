@@ -324,8 +324,9 @@ async def test_the_append_only_trigger_is_re_armed_and_still_enforced(
     """The reset suspends the append-only DELETE trigger only to re-arm it on commit.
 
     Presence is not enough — a trigger that exists but is not enforced would be a false
-    pass — so a fresh listing + event is inserted after the reset (the FK needs a
-    listing) and a direct DELETE must still abort.
+    pass — so a fresh listing + event is inserted after the reset (the FK is checked on
+    the event INSERT: the event must reference a listing that exists) and a direct
+    DELETE must still abort.
     """
     await _seed_corpus(session_factory)
     assert await _count(session_factory, "listing_events") == 3
