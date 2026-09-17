@@ -126,17 +126,24 @@ class Recorder:
         recorder = self
 
         class FakeResponse:
-            def __init__(self, status_code: int, body: Any) -> None:
+            def __init__(
+                self,
+                status_code: int,
+                body: Any,
+                *,
+                json_error: BaseException | None = None,
+            ) -> None:
                 self.status_code = status_code
                 self._body = body
+                self._json_error = json_error
 
             @property
             def text(self) -> str:
                 return recorder._text
 
             def json(self) -> Any:
-                if recorder._json_error is not None:
-                    raise recorder._json_error
+                if self._json_error is not None:
+                    raise self._json_error
                 return self._body
 
         class FakeClient:
@@ -167,9 +174,21 @@ class Recorder:
                     )
                 if recorder._message_error is not None:
                     raise recorder._message_error
-                return FakeResponse(recorder._message_status, recorder._message_body)
+                return FakeResponse(
+                    recorder._message_status,
+                    recorder._message_body,
+                    json_error=recorder._json_error,
+                )
 
-        return types.SimpleNamespace(AsyncClient=FakeClient, BasicAuth=httpx.BasicAuth)
+        # The module looks exception types up on the `httpx` name it imports, so the
+        # fake module must expose the transport taxonomy it classifies.
+        return types.SimpleNamespace(
+            AsyncClient=FakeClient,
+            BasicAuth=httpx.BasicAuth,
+            TimeoutException=httpx.TimeoutException,
+            TransportError=httpx.TransportError,
+            ConnectTimeout=httpx.ConnectTimeout,
+        )
 
 
 def _message_requests(recorder: Recorder) -> list[tuple[str, str, Any]]:
