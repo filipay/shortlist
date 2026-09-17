@@ -12,10 +12,9 @@ cycle: what shipped, the commits that carry it, and what was deliberately left o
 
 ### Status
 
-Committed on `master`. **Not yet applied live** — the container has not been
-rebuilt, so nothing here has been exercised against the operator's real database.
-Suite at the close-out commit: `707 passed, 2 deselected`; `ruff check app tests`
-clean.
+Committed on `master` at `ec19ac0`. **Not yet applied live** — the container has
+not been rebuilt, so nothing here has been exercised against the operator's real
+database. Suite: `710 passed, 2 deselected`; `ruff check app tests` clean.
 
 ### Commits
 
@@ -26,6 +25,7 @@ clean.
 | 3 — dismiss the whole queue with one action | `7590ddb`, `f497bc1` |
 | 4 — the settings page and its danger zone | `e165274` |
 | 5 — snapshot then reset behind explicit guards | `e017e00`, `b8061bb` |
+| 3 — dismiss scope correction (found by the final review) | `ec19ac0` |
 
 ### 1. Queue rows link to the posting
 
