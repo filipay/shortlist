@@ -41,6 +41,13 @@ REQUIRED_SETTINGS_FIELDS = (
     "dedup_posted_window_days",
     "stale_after_days",
     "queue_page_size",
+    # Phase 3 (PLAT-04 applied to PLAT-02): the opencode completion budget.
+    "opencode_completion_timeout_seconds",
+    "opencode_max_retries",
+    "opencode_structured_retry_count",
+    # A pre-existing LIMIT_FIELDS entry the surface guard had omitted; covered here
+    # so "every LIMIT_FIELDS name is a required field" actually holds.
+    "probe_cache_ttl_seconds",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -56,6 +63,13 @@ LIMIT_FIELDS = (
     # them here is what makes the absence scan actually cover them.
     "dedup_fuzzy_threshold",
     "queue_page_size",
+    # Phase 3 (PLAT-04 applied to PLAT-02). Both are small integers BELOW
+    # DISTINCTIVE_THRESHOLD_FLOOR, so they add nothing to the literal scan; listing
+    # them keeps the "what counts as a ceiling" set complete. The completion
+    # timeout is a FLOAT and is a deliberately separate field from
+    # `opencode_timeout_seconds` (Pitfall P4) — do not merge them.
+    "opencode_max_retries",
+    "opencode_structured_retry_count",
 )
 
 #: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
