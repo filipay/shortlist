@@ -20,6 +20,7 @@ Two routes serve the queue, and they must render identically:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.runs import render_run_fragment
 from app.config import settings
-from app.db.repositories import run_repo, state_repo
+from app.db.repositories import event_repo, run_repo, state_repo
 from app.db.repositories.queue_repo import QueuePage, QueueQuery, read_queue
 from app.db.repositories.run_repo import RunSummary
 from app.db.repositories.source_repo import SourceHealth, get_source_health
@@ -52,6 +53,11 @@ templates = make_templates(TEMPLATE_DIR)
 
 PAGE_TEMPLATE = "html/queue.html"
 LIST_TEMPLATE = "html/queue_list.html"
+
+#: Dismiss reads the whole queue in one pass. Bounded so a pathological corpus cannot
+#: build an unbounded IN list; 10_000 is far above any real queue and the queue's own
+#: count is surfaced on the page.
+_DISMISS_LIMIT = 10_000
 
 
 async def _health_strip(
@@ -137,6 +143,27 @@ async def _read_queue_page(
         stale_after_days=settings.stale_after_days,
         watermark=watermark,
     )
+
+
+async def _queued_listing_ids(
+    session: AsyncSession, params: Mapping[str, str], *, now: datetime
+) -> list[int]:
+    """Every id the current predicate matches, not just the first page.
+
+    Dismiss is a whole-queue action, so it must not inherit the page limit the
+    fragment uses. The predicate itself is the shared `parse_queue_query`, so this
+    cannot drift from what the table shows; only the free-text search is dropped,
+    because a dismissal scoped to typed text would be ambiguous.
+    """
+    query = parse_queue_query(params)
+    page = await read_queue(
+        session,
+        query=replace(query, q=None, offset=0, limit=_DISMISS_LIMIT),
+        now=now,
+        stale_after_days=settings.stale_after_days,
+        watermark=await state_repo.get_watermark(session),
+    )
+    return [row.id for row in page.rows]
 
 
 async def _last_run_strip(
@@ -255,6 +282,41 @@ async def queue_mark_seen(
 
     page = await _read_queue_page(session, request.query_params, now=now, watermark=now)
     return templates.TemplateResponse(request, LIST_TEMPLATE, _queue_context(page))
+
+
+@router.post("/queue/dismiss", response_class=HTMLResponse)
+async def queue_dismiss(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Hide every listing the user can currently see, and return the empty fragment.
+
+    Scope is the queue predicate with the free-text search dropped: what the user
+    would see with an empty search box and no toggles. It is deliberately NOT "every
+    row in `listings`" — an already-hidden listing must not gain a second event, and
+    an absorbed merge twin must never be dismissed.
+
+    The page is read AFTER the write, so the returned fragment already shows the empty
+    queue; otherwise Dismiss would look like a no-op until the next reload.
+    """
+    now = datetime.now(UTC)
+    ids = await _queued_listing_ids(session, request.query_params, now=now)
+    if ids:
+        await event_repo.hide_listings(
+            session,
+            listing_ids=ids,
+            occurred_at=now,
+        )
+        await session.commit()
+
+    refreshed = await _read_queue_page(
+        session,
+        request.query_params,
+        now=now,
+        watermark=await state_repo.get_watermark(session),
+    )
+    return templates.TemplateResponse(request, LIST_TEMPLATE, _queue_context(refreshed))
 
 
 __all__ = ["parse_queue_query", "router"]

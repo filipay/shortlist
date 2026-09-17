@@ -185,6 +185,32 @@ async def append_event(
     return event
 
 
+async def hide_listings(
+    session: AsyncSession,
+    *,
+    listing_ids: Sequence[int],
+    occurred_at: datetime,
+) -> int:
+    """Append one `hide` event per listing. Returns how many were appended.
+
+    Reuses the existing `hide` event rather than minting a `dismiss` type: the
+    projected `hidden` flag and the per-listing `Unhide` control already work, and a
+    seventh event type would need a migration to widen
+    `ck_listing_events_event_type`. The accepted cost is that a bulk dismissal is
+    indistinguishable in the audit trail from hiding each listing by hand.
+
+    One event per listing, so the log stays per-listing and `Unhide` can reverse a
+    single row. The insert goes through `append_event`, so the SAVEPOINT, the
+    allow-list check and the `occurred_at` contract all apply unchanged.
+    """
+    ids = sorted({int(listing_id) for listing_id in listing_ids})
+    for listing_id in ids:
+        await append_event(
+            session, listing_id=listing_id, event_type="hide", now=occurred_at
+        )
+    return len(ids)
+
+
 async def state_for_listings(
     session: AsyncSession, *, listing_ids: Iterable[int]
 ) -> dict[int, ListingState]:
@@ -280,6 +306,7 @@ __all__ = [
     "ListingState",
     "append_event",
     "hidden_predicate",
+    "hide_listings",
     "latest_event_type_in",
     "latest_state",
     "saved_predicate",
