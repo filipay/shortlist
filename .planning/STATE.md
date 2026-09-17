@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-17T20:08:50.224Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-17T21:18:50.592Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: 2c8c60970c410e779fa7bb2e402834e23aca1c90
+state_head: 19f95354dac21e4593c9f38585a6ca631468f3db
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 19
+  completed_plans: 20
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-17 — Phase 03 execution started
 
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P10 | 17 min | 2 tasks | 7 files |
 | Phase 02 P11 | 212 min | 8 tasks | 21 files |
 | Phase 03 P01 | 21 min | 3 tasks | 18 files |
+| Phase 03 P02 | 8 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-01: pin the opencode structured-output wire vocabulary in one no-I/O module (app/llm/contract.py); the request field is format and the live response field is info.structured, with no adaptive fallback (D-54/D-56).
 - [Phase 03]: 03-01: parse_providers accepts the live dict shape AND the legacy list shape; OPENCODE_MODEL resolves through discovery and fails loud on a miss instead of silently omitting model.
 - [Phase 03]: 03-01: the selftest is a plain full-page POST that writes exactly one llm_calls row (purpose='probe', run_id NULL) and no runs row; server_version is carried on the returned record but not persisted until migration 0003 (plan 03-04).
+- [Phase 03]: 03-02: the /doc contract slice is indexed by MESSAGE_DOC_PATH (the OpenAPI path-template spelling) and never by MESSAGE_PATH; both constants are asserted present and distinct so a rename fails loudly rather than raising a bare KeyError.
+- [Phase 03]: 03-02: the live lane diffs 22 named facts set-by-set and asserts the committed _meta.server_version matches GET /global/health, so a version-only upgrade still fails; it performs no model call (D-57) and a request hook asserts no POST occurred.
 
 ### Pending Todos
 
@@ -190,6 +193,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T20:08:50.148Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-17T21:18:50.513Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
