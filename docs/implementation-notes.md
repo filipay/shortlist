@@ -83,6 +83,19 @@ listings, llm_calls, source_request_log, runs, queue_state, companies
 `companies` is deleted because it is derived from listings; leaving it behind only
 creates orphans.
 
+`listing_events` is **append-only**: migration 0001 installs a `BEFORE DELETE`
+trigger that `RAISE(ABORT, 'listing_events is append-only')`, and its `listing_id`
+FK to `listings` is `NO ACTION`. Those rows can neither be deleted (the trigger
+aborts) nor left behind while `listings` is deleted (the FK refuses). The reset is
+the one operation allowed to empty that log, so the delete phase **suspends the
+trigger inside its transaction**: it reads the trigger's DDL from `sqlite_master`
+(never a hardcoded copy), drops it, deletes every table in `RESET_DELETE_ORDER`,
+and re-creates the trigger from that DDL **before the commit**. The engine makes
+DDL transactional (`build_engine` disables the driver's transaction control and
+issues an explicit `BEGIN`), so a failure anywhere rolls the `DROP TRIGGER` back
+with the deletes — the append-only invariant is never left disabled. A database
+without the trigger still resets (the DROP is `IF EXISTS`).
+
 **Preserved:** `searches`, `filter_rules` and `sources` — the user's own
 configuration and the board lookup the next run's upsert needs. (`cv_versions` is
 also never deleted, being absent from the delete order; it is not listed on the
@@ -96,6 +109,11 @@ page.)
 | A pipeline run is currently in flight | `409` |
 | Tracked work exists (any row in `applications` or `cv_artifacts`) | `409` |
 | The snapshot could not be written | `500` |
+| The delete phase failed for any reason | `500` |
+
+The last row is why the append-only trigger work exists: the delete phase is wrapped,
+so a failure rolls the transaction back (trigger included) and re-renders the honest
+"nothing was deleted" page instead of escaping as a bare `500`.
 
 The confirmation text is `DELETE`, case-sensitive: the point is a deliberate act,
 not a habitual click. **It is a fat-finger and prefetch affordance, not a security

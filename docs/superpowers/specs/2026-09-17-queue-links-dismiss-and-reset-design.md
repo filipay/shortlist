@@ -143,6 +143,12 @@ deleted and what is kept, the type-to-confirm field, and the destructive button.
    `scores` → `listing_exclusions` → `listing_events` → `listing_dupes` →
    `listing_sources` → `listings` → `llm_calls` → `source_request_log` → `runs` →
    `queue_state` → `companies`.
+   - `listing_events` is append-only (a `BEFORE DELETE` trigger from migration 0001,
+     plus a `NO ACTION` FK to `listings`), so this order is only executable because
+     the reset **suspends that trigger inside the same transaction** — reading its DDL
+     from `sqlite_master`, dropping it before the deletes, and re-arming it from that
+     DDL before the commit. A failure anywhere rolls the whole transaction back,
+     trigger included, so the invariant is never left disabled.
    - `listing_fts` needs no explicit handling: the `listings_ad` trigger maintains it.
    - `companies` is **added** to the approved list because it is derived from
      listings; leaving it behind leaves orphan rows for no benefit.

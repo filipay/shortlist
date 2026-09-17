@@ -43,9 +43,30 @@ def apply_sqlite_pragmas(dbapi_connection, connection_record) -> None:  # noqa: 
 
 
 def build_engine(url: str) -> AsyncEngine:
-    """Create an async engine with the SQLite PRAGMA listener attached."""
+    """Create an async engine with the SQLite PRAGMA and transaction listeners.
+
+    The two transaction listeners are the documented SQLAlchemy recipe for making
+    **DDL transactional** on pysqlite. Without them the driver takes transaction
+    control: it does not begin one for DDL and implicitly COMMITs before it, so a
+    `DROP TRIGGER` inside a session is durable even after `session.rollback()`. The
+    guarded reset suspends the `listing_events` append-only trigger for the duration of
+    its deletes, so that would let a failed reset leave the append-only invariant
+    permanently disabled. Setting ``isolation_level = None`` hands transaction control
+    back to SQLAlchemy and the ``begin`` listener issues ``BEGIN`` explicitly; DDL then
+    rolls back with the rest of the transaction. It also makes the `SAVEPOINT`s every
+    repository write relies on (`session.begin_nested()`) real rather than emulated.
+    """
     engine = create_async_engine(url)
     event.listens_for(engine.sync_engine, "connect")(apply_sqlite_pragmas)
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _disable_driver_transactions(dbapi_connection, connection_record):  # noqa: ANN001
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def _begin_explicitly(connection):  # noqa: ANN001
+        connection.exec_driver_sql("BEGIN")
+
     return engine
 
 

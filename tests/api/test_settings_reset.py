@@ -6,7 +6,9 @@ import sqlite3
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import settings
@@ -16,9 +18,16 @@ from app.db.models import (
     CvVersion,
     FilterRule,
     Listing,
+    ListingDupe,
+    ListingEvent,
+    ListingExclusion,
+    LlmCall,
+    QueueState,
     Run,
+    Score,
     Search,
     Source,
+    SourceRequestLog,
 )
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.pipeline.stages import normalise_listing
@@ -27,9 +36,44 @@ from app.sources.base import RawListing
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
 
 
+async def _seed_listing(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    index: int,
+    run_id: int | None = None,
+) -> int:
+    raw = RawListing(
+        source="linkedin",  # type: ignore[arg-type]
+        source_listing_id=f"linkedin-{index}",
+        source_url=f"https://linkedin.example.com/jobs/{index}",
+        direct_url=None,
+        title=f"Backend Engineer {index}",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        posted_at=date(2026, 9, 1),
+    )
+    async with session_factory() as session:
+        outcome = await upsert_listing_source(
+            session,
+            source="linkedin",
+            norm=normalise_listing(raw),
+            run_id=run_id,
+            now=NOW,
+        )
+        await session.commit()
+        return int(outcome.listing_id)
+
+
 async def _seed_corpus(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> dict[str, int]:
+    """Seed ONE row (or more) into every table `RESET_DELETE_ORDER` names.
+
+    The reset's deletes are only really exercised when each table is non-empty. This
+    matters most for `listing_events`: its `BEFORE DELETE` trigger never fires on an
+    empty table, which is exactly why an append-only abort shipped unnoticed.
+    """
     async with session_factory() as session:
         session.add(Source(name="linkedin", display_name="LinkedIn"))
         search = Search(
@@ -68,24 +112,44 @@ async def _seed_corpus(
         )
         await session.commit()
 
-    raw = RawListing(
-        source="linkedin",  # type: ignore[arg-type]
-        source_listing_id="linkedin-1",
-        source_url="https://linkedin.example.com/jobs/1",
-        direct_url=None,
-        title="Backend Engineer",
-        company_name="Acme",
-        location_raw="Dublin, Ireland",
-        description="Build the thing.",
-        posted_at=date(2026, 9, 1),
-    )
+    first = await _seed_listing(session_factory, index=1, run_id=run_id)
+    # A second listing gives `listing_dupes` two real endpoints to reference.
+    second = await _seed_listing(session_factory, index=2, run_id=run_id)
+
     async with session_factory() as session:
-        await upsert_listing_source(
-            session,
-            source="linkedin",
-            norm=normalise_listing(raw),
-            run_id=run_id,
-            now=NOW,
+        session.add(CvVersion(label="Base", created_at=NOW))
+        session.add(QueueState(updated_at=NOW))
+        session.add(
+            Score(listing_id=first, run_id=run_id, criteria_version=1, created_at=NOW)
+        )
+        session.add(
+            ListingExclusion(listing_id=first, run_id=run_id, created_at=NOW)
+        )
+        session.add_all(
+            [
+                ListingEvent(listing_id=first, event_type="view", occurred_at=NOW),
+                ListingEvent(listing_id=first, event_type="save", occurred_at=NOW),
+                ListingEvent(listing_id=second, event_type="view", occurred_at=NOW),
+            ]
+        )
+        session.add(
+            ListingDupe(
+                listing_id=first,
+                dup_listing_id=second,
+                method="fuzzy",
+                score=0.97,
+                merged_at=NOW,
+            )
+        )
+        session.add(LlmCall(run_id=run_id, purpose="rank", status="ok", created_at=NOW))
+        session.add(
+            SourceRequestLog(
+                source="linkedin",
+                run_id=run_id,
+                occurred_at=NOW,
+                kind="search",
+                ok=True,
+            )
         )
         await session.commit()
 
@@ -139,6 +203,9 @@ async def test_a_correct_token_empties_the_corpus_and_keeps_configuration(
         assert await _count(session_factory, table) == 0, table
     for table in RESET_KEPT_TABLES:
         assert await _count(session_factory, table) > 0, table
+    # `cv_versions` is not in `RESET_KEPT_TABLES` (it is not shown on the page), but it
+    # is the user's configuration and must survive the reset too.
+    assert await _count(session_factory, "cv_versions") > 0
 
 
 async def test_the_snapshot_holds_the_pre_reset_rows(client, session_factory) -> None:
@@ -153,8 +220,9 @@ async def test_the_snapshot_holds_the_pre_reset_rows(client, session_factory) ->
 
     connection = sqlite3.connect(f"file:{snapshots[0]}?mode=ro", uri=True)
     try:
-        assert connection.execute("SELECT COUNT(*) FROM listings").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM listings").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM listing_events").fetchone()[0] == 3
     finally:
         connection.close()
 
@@ -176,7 +244,7 @@ async def test_a_run_in_flight_blocks_the_reset(client, session_factory) -> None
     response = await client.post("/settings/reset", data={"confirm": "DELETE"})
 
     assert response.status_code == 409
-    assert await _count(session_factory, "listings") == 1
+    assert await _count(session_factory, "listings") == 2
 
 
 async def test_tracked_work_blocks_the_reset(client, session_factory) -> None:
@@ -235,3 +303,74 @@ async def test_a_failed_snapshot_deletes_nothing(
     assert "snapshot failed" in response.text.lower()
     for table, count in before.items():
         assert await _count(session_factory, table) == count, table
+
+
+async def _trigger_present(session_factory: async_sessionmaker[AsyncSession]) -> int:
+    async with session_factory() as session:
+        return int(
+            await session.scalar(
+                text(
+                    "SELECT count(*) FROM sqlite_master "
+                    "WHERE type = 'trigger' AND name = 'listing_events_no_delete'"
+                )
+            )
+            or 0
+        )
+
+
+async def test_the_append_only_trigger_is_re_armed_and_still_enforced(
+    client, session_factory
+) -> None:
+    """The reset suspends the append-only DELETE trigger only to re-arm it on commit.
+
+    Presence is not enough — a trigger that exists but is not enforced would be a false
+    pass — so a fresh listing + event is inserted after the reset (the FK needs a
+    listing) and a direct DELETE must still abort.
+    """
+    await _seed_corpus(session_factory)
+    assert await _count(session_factory, "listing_events") == 3
+
+    response = await client.post("/settings/reset", data={"confirm": "DELETE"})
+
+    assert response.status_code == 200
+    assert await _trigger_present(session_factory) == 1
+
+    fresh = await _seed_listing(session_factory, index=999)
+    async with session_factory() as session:
+        session.add(ListingEvent(listing_id=fresh, event_type="view", occurred_at=NOW))
+        await session.commit()
+
+    with pytest.raises(IntegrityError):
+        async with session_factory() as session:
+            await session.execute(text("DELETE FROM listing_events"))
+            await session.commit()
+
+    assert await _count(session_factory, "listing_events") == 1, "the DELETE did not abort"
+
+
+async def test_a_failed_delete_rolls_back_and_re_arms_the_trigger(
+    client, session_factory, monkeypatch
+) -> None:
+    """A delete-phase error must roll back every DELETE and the DROP TRIGGER with it."""
+    await _seed_corpus(session_factory)
+    before = {
+        table: await _count(session_factory, table)
+        for table in ("listings", "listing_events", "listing_sources", "runs")
+    }
+    assert all(count > 0 for count in before.values()), before
+
+    def _fail_delete(_table: object) -> object:
+        raise RuntimeError("forced delete failure")
+
+    # The route calls the imported `delete`; replacing it makes a delete raise without a
+    # real disk error. The suspend has already run by then, so this also proves the DROP
+    # is rolled back rather than left committed.
+    monkeypatch.setattr(settings, "delete", _fail_delete)
+
+    response = await client.post("/settings/reset", data={"confirm": "DELETE"})
+
+    assert response.status_code == 500
+    assert "nothing was deleted" in response.text.lower()
+    for table, count in before.items():
+        assert await _count(session_factory, table) == count, table
+    assert await _trigger_present(session_factory) == 1

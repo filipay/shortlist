@@ -26,7 +26,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
@@ -168,6 +168,45 @@ async def _blocking_row(session: AsyncSession) -> str | None:
     return None
 
 
+#: The `BEFORE DELETE` trigger migration 0001 creates to keep `listing_events`
+#: append-only. The reset is the one operation allowed to empty that log.
+_APPEND_ONLY_TRIGGER = "listing_events_no_delete"
+
+
+async def _suspend_append_only_trigger(session: AsyncSession) -> str | None:
+    """Drop `listing_events`' append-only DELETE trigger; return its DDL, if any.
+
+    The reset is the one operation allowed to empty an append-only log, and it does so
+    only inside the transaction that re-arms the trigger before committing. The engine
+    issues an explicit `BEGIN` (see `app/db/session.build_engine`), so the `DROP
+    TRIGGER` is transactional: a failure anywhere rolls it back with the deletes, and
+    the invariant can never be left permanently disabled. The DDL is read from
+    `sqlite_master` rather than hardcoded so it cannot drift from the migration, and a
+    database that lacks the trigger still works — the DROP is `IF EXISTS` and `None`
+    means there is nothing to re-create.
+    """
+    ddl = await session.scalar(
+        text("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = :name"),
+        {"name": _APPEND_ONLY_TRIGGER},
+    )
+    connection = await session.connection()
+    await connection.exec_driver_sql(f"DROP TRIGGER IF EXISTS {_APPEND_ONLY_TRIGGER}")
+    return str(ddl) if ddl else None
+
+
+async def _restore_append_only_trigger(session: AsyncSession, ddl: str | None) -> None:
+    """Re-arm the trigger suspended by `_suspend_append_only_trigger`, if it existed.
+
+    Executed at the driver level via `exec_driver_sql` rather than `text()`: the DDL
+    contains the literal `'listing_events is append-only'` and `text()` would treat a
+    `:` in a future trigger body as a bind parameter. `exec_driver_sql` bypasses
+    SQLAlchemy's bind parsing entirely, so the stored statement round-trips verbatim.
+    """
+    if ddl:
+        connection = await session.connection()
+        await connection.exec_driver_sql(ddl)
+
+
 @router.post("/settings/reset", response_class=HTMLResponse)
 async def reset_data(
     request: Request,
@@ -179,6 +218,12 @@ async def reset_data(
     The order is the whole safety property: every refusal happens before the first
     DELETE, and the snapshot happens before it too. A snapshot taken after the deletes
     would be worthless.
+
+    `listing_events` is append-only via a `BEFORE DELETE` trigger, so the delete phase
+    suspends that trigger and re-arms it inside the same transaction; the route owns
+    the single commit. Any failure in the delete phase rolls the whole transaction back
+    (trigger included) and re-renders the honest "nothing was deleted" page rather than
+    letting an exception become a bare 500.
     """
     form = await read_form(request)
     confirm = str(form.get("confirm") or "").strip()
@@ -244,9 +289,32 @@ async def reset_data(
             status_code=500,
         )
 
-    for table in RESET_DELETE_ORDER:
-        await session.execute(delete(Base.metadata.tables[table]))
-    await session.commit()
+    try:
+        # `listing_events` can neither be deleted (its BEFORE DELETE trigger aborts) nor
+        # survive (its FK to `listings` is NO ACTION), so the delete phase suspends the
+        # trigger inside this transaction and re-arms it before the commit. Everything
+        # below is one transaction: the DROP, the deletes and the CREATE all commit or
+        # roll back together, because the engine makes DDL transactional.
+        trigger_ddl = await _suspend_append_only_trigger(session)
+        for table in RESET_DELETE_ORDER:
+            await session.execute(delete(Base.metadata.tables[table]))
+        await _restore_append_only_trigger(session, trigger_ddl)
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 — any delete failure must leave nothing deleted
+        # Roll back BEFORE re-rendering: `_settings_context` runs count queries, and a
+        # session left dirty by the failed statement would make those fail too.
+        await session.rollback()
+        log.warning("reset.delete_failed", error=type(exc).__name__, detail=str(exc))
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(
+                session,
+                banner=f"Nothing was deleted: the reset failed ({exc}).",
+                error=True,
+            ),
+            status_code=500,
+        )
 
     log.info("reset.completed", snapshot=snapshot.name)
     return templates.TemplateResponse(
