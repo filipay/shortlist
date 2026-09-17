@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "server_version": "1.18.31",
+    "captured_at": "2026-09-17",
+    "source": "GET http://127.0.0.1:4096/doc (unauthenticated, JSON, 478968 bytes)",
+    "spec_openapi": "3.1.0",
+    "note": "Hand-projected slice (D-55): only structured-output-relevant pointers are kept, so unrelated OpenAPI churn cannot fail the contract test. /doc's info.version is a static spec version (1.0.0), NOT the running server version; the server version comes from GET /global/health (P12). Refresh only via docs/runbook-opencode-contract.md, against an observed server."
+  },
+  "paths": {
+    "/session": {
+      "post": {
+        "request_body_properties": [
+          "agent",
+          "metadata",
+          "model",
+          "parentID",
+          "permission",
+          "title",
+          "workspaceID"
+        ],
+        "response_200_ref": "#/components/schemas/Session"
+      }
+    },
+    "/session/{sessionID}/message": {
+      "post": {
+        "operation_id": "session.prompt",
+        "request_body_properties": [
+          "agent",
+          "format",
+          "messageID",
+          "model",
+          "noReply",
+          "parts",
+          "system",
+          "tools",
+          "variant"
+        ],
+        "request_body_required": ["parts"],
+        "response_200_refs": {
+          "info": "#/components/schemas/AssistantMessage",
+          "parts": "array"
+        },
+        "response_200_required": ["info", "parts"]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OutputFormatJsonSchema": {
+        "properties": ["type", "schema", "retryCount"],
+        "required": ["type", "schema"],
+        "type_enum": ["json_schema"],
+        "schema_ref": "#/components/schemas/JSONSchema"
+      },
+      "AssistantMessage": {
+        "properties": [
+          "agent",
+          "cost",
+          "error",
+          "finish",
+          "id",
+          "mode",
+          "modelID",
+          "parentID",
+          "path",
+          "providerID",
+          "role",
+          "sessionID",
+          "structured",
+          "summary",
+          "time",
+          "tokens",
+          "variant"
+        ],
+        "required": [
+          "agent",
+          "cost",
+          "id",
+          "mode",
+          "modelID",
+          "parentID",
+          "path",
+          "providerID",
+          "role",
+          "sessionID",
+          "time",
+          "tokens"
+        ],
+        "additionalProperties": false
+      },
+      "StructuredOutputError": {
+        "properties": ["name", "data"],
+        "required": ["name", "data"],
+        "name_enum": ["StructuredOutputError"],
+        "data_properties": ["message", "retries"],
+        "data_required": ["message", "retries"]
+      },
+      "TextPartInput": {
+        "properties": [
+          "id",
+          "ignored",
+          "metadata",
+          "synthetic",
+          "text",
+          "time",
+          "type"
+        ],
+        "required": ["type", "text"],
+        "type_enum": ["text"]
+      }
+    }
+  }
+}

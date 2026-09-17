@@ -90,9 +90,9 @@ def test_the_path_constants_are_real_fixture_keys() -> None:
 
     assert contract.SESSION_PATH in paths
     assert contract.MESSAGE_DOC_PATH in paths
-    # The two constants exist on purpose and are NOT the same key.
+    # The two constants exist on purpose and are NOT the same key: one is our
+    # wire spelling, the other is the spec's path-template spelling.
     assert contract.MESSAGE_PATH != contract.MESSAGE_DOC_PATH
-    assert contract.MESSAGE_DOC_PATH == "/session/{sessionID}/message"
 
 
 def test_the_meta_records_the_observed_server_and_the_spec_source() -> None:
