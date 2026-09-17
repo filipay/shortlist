@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 03
-current_phase_name: llm-port-structured-output
+current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-09-17T18:21:27.432Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-09-17T20:08:50.224Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 2 complete, transitioned to Phase 3
-state_head: 4c4bb6a7d15cf1118f8f23521f759c27f68ee09a
+last_activity_desc: Phase 03 execution started
+state_head: 2c8c60970c410e779fa7bb2e402834e23aca1c90
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 25
-  completed_plans: 18
+  completed_plans: 19
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 3 — LLM Port + Structured Output
+**Current focus:** Phase 03 — LLM Port + Structured Output
 
 ## Current Position
 
-Phase: 03 (llm-port-structured-output) — READY TO EXECUTE
-Plan: Not started
+Phase: 03 (LLM Port + Structured Output) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-17 — Phase 2 complete, transitioned to Phase 3
+Last activity: 2026-09-17 — Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -77,6 +77,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P09 | 20 min | 2 tasks | 8 files |
 | Phase 02 P10 | 17 min | 2 tasks | 7 files |
 | Phase 02 P11 | 212 min | 8 tasks | 21 files |
+| Phase 03 P01 | 21 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,9 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-10: render_run_fragment is annotated with a structural RunFragmentSource Protocol (id/status/errors_json) and RunSummary mirrors the errors_json column name, so ONE renderer and ONE partial serve the run control and the queue's last-run strip with no shim object or second template (D-43).
 - [Phase 2]: 02-10: the pre-rendered strip fragment is wrapped in Markup in Python — Jinja would otherwise escape it into visible text — which keeps every template free of a safe-marking filter without an exception.
 - [Phase 2]: 02-10: the strip's reason value, derived sentence and /runs link sit OUTSIDE the fragment root so the strip's own 286 poll can swap the status block without dropping the explanation; the strip is a sibling of #run-control so the polling fragment keeps its #run-status-slot target.
+- [Phase 03]: 03-01: pin the opencode structured-output wire vocabulary in one no-I/O module (app/llm/contract.py); the request field is format and the live response field is info.structured, with no adaptive fallback (D-54/D-56).
+- [Phase 03]: 03-01: parse_providers accepts the live dict shape AND the legacy list shape; OPENCODE_MODEL resolves through discovery and fails loud on a miss instead of silently omitting model.
+- [Phase 03]: 03-01: the selftest is a plain full-page POST that writes exactly one llm_calls row (purpose='probe', run_id NULL) and no runs row; server_version is carried on the returned record but not persisted until migration 0003 (plan 03-04).
 
 ### Pending Todos
 
@@ -186,6 +190,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T17:09:08.668Z
-Stopped at: Phase 3 context gathered
-Resume file: /workspace/job-search/.planning/phases/03-llm-port-structured-output/03-CONTEXT.md
+Last session: 2026-09-17T20:08:50.148Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None

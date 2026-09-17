@@ -128,12 +128,12 @@ Plans:
   3. A CI contract test reads the installed server's `GET /doc` and fails loudly if the structured-output field name changes — resolving and pinning the `format` vs `outputFormat` ambiguity.
   4. Untrusted listing text reaches the model only as user content (never the system prompt) and tools are disabled by default.
 
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Tracer: a schema-constrained call completes through the port, and the operator can run it
+- [x] 03-01-PLAN.md — Tracer: a schema-constrained call completes through the port, and the operator can run it
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -253,7 +253,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
-| 3. LLM Port + Structured Output | 0/7 | Planned | - |
+| 3. LLM Port + Structured Output | 1/7 | In Progress|  |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
