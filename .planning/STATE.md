@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-09-17T21:32:37.382Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-09-17T22:40:01.177Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: 1b84a25cc2752b4000a31a86cf5173806adf92aa
+state_head: 006b318eeb35a662cc19e7a00a13f745601d059d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-09-17 — Phase 03 execution started
 
@@ -80,6 +80,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P01 | 21 min | 3 tasks | 18 files |
 | Phase 03 P02 | 8 min | 2 tasks | 4 files |
 | Phase 03 P03 | 9 min | 2 tasks | 3 files |
+| Phase 03 P04 | 8 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -174,6 +175,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-03: status stays inside the four legal llm_calls.status values; the operator cause lives in error_kind (unreachable/timeout/invalid/http_<code>/parse-exception), and ConnectTimeout is unreachable while ReadTimeout is timeout.
 - [Phase 03]: 03-03: the client retry loop is bounded by the caller's retries argument (Settings supplies the default) and never retries a schema failure; attempts is the server's info.error.data.retries when supplied, else the issued-request count.
 - [Phase 03]: 03-03: TOLERATED_SCHEMA_ERRORS is an explicit frozenset allow-list and _salvage is wired into complete_structured; the WrapValidator substitutes defaults by removing the offending field, so a default-less field re-raises instead of leaking a PydanticUseDefault marker (P11).
+- [Phase 03]: 03-04: Task 1's one-way-door gate resolved to migration-0003 — a dedicated nullable llm_calls.server_version VARCHAR(32) (migration 0003), because backend/provider/error each have distinct meanings another surface relies on and error is NULL on the successful rows where the version matters most.
+- [Phase 03]: 03-04: llm_call_repo.latest_probe and llm_totals_for_run are the shared reads (total over half-written rows, never commit); _settings_context reads through latest_probe, so D-52's detail has one read shape and server_version now survives a reload.
+- [Phase 03]: 03-04: the migration + ORM mirror land together so test_orm_drift enforces the pair; four revision assertions (three in test_migration_contract, one in test_skeleton_boot) moved deliberately to 0003, and no JSON column was added so test_no_pii_columns is untouched.
 
 ### Pending Todos
 
@@ -197,6 +201,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T21:32:37.299Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-09-17T22:40:01.100Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
