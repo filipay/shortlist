@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 2
-current_phase_name: Clean, Filtered, Queryable Queue
-status: verifying
-stopped_at: Completed 02-10-PLAN.md
-last_updated: "2026-09-16T12:32:45.764Z"
-last_activity: 2026-09-16
-last_activity_desc: Phase 2 execution started
-state_head: d2f0656a1481e4e796a8fd42d980ec418997c124
+current_phase: 3
+current_phase_name: LLM Port + Structured Output
+status: planning
+stopped_at: Phase 2 complete, ready to plan Phase 3
+last_updated: "2026-09-17T15:08:33.048Z"
+last_activity: 2026-09-17
+last_activity_desc: Phase 2 complete, transitioned to Phase 3
+state_head: 728ca1dab3a999cafdf2a5b7ceee44a9e76d8ae1
 progress:
   total_phases: 8
-  completed_phases: 0
-  total_plans: 17
-  completed_plans: 17
-  percent: 0
+  completed_phases: 2
+  total_plans: 18
+  completed_plans: 18
+  percent: 25
 ---
 
 # Project State
@@ -23,22 +23,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-15)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 2 — Clean, Filtered, Queryable Queue
+**Current focus:** Phase 3 — LLM Port + Structured Output
 
 ## Current Position
 
-Phase: 2 (Clean, Filtered, Queryable Queue) — EXECUTING
-Plan: 10 of 10
-Status: Phase complete — ready for verification
-Last activity: 2026-09-16 — Phase 2 execution started
+Phase: 3 — LLM Port + Structured Output
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-17 — Phase 2 complete, transitioned to Phase 3
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 18
 - Average duration: — min
 - Total execution time: 0.0 hours
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 7 | - | - |
+| 02 | 11 | - | - |
 
 **Recent Trend:**
 
@@ -75,6 +76,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P08 | 32 min | 3 tasks | 10 files |
 | Phase 02 P09 | 20 min | 2 tasks | 8 files |
 | Phase 02 P10 | 17 min | 2 tasks | 7 files |
+| Phase 02 P11 | 212 min | 8 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -172,7 +174,7 @@ None yet.
 - [Phase 4] Blocking unknown #1 — the real `.tex` is **not in this repo**; `.tex → cv.yaml` import cost and Tectonic bundle coverage are unmeasured. Spike on one section is a hard gate before Phase 6 is estimated.
 - [Phase 3] `format` vs `outputFormat` in the opencode structured-output contract is unresolved; resolve against the running server and pin with a `/doc` contract test.
 - [Phase 5] Ranking batching (one call per listing vs per K) and budget-cap semantics are unresolved; decide in the plan.
-- [Phase 2] Dedup threshold θ and the merge-rate band are untunable without a real corpus; leave as a setting + tuning task.
+- [Phase 2] RESOLVED at the end-of-phase UAT (2026-09-17): θ=88 was assessed against the real corpus and retained, and the research 10–15% merge-rate band was judged non-transferable to this market — the blocking key plus the grade guard do the discriminating, which the cross-source-only merge rule then hardened. No longer a blocker for planning.
 
 ## Deferred Items
 
@@ -184,6 +186,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T12:32:45.686Z
-Stopped at: Completed 02-10-PLAN.md
+Last session: 2026-09-17T15:08:33.048Z
+Stopped at: Phase 2 complete, ready to plan Phase 3
 Resume file: None
