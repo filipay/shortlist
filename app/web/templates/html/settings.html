@@ -40,7 +40,7 @@
   </form>
 
   {% if probe %}
-  <div class="settings-result" id="llm-test-result">
+  <div id="llm-test-result">
     <p class="settings-note" id="probe-status">
       Call {{ probe.id }}: status <strong>{{ probe.status }}</strong>{% if probe_error_kind %} ({{ probe_error_kind }}){% endif %}.
     </p>
