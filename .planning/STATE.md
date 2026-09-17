@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-09-17T22:40:01.177Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-09-17T22:49:52.400Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: 006b318eeb35a662cc19e7a00a13f745601d059d
+state_head: c887c31074585faf007c4c7ea219fff7047753f2
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 22
+  completed_plans: 23
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-09-17 — Phase 03 execution started
 
@@ -81,6 +81,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P02 | 8 min | 2 tasks | 4 files |
 | Phase 03 P03 | 9 min | 2 tasks | 3 files |
 | Phase 03 P04 | 8 min | 3 tasks | 7 files |
+| Phase 03 P05 | 5 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-04: Task 1's one-way-door gate resolved to migration-0003 — a dedicated nullable llm_calls.server_version VARCHAR(32) (migration 0003), because backend/provider/error each have distinct meanings another surface relies on and error is NULL on the successful rows where the version matters most.
 - [Phase 03]: 03-04: llm_call_repo.latest_probe and llm_totals_for_run are the shared reads (total over half-written rows, never commit); _settings_context reads through latest_probe, so D-52's detail has one read shape and server_version now survives a reload.
 - [Phase 03]: 03-04: the migration + ORM mirror land together so test_orm_drift enforces the pair; four revision assertions (three in test_migration_contract, one in test_skeleton_boot) moved deliberately to 0003, and no JSON column was added so test_no_pii_columns is untouched.
+- [Phase 03]: 03-05: the three Phase-3 opencode ceilings are asserted by the config guard and proven env-tunable; the completion timeout stays a separate Settings field from opencode_timeout_seconds (P4) and the LIMIT_FIELDS comment records why they must not be merged.
+- [Phase 03]: 03-05: compose.yml forwards all four opencode keys with ${VAR:-default} defaults matching app/config.py exactly — the three new ceilings plus the previously unforwarded OPENCODE_TIMEOUT_SECONDS — and .env.example documents each, so a host .env override is no longer silently defeated.
+- [Phase 03]: 03-05: probe_cache_ttl_seconds was a ceiling LIMIT_FIELDS covered but REQUIRED_SETTINGS_FIELDS omitted; it is now required, so every LIMIT_FIELDS entry is a required numeric ceiling.
 
 ### Pending Todos
 
@@ -201,6 +205,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T22:40:01.100Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-09-17T22:49:52.323Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None
