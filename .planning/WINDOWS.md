@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 3
 waived_count: 1
 fixed_count: 1
-total_count: 4
-last_updated: 2026-09-16T14:45:41.388Z
+total_count: 5
+last_updated: 2026-09-17T20:07:07.720Z
 ---
 
 # Broken Windows Ledger
@@ -19,6 +19,7 @@ last_updated: 2026-09-16T14:45:41.388Z
 | 2 | 1 | unrun-verify |  |  | Dependency-legitimacy human-check (resolved version set vs the RESEARCH Package Legitimacy Audit; aiosqlite/structlog home-page check; JobSpy resolves to the full SHA) is collected at phase verification per workflow.human_verify_mode=end-of-phase. | open |  | 2026-09-15T17:17:00.804Z |  |
 | 3 | 1 | unmet-truth | app/sources/indeed.py |  | Adapter probe() asserts status, minimum body length and stop-signal absence but not a POSITIVE structural marker (3 of the 4 RESEARCH signals) for must-have truth 5; deferred to plan 01-07 because choosing a marker needs a real known-stable page and a guessed one would cause false 'degraded' classifications. Recorded as human_judgment coverage entry D8 in 01-06-SUMMARY.md. | waived | Waived by human decision at phase-01 verification (operator, 2026-09-15): accept the probe's 3-of-4 signal set and waive the missing positive structural marker. The probe asserts HTTP status, minimum body length and stop-signal absence; choosing a marker needs a real known-stable page and a guessed marker would cause FALSE degraded classifications. The recorded survival verdict does not depend on the marker (it derives from runs + source_request_log). Recorded as 2 overrides in 01-VERIFICATION.md; re-open by implementing a marker once a real board page has been observed. | 2026-09-15T18:54:59.352Z | 2026-09-15T22:23:44.053Z |
 | 4 | 1 | unmet-truth | app/api/health.py |  | probe() is not a reliable proxy for fetch(): in the same container session the /health probe reported indeed=unreachable and linkedin=degraded at 21:02:36 while runs.id=1 had just fetched 50 usable listings from EACH board at 21:02:01 (100 distinct content_hash, 0 blank titles). The survival verdict is unaffected (it derives from runs + source_request_log), but /health's per-source liveness badge can mislead, and promotion condition P-4 is unusable until resolved. Candidate human-verification item: is the fixed probe URL/classification wrong, was the difference a transient board challenge, or should the probe be re-pointed at the ingest path? Same family as entry #3. See docs/probes/2026-09-15-scraper-survival.md section 7. | open |  | 2026-09-15T21:05:27.728Z |  |
+| 5 | 3 | unrun-verify |  |  | Operator-run live check of one real schema-constrained call from /settings (PLAT-02 success criterion 1) cannot run in the executor sandbox: it needs the user's opencode server with no second provider key configured (03-VALIDATION.md Manual-Only table). The default lane proves the port path with a fake transport; the live call plus confirmation of exactly one llm_calls row (purpose='probe', run_id NULL, no new runs row) remains for the operator. | open |  | 2026-09-17T20:07:07.720Z |  |
 
 ````json
 [
@@ -68,6 +69,18 @@ last_updated: 2026-09-16T14:45:41.388Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T21:05:27.728Z",
+    "resolved_at": null
+  },
+  {
+    "id": 5,
+    "kind": "unrun-verify",
+    "phase": "3",
+    "file": "",
+    "line": null,
+    "description": "Operator-run live check of one real schema-constrained call from /settings (PLAT-02 success criterion 1) cannot run in the executor sandbox: it needs the user's opencode server with no second provider key configured (03-VALIDATION.md Manual-Only table). The default lane proves the port path with a fake transport; the live call plus confirmation of exactly one llm_calls row (purpose='probe', run_id NULL, no new runs row) remains for the operator.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T20:07:07.720Z",
     "resolved_at": null
   }
 ]
