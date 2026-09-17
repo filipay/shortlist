@@ -77,6 +77,7 @@ from app.db.repositories.exclusion_repo import (
     excluded_counts_for_run,
     rule_counts_for_listings,
 )
+from app.domain.listing import canonical_url
 from app.domain.search_query import build_match_expression
 
 #: Fallback page size when a caller passes none. The route always passes
@@ -428,15 +429,21 @@ async def _enrich(
     ).all():
         board_url = str(source_url or "")
         employer_url = str(canonical_source_url or "")
+        # `source_url` is stored raw while `canonical_source_url` is the normalised
+        # `canonical_url(source_url, direct_url)`, so compare the board page's
+        # normalised form against it: raw-vs-normalised would call one page two
+        # whenever the raw URL carries a tracking param or fragment. `canonical_url`
+        # is idempotent, so this is a like-for-like comparison.
+        employer_page = (
+            employer_url
+            if employer_url and canonical_url(board_url) != employer_url
+            else None
+        )
         grouped.setdefault(int(listing_id), []).append(
             SourceLink(
                 source=str(source),
                 url=board_url,
-                employer_url=(
-                    employer_url
-                    if employer_url and employer_url != board_url
-                    else None
-                ),
+                employer_url=employer_page,
             )
         )
 

@@ -185,6 +185,38 @@ async def test_employer_url_is_kept_when_it_differs(session_factory) -> None:
     )
 
 
+async def test_employer_url_is_omitted_when_only_normalisation_differs(
+    session_factory,
+) -> None:
+    """Raw `source_url` and normalised `canonical_source_url` denote the same page.
+
+    `source_url` is stored raw while `canonical_source_url` is normalised, so the
+    two strings diverge once the raw URL carries a parameter the normaliser strips
+    (`?trk=…`). A raw-vs-normalised comparison would spuriously emit a second link
+    for the one page; the guard must compare like-for-like instead.
+    """
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=9)
+    async with session_factory() as session:
+        link = await session.scalar(
+            select(ListingSource).where(ListingSource.listing_id == listing_id)
+        )
+        assert link is not None
+        link.source_url = "https://linkedin.example.com/jobs/9?trk=tracking"
+        link.canonical_source_url = "https://linkedin.example.com/jobs/9"
+        await session.commit()
+
+    row = await _read_one(session_factory, listing_id)
+
+    assert row.source_links == (
+        SourceLink(
+            source="linkedin",
+            url="https://linkedin.example.com/jobs/9?trk=tracking",
+        ),
+    )
+    assert row.source_links[0].employer_url is None
+
+
 async def test_a_second_source_row_is_a_second_link(session_factory) -> None:
     await _register_sources(session_factory, "linkedin", "indeed")
     listing_id = await _seed_listing(session_factory, index=6)
