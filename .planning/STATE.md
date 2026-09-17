@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
-status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-09-17T23:08:14.823Z"
+status: verifying
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-09-17T23:24:57.969Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: f0df570a062d60c715ca240a7584d8f31431e6dd
+state_head: f61f8cbedf83a4bce3d5298215a1f9b4e6d85264
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-17 — Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -83,6 +83,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P04 | 8 min | 3 tasks | 7 files |
 | Phase 03 P05 | 5 min | 2 tasks | 3 files |
 | Phase 03 P06 | 13 min | 3 tasks | 10 files |
+| Phase 03 P07 | 10 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-06: tools are denied by default through the session-level permission ruleset (DEFAULT_DENY_RULES), not the deprecated message-level tools map; the message body sends no tools key by default and a wildcard '*' key raises ValueError naming the permission control.
 - [Phase 03]: 03-06: the session model shape {id: modelID, providerID} is the deliberate inverse of the message shape {providerID, modelID}; both key order and values are asserted together because a wrong placement is a silent 400.
 - [Phase 03]: 03-06: the deny is observed, not asserted — StructuredCallResult.part_types/info_keys carry part TYPE names and info KEY names only (logged and rendered on /settings, transient), and a scoped import guard enforces §6.5 with a proven app/sources exclusion.
+- [Phase 03]: 03-07: instruction-like text is recorded as a counts-only finding (instruction_like bool + patterns_matched int) on listings.quality_signals_json; a clean listing passes None so the column stays NULL and a recorded signal is never clobbered, and no redaction step was added.
+- [Phase 03]: 03-07: the queue row ships a conditional 'flagged' badge with its own .badge-flagged CSS rule — the plan's condition held (the three queue tests assert badges additively), so the guard was satisfied rather than weakened.
+- [Phase 03]: 03-07: _finish gains llm_calls/llm_tokens, assigned only when supplied and never touching ranked_count; Phase 3 wires no caller so D-49 holds and run_pipeline still writes zero llm_calls rows.
 
 ### Pending Todos
 
@@ -209,6 +213,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T23:08:14.745Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-09-17T23:24:57.892Z
+Stopped at: Completed 03-07-PLAN.md
 Resume file: None
