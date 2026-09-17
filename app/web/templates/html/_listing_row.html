@@ -41,6 +41,7 @@
     {% if row.is_new %}<span class="badge badge-new">new</span>{% endif %}
     {% if row.is_stale %}<span class="badge badge-stale">stale</span>{% endif %}
     {% if row.merged_from %}<a class="badge badge-merged" href="/merges">merged from {{ row.merged_from }} sources</a>{% endif %}
+    {% if row.instruction_like %}<span class="badge badge-flagged" id="listing-flagged-{{ row.id }}">flagged</span>{% endif %}
   </td>
   <td class="listing-company">{{ row.company }}</td>
   <td class="listing-location">{{ row.location }}</td>

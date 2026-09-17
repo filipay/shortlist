@@ -264,8 +264,25 @@ async def _persist_result(
         for raw in result.items:
             try:
                 async with session.begin_nested():
-                    sanitised, _report = await sanitize_listing(raw)
-                    normalised = normalise_listing(sanitised)
+                    sanitised, report = await sanitize_listing(raw)
+                    # §6.3: instruction-like text is a FINDING TO RECORD — never
+                    # obeyed, never silently stripped. The payload is counts only (a
+                    # bool plus an int); the sanitize module never exposes the
+                    # matched text, so there is nothing here that could carry prose.
+                    # A clean listing passes `None` so the column stays NULL and a
+                    # previously recorded signal is never clobbered (T-3-21).
+                    signals = {
+                        "instruction_like": report.instruction_like,
+                        "patterns_matched": report.patterns_matched,
+                    }
+                    normalised = normalise_listing(
+                        sanitised,
+                        quality_signals=(
+                            signals
+                            if (report.instruction_like or report.patterns_matched)
+                            else None
+                        ),
+                    )
                     outcome = await upsert_listing_source(
                         session,
                         source=result.source,

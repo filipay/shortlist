@@ -198,6 +198,10 @@ class QueueRow:
     url: str | None = None
     #: One entry per `listing_sources` row, so a merge never hides half its provenance.
     source_links: tuple[SourceLink, ...] = ()
+    #: True when the listing's `quality_signals_json` records an instruction-like
+    #: finding (§6.3). Read through a tolerant accessor, so a NULL, non-mapping or
+    #: malformed value degrades to False rather than breaking the page.
+    instruction_like: bool = False
 
 
 @dataclass(frozen=True)
@@ -388,6 +392,18 @@ async def read_queue(
     )
 
 
+def _instruction_like(value: object) -> bool:
+    """`quality_signals_json["instruction_like"]`, or False when unusable.
+
+    Total by design: the column is nullable, a half-written row is possible, and a
+    queue page must render either way. Only the boolean flag is read — never a
+    count, and never any prose (there is none in the payload to begin with).
+    """
+    if not isinstance(value, Mapping):
+        return False
+    return bool(value.get("instruction_like", False))
+
+
 def _http_url(value: str | None) -> str:
     """Return `value` only when it is an http(s) URL, else "".
 
@@ -522,6 +538,7 @@ async def _enrich(
                 rules=tuple(chips),
                 url=_http_url(listing.canonical_url) or None,
                 source_links=links,
+                instruction_like=_instruction_like(listing.quality_signals_json),
             )
         )
     return rows
