@@ -1,27 +1,31 @@
 ---
-status: testing
+status: complete
 phase: 02-clean-filtered-queryable-queue
-source: [02-VERIFICATION.md]
+source: [02-VERIFICATION.md, 02-11-SUMMARY.md]
 started: 2026-09-16T13:30:00Z
-updated: 2026-09-16T17:07:19Z
+updated: 2026-09-17T15:30:00Z
 ---
+
+## Note on result vocabulary (2026-09-17)
+
+Items 1–5 were recorded on 2026-09-16 as `result: satisfied` — the word the first
+pass used. The completion predicate (`phase uat-passed --require-verification`)
+recognises only `pass` / `skipped` / `blocked`, so all five read back as blockers
+(`02-UAT.md: test 1 (satisfied)`, …) and the phase could not advance. They are
+relabelled `pass` here and **no result changed**: the dates, the evidence, the
+operator quotes and the G1–G7 findings are untouched. Items 6–9 are new, for the
+02-11 deliverables that post-date the original UAT.
 
 ## Current Test
 
-number: 1
-name: Tune the dedup threshold θ against the first real corpus
-expected: |
-  Run a real pipeline run against live LinkedIn/Indeed data, inspect the
-  listing_dupes pairs and the merge rate on /merges, and record the chosen
-  Settings.dedup_fuzzy_threshold (currently 88) and its justification in docs/.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. Tune the dedup threshold θ against the first real corpus
 expected: Run a real pipeline run against live LinkedIn/Indeed data, inspect the `listing_dupes` pairs and the merge rate on `/merges`, and record the chosen `Settings.dedup_fuzzy_threshold` (currently 88) and its justification in `docs/`.
 why_human: No real corpus exists pre-run; θ is deliberately shipped as a setting with a tuning procedure (02-VALIDATION.md Manual-Only; ROADMAP Phase-2 Notes; D-31). Code and tests prove θ is a settings read with no hard-coded literal, not that 88 is the right value.
-result: satisfied (2026-09-16) — θ assessed against the real corpus; 88 retained
+result: pass (2026-09-16) — θ assessed against the real corpus; 88 retained
 evidence: 2 real runs triggered; latest run #6 fetched=100. **6 live (un-reverted) merges** at scores
   89.1 / 90.6 / 92.0 / 95.2 / 100.0 / 100.0 — the lowest correct merge is **89.1**, so θ=88 caught it by
   only 1.1. 44 unmerged near-miss pairs scored >=70 and the distributions **overlap heavily**: true
@@ -37,7 +41,7 @@ evidence: 2 real runs triggered; latest run #6 fetched=100. **6 live (un-reverte
 ### 2. Merge-rate band sanity check after a real run
 expected: After a real run, compare the observed merge rate on `/merges` against the 10–15% band from research and record why the chosen θ is or is not adjusted.
 why_human: The band comes from a different market/query shape; QUEUE-09 asks for the rate to be visible and windowed, which is machine-verified, but whether the observed rate is sane needs real data.
-result: satisfied (2026-09-16) — band compared against the only defensible figure; G2(a) implemented
+result: pass (2026-09-16) — band compared against the only defensible figure; G2(a) implemented
 evidence: `merge_rate()` is windowed to the latest run, so the per-run figures are 6/100 = **6.0%** on
   run #5 (the run that did the merging) and 0/100 = **0.0%** on run #6 (steady state). Neither is a
   meaningful "how much merging is happening" number, because all three runs re-fetch the SAME ~100
@@ -55,7 +59,7 @@ evidence: `merge_rate()` is windowed to the latest run, so the per-run figures a
 ### 3. Compose smoke of the running stack
 expected: `docker compose up` and browse the queue; confirm the migration to `0002` applies, the queue renders, and the run trigger works end to end.
 why_human: 02-VALIDATION.md lists this as a WINDOWS.md carry-over (open item #1); it needs Docker/network and a human browsing.
-result: satisfied (2026-09-16)
+result: pass (2026-09-16)
 evidence: Operator ran `bash scripts/compose-smoke.sh` on the Phase-2 image → PASS (`up -d --wait`
   healthy, `/health` `db=ok`, a run completed, listings survived `restart`). Follow-up probes:
   revision `0002`, 104 listings preserved, `ck_runs_reason` present, `rapidfuzz 3.14.6`,
@@ -67,7 +71,7 @@ evidence: Operator ran `bash scripts/compose-smoke.sh` on the Phase-2 image → 
 ### 4. Confirm the pinned rapidfuzz dependency was human-approved
 expected: The approval (version 3.14.6, source repo `rapidfuzz/RapidFuzz`, pre-compiled musllinux wheel, no arbitrary build step) is recorded in 02-02-SUMMARY.md "Authentication Gates".
 why_human: An out-of-band human sign-off cannot be machine-verified; recorded as discharged in-phase on 2026-09-16 during execution, re-listed for the end-of-phase human checkpoint.
-result: satisfied (2026-09-16)
+result: pass (2026-09-16)
 evidence: During plan 02-02 execution the human answered the `blocking-human` checkpoint with
   "approved", having been shown: `pip index versions rapidfuzz` → 3.14.6 with a release history
   back to 0.0.6; PyPI metadata homepage/repository `https://github.com/rapidfuzz/RapidFuzz`
@@ -78,7 +82,7 @@ evidence: During plan 02-02 execution the human answered the `blocking-human` ch
 ### 5. Judge whether the excluded-listing chip satisfies "which rule fired and why"
 expected: Under `Show excluded`, each rejected listing shows a chip `rule.kind (count)` (e.g. `exclude_keyword (2)`). Confirm this is sufficient, or require the firing rule id and the matched `detail_json` term (e.g. `crypto`) to be surfaced.
 why_human: The rule id and the persisted `listing_exclusions.detail_json` (the matched term/field) have no UI consumer; the chip names only the rule kind plus a per-rule count. This is a product-sufficiency judgment against SC2 / FILT-03 wording, not a machine-definable pass/fail.
-result: satisfied (2026-09-16) — kind + run-scoped count judged sufficient for now
+result: pass (2026-09-16) — kind + run-scoped count judged sufficient for now
 evidence: User decision: *"I think it's enough for now, we can add more."* So the chip stays as
   `rule.kind (count)`. The underlying capability is present and tested — `detail_json` (the matched
   term/field) is persisted on every exclusion and `rule_id` is available on `QueueRule` — so enriching
@@ -88,10 +92,30 @@ evidence: User decision: *"I think it's enough for now, we can add more."* So th
   an ad-hoc browse-time filter over listing attributes, not chip content — and is captured as
   **SEED-001** (`.planning/seeds/SEED-001-queue-filter-by-remote-and-location.md`) for a future phase.
 
+### 6. A queue row links to its posting and to each source
+expected: On `/`, each row's title links to the posting page in a new tab; a merged row shows one link per source (so both halves of a merge are visible); an `Apply` link to the employer/ATS page appears **only** when that URL genuinely differs from the board URL (Indeed usually differs, LinkedIn does not); a row with no usable URL renders as plain text rather than a dead link; and no `javascript:`/`data:` URL ever reaches an `href`.
+why_human: The data path and the `http(s)` gate are machine-verified; whether the *right* links appear on real listings, and whether the "Apply only when different" rule reads correctly on the live corpus, needs a human looking at actual rows.
+result: pass (2026-09-17) — operator confirmed on the live instance ("all pass")
+
+### 7. Dismiss the whole queue with one action
+expected: With the search box empty and no toggles selected, `Dismiss all queued listings` empties the queue, the returned page already shows the empty queue (no stale row left behind), the dismissal survives a reload, and `Unhide` restores exactly one row. Nothing already hidden, absorbed as a merge twin, or excluded by the latest run is touched, and one `hide` event per listing is recorded with `context.surface = queue_dismiss`.
+why_human: The scope question — "everything" meaning the **default** queue, not the currently filtered view — is a product judgment, and the known above-ceiling edge (a refusal that htmx does not swap, so no visible feedback) can only be judged by eye.
+result: pass (2026-09-17) — operator confirmed on the live instance ("all pass")
+
+### 8. The settings page renders its danger zone
+expected: `GET /settings` shows the per-table row counts, the confirm token, and a fifth `Settings` nav link that marks itself current. The danger zone is visually separated from ordinary settings, and the reset cannot be triggered without the exact token typed.
+why_human: Visual hierarchy and affordance — whether the danger zone *reads* as dangerous and the token requirement is discoverable — is a design read, not a machine check.
+result: pass (2026-09-17) — operator confirmed on the live instance ("all pass")
+
+### 9. The guarded reset on the live database
+expected: On the real container, `POST /settings/reset` with the correct token writes a snapshot to `<db_dir>/reset-backups/jobsearch-<UTC>Z.db`, empties the queue child-first in one transaction, keeps `searches` / `filter_rules` / `sources`, and reports the snapshot filename; the queue is still empty after a reload. A wrong token gives `400`, a run in flight `409`, tracked work present `409`, a snapshot failure `500` — each with the corpus untouched.
+result: pass (2026-09-17) — operator confirmed on the live instance ("all pass")
+evidence: **This is the case that failed with a bare `500` on the live database before `c16023a`.** The operator has since rebuilt the container and confirmed the reset now succeeds and the queue stays empty; the fix and its engine change were separately reviewed and recorded as a deliberate decision (`d436425`).
+
 ## Summary
 
-total: 5
-passed: 5
+total: 9
+passed: 9
 issues: 0
 pending: 0
 skipped: 0
