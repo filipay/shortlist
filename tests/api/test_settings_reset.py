@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api import settings
 from app.api.settings import RESET_DELETE_ORDER, RESET_KEPT_TABLES
 from app.db.models import (
     CvArtifact,
@@ -210,3 +211,27 @@ async def test_a_terminal_run_does_not_block_the_reset(client, session_factory) 
 
     assert response.status_code == 200
     assert await _count(session_factory, "runs") == 0
+
+
+async def test_a_failed_snapshot_deletes_nothing(
+    client, session_factory, monkeypatch
+) -> None:
+    """The 500 branch: a snapshot that cannot be taken must leave every row intact."""
+    await _seed_corpus(session_factory)
+    before = {
+        table: await _count(session_factory, table)
+        for table in ("listings", "listing_sources", "runs", "searches")
+    }
+    assert all(count > 0 for count in before.values()), before
+
+    def _fail_snapshot(**_kwargs: object) -> Path:
+        raise settings.ResetRefused("disk full")
+
+    monkeypatch.setattr(settings, "snapshot_database", _fail_snapshot)
+
+    response = await client.post("/settings/reset", data={"confirm": "DELETE"})
+
+    assert response.status_code == 500
+    assert "snapshot failed" in response.text.lower()
+    for table, count in before.items():
+        assert await _count(session_factory, table) == count, table

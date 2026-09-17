@@ -4,9 +4,15 @@ The reset is the only destructive route in the application, so its guards are ex
 and ordered: confirm token, no run in flight, no tracked work, a snapshot on disk, and
 only then the deletes. It refuses rather than improvises at every step.
 
-No auth in v1 (D-21) means no CSRF token is available; the type-to-confirm token plus
-the automatic snapshot are this route's specific mitigation, and `POST` is required so
-a link or a prefetch can never trigger it.
+The type-to-confirm token is a fat-finger and prefetch affordance, NOT a security
+control: the token is rendered into the page in plain text, so anyone who can load
+`/settings` can read it. The automatic snapshot is the real mitigation, and `POST` is
+required so a link or a prefetch can never trigger the reset.
+
+v1 has no authentication at all (D-21), so there is no ambient credential for a
+cross-site request to abuse and this route is not CSRF-exploitable today. That changes
+the moment session authentication lands (the planned Authentik step): with a session
+cookie present, this route becomes a genuine CSRF hole unless a CSRF token is added.
 """
 
 from __future__ import annotations
@@ -124,10 +130,12 @@ def snapshot_database(*, db_path: Path, backups_dir: Path, moment: datetime) -> 
     a transaction, and the async engine would wrap it in one. `VACUUM INTO` is a single
     statement, it is WAL-safe, and it needs no new dependency.
 
-    The destination is written as an escaped SQL literal rather than a bound parameter:
-    `VACUUM INTO` takes an expression, and a literal removes any doubt about how the
-    statement is prepared. The path is ours — a database directory plus a generated
-    filename — and single quotes are doubled anyway.
+    The destination is written as an escaped SQL literal rather than a bound parameter.
+    The path is server-derived — the directory of `session.get_bind().url.database` plus
+    a `strftime` timestamp — so no request-controlled component reaches it today, and
+    single quotes are doubled anyway. That safety rests entirely on the path never
+    becoming user-controlled; modern SQLite does accept a bound parameter, so a future
+    change could bind it instead of building a literal.
     """
     backups_dir.mkdir(parents=True, exist_ok=True)
     destination = backups_dir / f"jobsearch-{moment.strftime('%Y%m%dT%H%M%SZ')}.db"
