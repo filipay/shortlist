@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 03
 current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-09-17T21:18:50.592Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-09-17T21:32:37.382Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 03 execution started
-state_head: 19f95354dac21e4593c9f38585a6ca631468f3db
+state_head: 1b84a25cc2752b4000a31a86cf5173806adf92aa
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 25
-  completed_plans: 20
+  completed_plans: 21
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 ## Current Position
 
 Phase: 03 (LLM Port + Structured Output) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-17 — Phase 03 execution started
 
@@ -79,6 +79,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P11 | 212 min | 8 tasks | 21 files |
 | Phase 03 P01 | 21 min | 3 tasks | 18 files |
 | Phase 03 P02 | 8 min | 2 tasks | 4 files |
+| Phase 03 P03 | 9 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -170,6 +171,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-01: the selftest is a plain full-page POST that writes exactly one llm_calls row (purpose='probe', run_id NULL) and no runs row; server_version is carried on the returned record but not persisted until migration 0003 (plan 03-04).
 - [Phase 03]: 03-02: the /doc contract slice is indexed by MESSAGE_DOC_PATH (the OpenAPI path-template spelling) and never by MESSAGE_PATH; both constants are asserted present and distinct so a rename fails loudly rather than raising a bare KeyError.
 - [Phase 03]: 03-02: the live lane diffs 22 named facts set-by-set and asserts the committed _meta.server_version matches GET /global/health, so a version-only upgrade still fails; it performs no model call (D-57) and a request hook asserts no POST occurred.
+- [Phase 03]: 03-03: status stays inside the four legal llm_calls.status values; the operator cause lives in error_kind (unreachable/timeout/invalid/http_<code>/parse-exception), and ConnectTimeout is unreachable while ReadTimeout is timeout.
+- [Phase 03]: 03-03: the client retry loop is bounded by the caller's retries argument (Settings supplies the default) and never retries a schema failure; attempts is the server's info.error.data.retries when supplied, else the issued-request count.
+- [Phase 03]: 03-03: TOLERATED_SCHEMA_ERRORS is an explicit frozenset allow-list and _salvage is wired into complete_structured; the WrapValidator substitutes defaults by removing the offending field, so a default-less field re-raises instead of leaking a PydanticUseDefault marker (P11).
 
 ### Pending Todos
 
@@ -193,6 +197,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T21:18:50.513Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-09-17T21:32:37.299Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
