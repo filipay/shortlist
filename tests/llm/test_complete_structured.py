@@ -46,7 +46,6 @@ from app.llm.contract import (
     MESSAGE_PATH,
     SESSION_MODEL_FIELDS,
     SESSION_PATH,
-    STRUCTURED_RESPONSE_PATH,
 )
 from app.llm.opencode_server import OpenCodeServerBackend, parse_providers
 
