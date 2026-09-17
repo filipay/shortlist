@@ -34,7 +34,19 @@ class Settings(BaseSettings):
     opencode_server_password: str = ""
     #: Bounded timeout for the health/discovery calls (T-01-32): a hung request
     #: must not pin the single worker. Configuration, not a constant (PLAT-04).
+    #: Stays scoped to health/discovery — a completion is a different order of
+    #: magnitude (Pitfall P4), so it gets its own ceiling below.
     opencode_timeout_seconds: float = 5.0
+    #: Bounded timeout for ONE structured completion (PLAT-04). A real call takes
+    #: whole seconds to tens of seconds, so reusing the 5-second health timeout
+    #: would abort every completion. Configuration, not a constant.
+    opencode_completion_timeout_seconds: float = 120.0
+    #: How many times the client resends a completion that failed at the transport
+    #: layer. The server-side schema retry count is `opencode_structured_retry_count`.
+    opencode_max_retries: int = 2
+    #: Sent as `format.retryCount`: how many times the SERVER re-asks the model when
+    #: its output fails the JSON Schema. Optional on the wire, pinned here.
+    opencode_structured_retry_count: int = 2
 
     # --- Ingest sanitise policy (C2) -----------------------------------------
     description_max_chars: int = 20000

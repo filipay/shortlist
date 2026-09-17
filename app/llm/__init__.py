@@ -1,6 +1,12 @@
-"""The LLM backend package. Phase 1 ships health + discovery only."""
+"""The LLM backend package: health, discovery and one structured completion."""
 
-from app.llm.base import DiscoveryResult, LLMBackend, ProbeOutcome, ProviderModel
+from app.llm.base import (
+    DiscoveryResult,
+    LLMBackend,
+    ProbeOutcome,
+    ProviderModel,
+    StructuredCallResult,
+)
 from app.llm.opencode_server import OpenCodeServerBackend, parse_providers
 
 
@@ -20,6 +26,7 @@ __all__ = [
     "OpenCodeServerBackend",
     "ProbeOutcome",
     "ProviderModel",
+    "StructuredCallResult",
     "get_llm_backend",
     "parse_providers",
 ]
