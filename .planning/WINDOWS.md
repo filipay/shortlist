@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
+open_count: 5
 waived_count: 1
 fixed_count: 1
-total_count: 6
-last_updated: 2026-09-17T21:18:10.209Z
+total_count: 7
+last_updated: 2026-09-17T23:07:15.009Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,7 @@ last_updated: 2026-09-17T21:18:10.209Z
 | 4 | 1 | unmet-truth | app/api/health.py |  | probe() is not a reliable proxy for fetch(): in the same container session the /health probe reported indeed=unreachable and linkedin=degraded at 21:02:36 while runs.id=1 had just fetched 50 usable listings from EACH board at 21:02:01 (100 distinct content_hash, 0 blank titles). The survival verdict is unaffected (it derives from runs + source_request_log), but /health's per-source liveness badge can mislead, and promotion condition P-4 is unusable until resolved. Candidate human-verification item: is the fixed probe URL/classification wrong, was the difference a transient board challenge, or should the probe be re-pointed at the ingest path? Same family as entry #3. See docs/probes/2026-09-15-scraper-survival.md section 7. | open |  | 2026-09-15T21:05:27.728Z |  |
 | 5 | 3 | unrun-verify |  |  | Operator-run live check of one real schema-constrained call from /settings (PLAT-02 success criterion 1) cannot run in the executor sandbox: it needs the user's opencode server with no second provider key configured (03-VALIDATION.md Manual-Only table). The default lane proves the port path with a fake transport; the live call plus confirmation of exactly one llm_calls row (purpose='probe', run_id NULL, no new runs row) remains for the operator. | open |  | 2026-09-17T20:07:07.720Z |  |
 | 6 | 3 | unrun-verify | tests/llm/test_contract_live.py |  | Operator-run live /doc contract lane (PLAT-05) is deselected by addopts and cannot run in the executor sandbox. The projection logic was validated during execution against the live 1.18.31 spec (22 pointers, 0 diffs; GET /global/health version 1.18.31 matched the fixture), but the pytest -m live lane itself remains for the operator per docs/runbook-opencode-contract.md. | open |  | 2026-09-17T21:18:10.209Z |  |
+| 7 | 3 | unrun-verify | tests/llm/test_trust_boundary.py |  | Operator-run live trust-boundary observation (success criterion 4): with the /settings selftest result page open on a real call, confirm the returned parts carry no tool invocation, the rendered system prompt is the module constant, and info_keys contains the structured payload key (closing Open Question Q1). The default lane proves the deny encoding with a fake transport; the live observation remains for the operator. | open |  | 2026-09-17T23:07:15.009Z |  |
 
 ````json
 [
@@ -94,6 +95,18 @@ last_updated: 2026-09-17T21:18:10.209Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T21:18:10.209Z",
+    "resolved_at": null
+  },
+  {
+    "id": 7,
+    "kind": "unrun-verify",
+    "phase": "3",
+    "file": "tests/llm/test_trust_boundary.py",
+    "line": null,
+    "description": "Operator-run live trust-boundary observation (success criterion 4): with the /settings selftest result page open on a real call, confirm the returned parts carry no tool invocation, the rendered system prompt is the module constant, and info_keys contains the structured payload key (closing Open Question Q1). The default lane proves the deny encoding with a fake transport; the live observation remains for the operator.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T23:07:15.009Z",
     "resolved_at": null
   }
 ]
