@@ -99,7 +99,7 @@ Plans:
   4. User can full-text search the queue, save or hide a listing (recorded as append-only events), and see which listings are new since last visit and which look stale.
   5. User can see a run history in which each run records what it did, what it found, and — when the queue is empty — why.
 
-**Plans**: TBD
+**Plans**: 11/11 plans complete
 
 - [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
@@ -111,6 +111,7 @@ Plans:
 - [x] 02-08-PLAN.md
 - [x] 02-09-PLAN.md
 - [x] 02-10-PLAN.md
+- [x] 02-11-PLAN.md
 
 **Notes:** Leave dedup threshold θ as a **setting plus a tuning task** against the first real corpus, not a frozen constant (the 10–15% merge-rate band is from a different market and query shape). Extend `domain/sanitize.py` with an `_INJECTION_PATTERNS`-style rule set (pattern-copied from Resume-Matcher's `improver.py`, attributed per Apache-2.0 §4). The criteria compiler consumes each adapter's declared capabilities so an unsupported filter is reported, not silently ignored (SRC-09).
 
@@ -229,7 +230,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
-| 2. Clean, Filtered, Queryable Queue | 10/10 | In Progress|  |
+| 2. Clean, Filtered, Queryable Queue | 11/11 | In Progress|  |
 | 3. LLM Port + Structured Output | 0/0 | Not started | - |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |

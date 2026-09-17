@@ -12,9 +12,11 @@ cycle: what shipped, the commits that carry it, and what was deliberately left o
 
 ### Status
 
-Committed on `master` at `ec19ac0`. **Not yet applied live** — the container has
-not been rebuilt, so nothing here has been exercised against the operator's real
-database. Suite: `710 passed, 2 deselected`; `ruff check app tests` clean.
+Committed on `master` at `d436425`. **Applied live and confirmed working** — the
+operator rebuilt the container and ran the feature end to end, including the
+reset, which first failed with a bare `500` on the real database (see §4 and the
+post-cycle rows in the table below). Suite: `712 passed, 2 deselected`;
+`ruff check app tests` clean.
 
 ### Commits
 
@@ -26,6 +28,8 @@ database. Suite: `710 passed, 2 deselected`; `ruff check app tests` clean.
 | 4 — the settings page and its danger zone | `e165274` |
 | 5 — snapshot then reset behind explicit guards | `e017e00`, `b8061bb` |
 | 3 — dismiss scope correction (found by the final review) | `ec19ac0` |
+| Post-cycle fix — suspend the append-only trigger inside the reset transaction (found on the operator's live database) | `c16023a`, `6720f1c` |
+| Post-cycle — engine transaction semantics, recorded as a deliberate decision | `d436425` |
 
 ### 1. Queue rows link to the posting
 
