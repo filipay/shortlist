@@ -24,6 +24,7 @@ from pydantic_core import PydanticUseDefault
 
 from app.domain.schemas.probe import ProbeResult
 from app.llm import opencode_server
+from tests.llm.test_complete_structured import LIVE_MESSAGE_BODY, Recorder, _backend
 
 
 def _salvage(schema: type, payload: object) -> object:
@@ -147,6 +148,33 @@ def test_salvage_refuses_a_tolerated_field_with_no_default() -> None:
         _salvage(Required, {})
 
     assert [error["type"] for error in excinfo.value.errors()] == ["missing"]
+
+
+# --- the wiring: complete_structured actually uses the salvage path ------------
+
+
+async def test_complete_structured_salvages_a_truncated_structured_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A truncated `info.structured` string degrades to a validated result.
+
+    This is the test that distinguishes a wired salvage from a bare
+    `model_validate`: the payload is not valid JSON, so without `_salvage` the
+    call would classify as `invalid`.
+    """
+    body = dict(LIVE_MESSAGE_BODY)
+    body["info"] = dict(body["info"])
+    body["info"]["structured"] = '{"acknowledged": true, "echo": "ok", "extra": tru'
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert result.ok is True
+    assert result.status == "ok"
+    assert result.data == ProbeResult(acknowledged=True, echo="ok")
 
 
 if __name__ == "__main__":  # pragma: no cover

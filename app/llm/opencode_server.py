@@ -27,11 +27,13 @@ a result object rather than raised, so a broken backend can never 500 a route.
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Annotated
 
 import httpx
 import structlog
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError, WrapValidator
+from pydantic_core import from_json
 
 from app.config import settings
 from app.llm.base import (
@@ -75,6 +77,13 @@ HTTP_ERROR_KIND_PREFIX = "http_"
 #: A non-200 body excerpt is a diagnostic, not a copy: enough to recognise the
 #: error, never the whole body (P9 / T-3-05).
 NON_200_BODY_EXCERPT_CHARS = 200
+
+#: EXPLICIT allow-list of pydantic error types the salvage path may substitute a
+#: default for (M1). "Any error" is forbidden: it would launder an unexpected
+#: schema mismatch into a silently empty result, which Phase 5's ranking could not
+#: tell apart from a genuine low score. Widening this frozenset is a deliberate
+#: change with a matching test (tests/llm/test_salvage.py).
+TOLERATED_SCHEMA_ERRORS: frozenset[str] = frozenset({"missing", "int_parsing"})
 
 
 def parse_providers(payload: object) -> list[ProviderModel]:
@@ -523,6 +532,58 @@ def _bounded_excerpt(response: object) -> str:
     return text[:NON_200_BODY_EXCERPT_CHARS]
 
 
+def _tolerant_validator(
+    value: object, handler: Callable[[object], object]
+) -> object:
+    """Substitute field defaults for tolerated errors only, else re-raise.
+
+    `handler` is the model validator the `WrapValidator` wraps. When a
+    `ValidationError`'s error types are ALL tolerated, the offending top-level
+    fields are removed from a COPY of the input and the model is validated again —
+    a field that declares a default then takes it.
+
+    Two deliberate safety properties (P11): a default-less field re-raises `missing`
+    rather than receiving a `PydanticUseDefault()` marker object, and a nested
+    `loc` (which cannot be defaulted at this level) re-raises.
+    """
+    try:
+        return handler(value)
+    except ValidationError as exc:
+        errors = exc.errors()
+        if not errors or any(
+            error["type"] not in TOLERATED_SCHEMA_ERRORS for error in errors
+        ):
+            raise
+        if not isinstance(value, dict) or any(
+            len(error["loc"]) != 1 for error in errors
+        ):
+            raise
+        drop = {error["loc"][0] for error in errors}
+        cleaned = {key: item for key, item in value.items() if key not in drop}
+        return handler(cleaned)
+
+
+def _salvage(schema: type[T], payload: object) -> T:
+    """Parse possibly-truncated JSON, then validate — tolerated errors only.
+
+    Pure and single-purpose (no I/O, and the caller's payload object is never
+    mutated). `from_json(..., allow_partial=True)` drops a truncated tail instead
+    of raising; the `WrapValidator` substitutes a default for an explicit
+    allow-list of error types. It deliberately does **not** weaken `extra="forbid"`
+    on the wire-adjacent models: extra keys are the model's own concern
+    (`ProbeResult` is `extra="ignore"`), not the salvager's.
+    """
+    parsed = (
+        from_json(payload, allow_partial=True)
+        if isinstance(payload, (bytes, bytearray, str))
+        else payload
+    )
+    adapter: TypeAdapter[T] = TypeAdapter(
+        Annotated[schema, WrapValidator(_tolerant_validator)]
+    )
+    return adapter.validate_python(parsed)
+
+
 def _classify_message_response(
     response: object,
     *,
@@ -647,7 +708,7 @@ def _classify_message_response(
         )
 
     try:
-        data = schema.model_validate(structured)
+        data = _salvage(schema, structured)
     except ValidationError as exc:
         errors = exc.errors()
         first = errors[0] if errors else None
@@ -716,5 +777,6 @@ __all__ = [
     "HTTP_ERROR_KIND_PREFIX",
     "NON_200_BODY_EXCERPT_CHARS",
     "OpenCodeServerBackend",
+    "TOLERATED_SCHEMA_ERRORS",
     "parse_providers",
 ]
