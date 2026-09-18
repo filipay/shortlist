@@ -189,6 +189,69 @@ async def test_a_clean_listing_leaves_the_column_null(
     assert listing.quality_signals_json is None
 
 
+async def test_a_clean_reingest_preserves_the_recorded_signal(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """T-3-21 on the UPDATE path: a clean re-ingest must not clobber the signal.
+
+    `_run_one` cannot be reused here — it registers the source and seeds a search
+    on every call, which collides on the unique source name. Register/seed ONCE,
+    then run the pipeline twice against the SAME `source_listing_id`
+    (`linkedin-1`), so the second pass takes `upsert_listing`'s update path and
+    its `None` signal meets the `if value is not None` guard.
+    """
+    await _register_sources(session_factory, "linkedin")
+    await _seed_search(session_factory)
+
+    await run_pipeline(
+        "manual",
+        None,
+        session_factory,
+        adapters=[
+            OneListingAdapter(
+                "linkedin",
+                _raw(description=f"Build it. {INSTRUCTION_TEXT} {SENTINEL}"),
+            )
+        ],
+    )
+
+    async with session_factory() as session:
+        first_signals = (
+            await session.execute(select(Listing))
+        ).scalar_one().quality_signals_json
+    assert first_signals is not None, "the first run recorded no finding"
+    recorded_patterns = first_signals["patterns_matched"]
+    assert isinstance(recorded_patterns, int)
+    assert recorded_patterns >= 1
+
+    # The SAME source_listing_id with a clean description -> the UPDATE path.
+    await run_pipeline(
+        "manual",
+        None,
+        session_factory,
+        adapters=[
+            OneListingAdapter(
+                "linkedin", _raw(description="Build the deployment platform.")
+            )
+        ],
+    )
+
+    async with session_factory() as session:
+        listings = (await session.execute(select(Listing))).scalars().all()
+
+    assert len(listings) == 1, "the clean re-ingest created a duplicate listing"
+    signals = listings[0].quality_signals_json
+    assert signals is not None, "the clean re-ingest clobbered the recorded signal"
+    assert signals["instruction_like"] is True
+    assert signals["patterns_matched"] == recorded_patterns
+
+    # Counts only — no matched text, no excerpt, no position.
+    stored = json.dumps(signals)
+    assert SENTINEL not in stored
+    assert "ignore" not in stored.casefold()
+    assert "system prompt" not in stored.casefold()
+
+
 async def test_the_queue_row_shows_the_flagged_badge(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
