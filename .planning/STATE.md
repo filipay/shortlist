@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 03
-current_phase_name: llm-port-structured-output
+current_phase_name: LLM Port + Structured Output
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-09-18T10:03:41.143Z"
-last_activity: 2026-09-17
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-09-18T10:22:40.782Z"
+last_activity: 2026-09-18
 last_activity_desc: Phase 03 execution started
-state_head: a0bdff969b94758e6500737d9de47823a6bf3a09
+state_head: 2b0c137a3896efe36595f3aacc65c30725ab1704
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-15)
 
 ## Current Position
 
-Phase: 03 (llm-port-structured-output) — READY TO EXECUTE
-Plan: 7 of 7
+Phase: 03 (LLM Port + Structured Output) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-09-17 — Phase 03 execution started
+Last activity: 2026-09-18 — Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -84,6 +84,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P05 | 5 min | 2 tasks | 3 files |
 | Phase 03 P06 | 13 min | 3 tasks | 10 files |
 | Phase 03 P07 | 10 min | 3 tasks | 8 files |
+| Phase 03 P08 | 5 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -190,6 +191,9 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-07: instruction-like text is recorded as a counts-only finding (instruction_like bool + patterns_matched int) on listings.quality_signals_json; a clean listing passes None so the column stays NULL and a recorded signal is never clobbered, and no redaction step was added.
 - [Phase 03]: 03-07: the queue row ships a conditional 'flagged' badge with its own .badge-flagged CSS rule — the plan's condition held (the three queue tests assert badges additively), so the guard was satisfied rather than weakened.
 - [Phase 03]: 03-07: _finish gains llm_calls/llm_tokens, assigned only when supplied and never touching ranked_count; Phase 3 wires no caller so D-49 holds and run_pipeline still writes zero llm_calls rows.
+- [Phase 03]: 03-08: both the port and the adapter declare `retries: int | None = None`, so the documented `settings.opencode_max_retries` fallback is the live default path (PLAT-04); a test patches the setting to 7 and observes 7 POSTs.
+- [Phase 03]: 03-08: the port keeps `tools: Sequence[str] = ()` (03-CONTEXT locked) and the adapter converts a non-empty sequence to the builder's `{name: True}` map; an empty sequence stays None so the fail-closed default emits no message-level tools key.
+- [Phase 03]: 03-08: the `except ValueError` parse-failure branch sits AFTER `except ValidationError` because ValidationError subclasses ValueError; a non-JSON info.structured becomes `invalid` with provider/model/agent and part_types/info_keys preserved.
 
 ### Pending Todos
 
@@ -213,6 +217,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17T23:24:57.892Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-09-18T10:22:33.347Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None
