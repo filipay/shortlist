@@ -111,7 +111,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PLAT-02**: The LLM is reached through opencode as a sibling service with no second provider key required
 - [x] **PLAT-03**: Every API route carries an auth seam so Authentik OIDC can be added later without rewriting routes
 - [x] **PLAT-04**: Limits, thresholds, and the LaTeX engine are configuration, not hard-coded constants
-- [ ] **PLAT-05**: The opencode structured-output contract is covered by a test that fails loudly on an upgrade
+- [x] **PLAT-05**: The opencode structured-output contract is covered by a test that fails loudly on an upgrade
 - [ ] **PLAT-06**: Scheduled runs are single-worker safe and persist across restarts
 
 ## v2 Requirements
@@ -245,7 +245,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PLAT-02 | Phase 3 | Complete |
 | PLAT-03 | Phase 1 | Complete |
 | PLAT-04 | Phase 1 | Complete |
-| PLAT-05 | Phase 3 | Gaps Found |
+| PLAT-05 | Phase 3 | Complete |
 | PLAT-06 | Phase 8 | Pending |
 
 **Coverage:**
