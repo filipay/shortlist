@@ -119,7 +119,7 @@ class LLMBackend(Protocol):
         model: str | None = None,
         agent: str | None = None,
         tools: Sequence[str] = (),
-        retries: int = 2,
+        retries: int | None = None,
     ) -> StructuredCallResult:
         """One schema-constrained completion. Never raises; failure is a value.
 
@@ -128,6 +128,12 @@ class LLMBackend(Protocol):
         caller-supplied constant and there is deliberately no parameter by which
         request-derived data can reach it. `tools` defaults to empty (deny, don't
         allow); the explicit deny encoding is plan 03-06's concern.
+
+        `retries` bounds the client-side resend loop and defaults to `None`. When
+        omitted the **adapter applies `Settings.opencode_max_retries`**, so the
+        retry ceiling is configuration rather than a literal (PLAT-04); an explicit
+        integer is still honoured. The server-side schema retry count is a separate
+        setting (`opencode_structured_retry_count`).
         """
         ...
 

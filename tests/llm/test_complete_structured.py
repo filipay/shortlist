@@ -605,6 +605,29 @@ async def test_the_client_loop_is_bounded_by_the_retries_argument(
     assert result.attempts == 3
 
 
+async def test_an_omitted_retries_honours_the_settings_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gap 1 / WR-02: an omitted `retries` is bounded by `settings.opencode_max_retries`.
+
+    While the signatures declared `retries: int = 2`, the documented Settings
+    fallback was dead code and a literal governed the default. With the setting
+    patched to 7, an omitting caller must issue exactly 7 completion POSTs and
+    report `attempts == 7` — configuration, not a constant (PLAT-04). The session
+    POST is excluded by `_message_requests`, so only completion attempts count.
+    """
+    monkeypatch.setattr(settings, "opencode_max_retries", 7)
+    recorder = Recorder(message_error=httpx.ConnectError("connection refused"))
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
+
+    assert len(_message_requests(recorder)) == 7
+    assert result.attempts == 7
+    assert result.ok is False
+    assert result.error_kind == "unreachable"
+
+
 async def test_a_schema_failure_is_not_retried_client_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

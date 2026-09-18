@@ -353,7 +353,7 @@ class OpenCodeServerBackend:
         model: str | None = None,
         agent: str | None = None,
         tools: Sequence[str] = (),
-        retries: int = 2,
+        retries: int | None = None,
     ) -> StructuredCallResult:
         """One schema-constrained completion: session → message → validated result.
 
@@ -367,7 +367,9 @@ class OpenCodeServerBackend:
         * the SERVER re-asks the model on a schema failure, bounded by
           `format.retryCount` (`settings.opencode_structured_retry_count`);
         * the CLIENT resends on a transport failure or timeout, bounded by the
-          `retries` argument (whose default is `settings.opencode_max_retries`).
+          `retries` argument, whose default is `None` — the adapter then applies
+          `settings.opencode_max_retries`, so the ceiling is configuration and an
+          omitting caller is never bound by a literal (PLAT-04).
 
         A schema failure is never retried client-side — the server already did its
         retries, and double-retrying would inflate the attempt count the operator
@@ -375,12 +377,13 @@ class OpenCodeServerBackend:
         server supplies one, and the client's issued-request count otherwise.
 
         `parts` is the only channel for untrusted content; `system` is passed
-        through untouched. `tools` is accepted for the port contract (default empty
-        = no message-level grant); an explicit allow-list is emitted as a
-        name→boolean map, and the ENFORCED deny is the session `permission` ruleset
-        applied by `_create_session` (Pitfall P5). `part_types` / `info_keys` on the
-        result record what the call actually returned — the observation that makes a
-        broken or over-broad deny a finding rather than an assumption.
+        through untouched. `tools` is a port-level `Sequence[str]` of tool NAMES
+        (default empty = no message-level grant); a non-empty sequence is converted
+        to the builder's explicit `{name: True}` grant map, and the ENFORCED deny is
+        the session `permission` ruleset applied by `_create_session` (Pitfall P5).
+        `part_types` / `info_keys` on the result record what the call actually
+        returned — the observation that makes a broken or over-broad deny a finding
+        rather than an assumption.
         """
         started = time.perf_counter()
         try:
