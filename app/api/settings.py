@@ -38,7 +38,7 @@ from app.db.session import get_session
 from app.domain.models import User
 from app.domain.schemas.probe import ProbeResult
 from app.llm import get_llm_backend
-from app.llm.base import LLMBackend
+from app.llm.base import LLMBackend, StructuredCallResult
 from app.llm.contract import STRUCTURED_RESPONSE_PATH
 from app.pipeline.run import TERMINAL_STATUSES
 from app.web.template_env import make_templates
@@ -399,6 +399,12 @@ async def test_llm_backend(
     the reason a link or a prefetch can never spend tokens. The route owns the
     single `commit()`; `llm_call_repo` never commits. No `runs` row is created —
     `run_id` is NULL and `purpose='probe'` (D-50).
+
+    A backend that **raises** has violated the port's total-function contract.
+    That is still recorded as an `error` `llm_calls` row before the response — a
+    token-spending attempt always leaves an audit trace (T-3-26) — and reported
+    with a 500 carrying the cause, the reset route's convention for an unexpected
+    internal failure.
     """
     moment = datetime.now(UTC)
     try:
@@ -411,8 +417,28 @@ async def test_llm_backend(
             tools=(),
             retries=settings.opencode_max_retries,
         )
-    except Exception as exc:  # noqa: BLE001 — the port is total; a bad backend must not 500
+    except Exception as exc:  # noqa: BLE001 — a raise is a port-contract violation (T-3-26)
+        # The attempt may already have spent tokens, so record it BEFORE replying.
+        # `failure.status` is `error` (the honest outcome) and the exception type
+        # is the operator's cause. The reset route uses 500 for exactly this shape
+        # of unexpected internal failure; this route now matches it rather than
+        # lying with a 200.
         log.warning("llm_selftest.raised", error=type(exc).__name__)
+        failure = StructuredCallResult(
+            ok=False,
+            status="error",
+            error=f"{type(exc).__name__}: {exc}",
+            error_kind=type(exc).__name__,
+        )
+        record = await llm_call_repo.record_llm_call(
+            session,
+            purpose="probe",
+            status=failure.status,
+            result=failure,
+            run_id=None,
+            now=moment,
+        )
+        await session.commit()
         return templates.TemplateResponse(
             request,
             SETTINGS_TEMPLATE,
@@ -420,7 +446,10 @@ async def test_llm_backend(
                 session,
                 banner=f"The backend raised {type(exc).__name__}: {exc}",
                 error=True,
+                probe=record,
+                probe_error_kind=failure.error_kind,
             ),
+            status_code=500,
         )
 
     record = await llm_call_repo.record_llm_call(

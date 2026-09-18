@@ -80,6 +80,38 @@ async def test_a_second_post_writes_a_second_row(client, session_factory) -> Non
     assert await _count(session_factory, "llm_calls") == 2
 
 
+async def test_a_raising_backend_returns_500_and_writes_one_audit_row(
+    client, session_factory, monkeypatch
+) -> None:
+    """T-3-26: a port-contract violation is audited, not hidden behind a 200."""
+
+    async def _raise(self, **kwargs: object) -> StructuredCallResult:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _raise)
+
+    # Guard-can-fail: assert the empty starting state, so "exactly one" cannot
+    # pass because another test or a prior run left a row behind.
+    assert await _count(session_factory, "llm_calls") == 0
+    assert await _count(session_factory, "runs") == 0
+
+    response = await client.post(LLM_TEST_PATH)
+
+    assert response.status_code == 500
+    assert await _count(session_factory, "llm_calls") == 1
+    assert await _count(session_factory, "runs") == 0
+
+    async with session_factory() as session:
+        row = (await session.execute(select(LlmCall))).scalar_one()
+    assert row.purpose == "probe"
+    assert row.run_id is None
+    assert row.status == "error"
+    assert row.error is not None and "RuntimeError" in row.error
+
+    # D-52: the page names the cause, not a bare badge.
+    assert "RuntimeError" in response.text
+
+
 async def test_a_plain_get_performs_no_call_and_writes_no_row(client, session_factory) -> None:
     response = await client.get("/settings")
 
