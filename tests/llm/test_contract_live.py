@@ -2,10 +2,19 @@
 
 **Never runs in the default lane**: `pyproject.toml` sets
 `addopts = "-m 'not live'"`, so the default suite structurally cannot reach a live
-server. This module is selected explicitly, **on the host**:
+server. This module is selected explicitly, and the interpreter MUST have the
+project's native dependencies built for the platform you run it on — a musl
+container venv cannot load on a glibc host (`ModuleNotFoundError: No module named
+'pydantic_core._pydantic_core'`). Run it **in the container** with
+`.venv/bin/python`, or **on the host** with `.venv-host/bin/python`:
 
+    # in the container (musl venv):
     OPENCODE_BASE_URL=http://127.0.0.1:4096 \\
         .venv/bin/python -m pytest -q -m live tests/llm/test_contract_live.py
+
+    # on the host (glibc venv built on the host):
+    OPENCODE_BASE_URL=http://127.0.0.1:4096 \\
+        .venv-host/bin/python -m pytest -q -m live tests/llm/test_contract_live.py
 
 What it does: fetches the running server's OpenAPI spec (`GET /doc`), projects it
 through the SAME fact shape `tests/llm/fixtures/opencode-doc.json` records, and
@@ -77,6 +86,31 @@ def _prop(schema: Any, name: str) -> Any:
         return {}
     value = properties.get(name)
     return value if isinstance(value, dict) else {}
+
+
+def _resolve(schemas: dict[str, Any], node: Any) -> dict[str, Any]:
+    """Follow `$ref` chains into `components.schemas` until a concrete node.
+
+    The live spec expresses some leaf schemas indirectly: `PermissionRule.action`
+    is a `$ref` to `PermissionAction`, whose `enum` lives on the target. Reading
+    `.get("enum")` off the *ref* node yields `None` and therefore an empty set — a
+    false drift that fails the guard unconditionally. Resolving keeps the guard's
+    teeth: a renamed or removed target resolves to `{}` (empty set -> drift fires),
+    a changed enum still differs, and an inline enum passes through unchanged.
+    Already-seen refs are tracked so a cyclic `$ref` cannot loop forever.
+    """
+    seen: set[str] = set()
+    current: Any = node
+    while isinstance(current, dict):
+        ref = _ref(current)
+        if not ref or ref in seen:
+            break
+        seen.add(ref)
+        target = schemas.get(ref.rsplit("/", 1)[-1])
+        if not isinstance(target, dict):
+            return {}
+        current = target
+    return current if isinstance(current, dict) else {}
 
 
 def _json_content(node: Any) -> dict[str, Any]:
@@ -173,22 +207,28 @@ def _live_facts(spec: dict[str, Any]) -> dict[str, Any]:
         "message_info_ref": _ref(_prop(message_response, "info")),
         "output_format_properties": _name_set(out_format.get("properties")),
         "output_format_required": _name_set(out_format.get("required")),
-        "output_format_type_enum": _name_set(_prop(out_format, "type").get("enum")),
+        "output_format_type_enum": _name_set(
+            _resolve(schemas, _prop(out_format, "type")).get("enum")
+        ),
         "output_format_schema_ref": _ref(_prop(out_format, "schema")),
         "permission_rule_properties": _name_set(permission_rule.get("properties")),
         "permission_rule_required": _name_set(permission_rule.get("required")),
-        "permission_action_enum": _name_set(_prop(permission_rule, "action").get("enum")),
+        "permission_action_enum": _name_set(
+            _resolve(schemas, _prop(permission_rule, "action")).get("enum")
+        ),
         "assistant_properties": _name_set(assistant.get("properties")),
         "assistant_required": _name_set(assistant.get("required")),
         "assistant_additional_properties": assistant.get("additionalProperties"),
         "structured_error_properties": _name_set(error.get("properties")),
         "structured_error_required": _name_set(error.get("required")),
-        "structured_error_name_enum": _name_set(_prop(error, "name").get("enum")),
+        "structured_error_name_enum": _name_set(
+            _resolve(schemas, _prop(error, "name")).get("enum")
+        ),
         "structured_error_data_properties": _name_set(error_data.get("properties")),
         "structured_error_data_required": _name_set(error_data.get("required")),
         "text_part_properties": _name_set(text_part.get("properties")),
         "text_part_required": _name_set(text_part.get("required")),
-        "text_part_type_enum": _name_set(_prop(text_part, "type").get("enum")),
+        "text_part_type_enum": _name_set(_resolve(schemas, _prop(text_part, "type")).get("enum")),
     }
 
 

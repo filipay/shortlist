@@ -19,10 +19,12 @@ occurred.
 
 ## Prerequisites
 
-- **The interpreter must have the project's dependencies built for the host.**
-  Use `.venv/bin/python`. The `.venv-host/` virtualenv in this workspace is
-  empirically broken (its `pydantic_core` is baked to a missing absolute path and
-  will not import) — see `docs/probes/README.md`.
+- **The interpreter must match the platform you run on.** A venv built inside a
+  musl container cannot load its native extensions on a glibc host
+  (`ModuleNotFoundError: No module named 'pydantic_core._pydantic_core'`). Run the
+  live lane **on the host** with the host venv `.venv-host/bin/python`; run it
+  **inside the container** with the container venv `.venv/bin/python`. See
+  `docs/probes/README.md` — "the interpreter must match the host platform".
 - **`opencode serve` must be running and reachable from where you run the test.**
   The live lane runs **on the host**, so the server's default
   `--hostname 127.0.0.1` is fine for this test. (The *container* reaches it via
@@ -37,7 +39,8 @@ occurred.
    live run, so a live failure is unambiguously server drift:
 
    ```bash
-   .venv/bin/python -m pytest -q
+   .venv-host/bin/python -m pytest -q      # on the host
+   # .venv/bin/python -m pytest -q         # inside the container
    ```
 
 2. **Export the host environment.** Run the live lane on the **host** with the
@@ -54,7 +57,8 @@ occurred.
    pointers on drift:
 
    ```bash
-   .venv/bin/python -m pytest -q -m live tests/llm/test_contract_live.py
+   .venv-host/bin/python -m pytest -q -m live tests/llm/test_contract_live.py   # on the host
+   # .venv/bin/python -m pytest -q -m live tests/llm/test_contract_live.py      # inside the container
    ```
 
    A pass also asserts the committed `_meta.server_version` matches the running
