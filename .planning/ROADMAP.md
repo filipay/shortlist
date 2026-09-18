@@ -128,7 +128,7 @@ Plans:
   3. A CI contract test reads the installed server's `GET /doc` and fails loudly if the structured-output field name changes — resolving and pinning the `format` vs `outputFormat` ambiguity.
   4. Untrusted listing text reaches the model only as user content (never the system prompt) and tools are disabled by default.
 
-**Plans:** 7/7 plans executed
+**Plans:** 9 plans (7 executed, 2 gap-closure pending)
 
 Plans:
 **Wave 1**
@@ -146,6 +146,11 @@ Plans:
 
 - [x] 03-06-PLAN.md — Trust boundary: tools denied by default, system prompt constant, import discipline
 - [x] 03-07-PLAN.md — The finding recorded and the counter seam
+
+**Gap closure** *(planned 2026-09-18; wave 1 — all prerequisites above are executed)*
+
+- [ ] 03-08-PLAN.md — Backend contract correctness: the retry ceiling defaults to Settings, the tool-grant channel is wired, and a non-parseable structured payload keeps its identity and observation
+- [ ] 03-09-PLAN.md — Trust-boundary + audit sweep: the deny-rule contract pin, the audited 500 on a raising backend, and the clean re-ingest guard
 
 **Research flag:** resolve the `format` vs `outputFormat` field name against the user's own running server; plan the `/doc` contract test as a deliverable, not an assumption.
 **Resolution (recorded during planning, 2026-09-17):** the field is **`format`** and the validated
@@ -253,7 +258,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
-| 3. LLM Port + Structured Output | 7/7 | In Progress|  |
+| 3. LLM Port + Structured Output | 7/9 | In Progress|  |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
