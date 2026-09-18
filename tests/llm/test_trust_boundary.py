@@ -33,6 +33,7 @@ from tests.llm.test_complete_structured import (
     LIVE_MESSAGE_BODY,
     Recorder,
     _backend,
+    _message_requests,
 )
 
 #: A part text that must never reach a persisted or logged surface.
@@ -76,6 +77,46 @@ def test_a_wildcard_tools_key_is_rejected() -> None:
     # The same shape without the wildcard is accepted, so the guard is specific.
     body = to_message_body(**MESSAGE_KWARGS, tools={"read": False})
     assert body["tools"] == {"read": False}
+
+
+async def test_an_explicit_tool_grant_reaches_the_message_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-01: the port's tool sequence must not be a silent no-op.
+
+    The port takes tool NAMES (`Sequence[str]`); the builder takes an explicit
+    name→boolean grant map. `complete_structured` performs that conversion and
+    forwards it, so an explicit grant is observable in the emitted completion
+    body — not merely accepted and discarded.
+    """
+    recorder = Recorder(message_body=LIVE_MESSAGE_BODY)
+    backend = _backend(monkeypatch, recorder)
+
+    await backend.complete_structured(
+        schema=ProbeResult,
+        system="s",
+        parts=["p"],
+        tools=("read", "bash"),
+    )
+
+    emitted = _message_requests(recorder)[0][2]
+    assert emitted[contract.MESSAGE_TOOLS_FIELD] == {"read": True, "bash": True}
+    assert contract.PERMISSION_WILDCARD not in emitted[contract.MESSAGE_TOOLS_FIELD]
+
+
+async def test_no_tool_grant_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail-closed: an omitted `tools` emits no message-level `tools` key.
+
+    The port default is an empty sequence; the session `permission` ruleset stays
+    the enforced deny, so the default path adds no message-level grant.
+    """
+    recorder = Recorder(message_body=LIVE_MESSAGE_BODY)
+    backend = _backend(monkeypatch, recorder)
+
+    await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
+
+    emitted = _message_requests(recorder)[0][2]
+    assert contract.MESSAGE_TOOLS_FIELD not in emitted
 
 
 # --- 2. the two model shapes cannot be confused --------------------------------

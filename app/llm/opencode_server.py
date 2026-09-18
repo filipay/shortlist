@@ -413,6 +413,11 @@ class OpenCodeServerBackend:
                 )
                 if isinstance(session_id, StructuredCallResult):
                     return session_id
+                # The port exposes tool NAMES (`Sequence[str]`); the builder takes
+                # an explicit `Mapping[str, bool]` grant. An empty sequence stays
+                # `None`, so no message-level `tools` key is emitted (fail-closed)
+                # and the ENFORCED deny remains the session `permission` ruleset.
+                tool_grant = {name: True for name in tools} if tools else None
                 body = to_message_body(
                     schema=schema,
                     system=system,
@@ -420,6 +425,7 @@ class OpenCodeServerBackend:
                     provider_id=provider_id,
                     model_id=model_id,
                     agent=agent,
+                    tools=tool_grant,
                     # The SERVER-side schema ceiling is configuration (PLAT-04),
                     # distinct from the client resend ceiling above.
                     retry_count=settings.opencode_structured_retry_count,
