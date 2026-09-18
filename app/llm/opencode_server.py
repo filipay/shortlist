@@ -817,6 +817,29 @@ def _classify_message_response(
             info_keys=info_keys,
             **identity,
         )
+    except ValueError as exc:
+        # ORDER IS LOAD-BEARING: `ValidationError` subclasses `ValueError`, so this
+        # clause MUST stay after the one above — a genuine schema failure keeps its
+        # "validation failed" message. Reaching here means `_salvage`'s
+        # `from_json(allow_partial=True)` rejected a non-parseable `info.structured`,
+        # i.e. a MODEL-OUTPUT defect. It is classified `invalid` (not a transport
+        # `error`), and it carries the per-call identity and the trust-boundary
+        # observation rather than escaping to the generic handler with `attempts=0`
+        # (WR-03 / T-3-24).
+        return _failure(
+            status="invalid",
+            error_kind=ERROR_KIND_INVALID,
+            error=(
+                "structured payload was not valid JSON: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+            attempts=attempts,
+            started=started,
+            server_version=server_version,
+            part_types=part_types,
+            info_keys=info_keys,
+            **identity,
+        )
 
     return StructuredCallResult(
         ok=True,

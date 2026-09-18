@@ -515,6 +515,49 @@ async def test_a_validation_error_is_invalid_with_the_validation_message(
     assert result.attempts == len(_message_requests(recorder))
 
 
+async def test_a_non_parseable_structured_payload_is_invalid_and_keeps_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-03: a non-JSON `info.structured` is `invalid`, keeping identity + observation.
+
+    `from_json(allow_partial=True)` raises `ValueError` (not `ValidationError`)
+    for non-JSON model output. Before the dedicated branch it escaped `_salvage`,
+    hit the generic handler and was mislabelled `error`/`ValueError` with
+    `attempts=0` while the D-12 identity and the trust-boundary observation were
+    discarded. It must instead be an `invalid` model-output outcome that stays
+    attributable. (A non-JSON HTTP body is a DIFFERENT case and stays `error`:
+    see `test_an_unparseable_json_200_is_an_error_with_the_parse_exception`.)
+    """
+    body = {
+        "info": {
+            "providerID": "opencode-go",
+            "modelID": "deepseek-v4.1-flash",
+            "agent": "build",
+            "structured": "not json at all",
+        },
+        "parts": [{"type": "text", "text": "..."}],
+    }
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    issued = len(_message_requests(recorder))
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    assert result.attempts == issued > 0
+    assert "not valid JSON" in (result.error or "")
+    # D-12 identity and the observation survive, so the defect is attributable.
+    assert result.provider == "opencode-go"
+    assert result.model == "deepseek-v4.1-flash"
+    assert result.agent == "build"
+    assert result.part_types == ["text"]
+    assert result.info_keys is not None and "structured" in result.info_keys
+
+
 async def test_a_connect_error_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder = Recorder(message_error=httpx.ConnectError("connection refused"))
     backend = _backend(monkeypatch, recorder)
