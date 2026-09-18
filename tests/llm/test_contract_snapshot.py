@@ -80,6 +80,32 @@ def _missing_pointers(
     return missing
 
 
+def _missing_permission_pointers(
+    fixture: dict[str, Any], *, fields: tuple[str, ...], action: str
+) -> list[str]:
+    """The deny-rule pointers that fail the pin, `[]` when the slice agrees.
+
+    Mirrors `_missing_pointers`: one reusable helper so the guard-can-fail
+    companion exercises the SAME code path the real assertion uses (a guard that
+    cannot fail is not a guard). The rule's inner field names and its action enum
+    are exactly what a server-side rename would move, so a rename must produce a
+    named failing pointer here rather than silently un-denying tools.
+    """
+    missing: list[str] = []
+    schema = fixture["components"]["schemas"]["PermissionRule"]
+    properties = set(schema["properties"])
+    required = set(schema["required"])
+    actions = set(schema["action_enum"])
+    for field in fields:
+        if field not in properties:
+            missing.append(f"components.schemas.PermissionRule.properties[{field}]")
+        if field not in required:
+            missing.append(f"components.schemas.PermissionRule.required[{field}]")
+    if action not in actions:
+        missing.append(f"components.schemas.PermissionRule.action_enum[{action}]")
+    return missing
+
+
 # --- the fixture's own index ---------------------------------------------------
 
 
@@ -134,6 +160,31 @@ def test_the_session_contract_matches_the_snapshot() -> None:
 
     assert isinstance(session["request_body_properties"], list)
     assert session["response_200_ref"]
+
+
+def test_the_permission_deny_rule_contract_matches_the_snapshot() -> None:
+    """The enforced tool deny is pinned by NAME (T-3-25), not by assumption.
+
+    A server-side rename of `permission`/`pattern`/`action` or a drop of the
+    `deny` action must fail this default-lane test with no server running, so it
+    cannot silently turn `DEFAULT_DENY_RULES` into a no-op.
+    """
+    fixture = _load_fixture()
+    session = fixture["paths"][contract.SESSION_PATH]["post"]
+    schema = fixture["components"]["schemas"]["PermissionRule"]
+
+    assert contract.PERMISSION_FIELD in session["request_body_properties"]
+    assert set(contract.PERMISSION_RULE_FIELDS) <= set(schema["properties"])
+    assert set(contract.PERMISSION_RULE_FIELDS) <= set(schema["required"])
+    assert contract.PERMISSION_DENY_ACTION in schema["action_enum"]
+    assert (
+        _missing_permission_pointers(
+            fixture,
+            fields=contract.PERMISSION_RULE_FIELDS,
+            action=contract.PERMISSION_DENY_ACTION,
+        )
+        == []
+    )
 
 
 # --- the response-side contract ------------------------------------------------
@@ -225,6 +276,29 @@ def test_the_pointer_check_can_actually_fail() -> None:
         response_field=WRONG_NAMES[1],
     )
     assert wrong, "the pointer check passed a deliberately wrong name — it has no teeth"
+
+
+def test_the_permission_pointer_check_can_actually_fail() -> None:
+    """The deny-rule pin must reject decoy names AND a decoy action."""
+    fixture = _load_fixture()
+
+    assert (
+        _missing_permission_pointers(
+            fixture,
+            fields=contract.PERMISSION_RULE_FIELDS,
+            action=contract.PERMISSION_DENY_ACTION,
+        )
+        == []
+    )
+    wrong = _missing_permission_pointers(
+        fixture,
+        fields=("perm", "pattern_name"),
+        action="allow_only",
+    )
+    assert wrong, (
+        "the permission pointer check passed deliberately wrong rule fields/action "
+        "— it has no teeth"
+    )
 
 
 # --- the default lane structurally cannot run the live lane --------------------

@@ -4,7 +4,7 @@
     "captured_at": "2026-09-17",
     "source": "GET http://127.0.0.1:4096/doc (unauthenticated, JSON, 478968 bytes)",
     "spec_openapi": "3.1.0",
-    "note": "Hand-projected slice (D-55): only structured-output-relevant pointers are kept, so unrelated OpenAPI churn cannot fail the contract test. /doc's info.version is a static spec version (1.0.0), NOT the running server version; the server version comes from GET /global/health (P12). Refresh only via docs/runbook-opencode-contract.md, against an observed server."
+    "note": "Hand-projected slice (D-55): only structured-output-relevant pointers are kept, so unrelated OpenAPI churn cannot fail the contract test. /doc's info.version is a static spec version (1.0.0), NOT the running server version; the server version comes from GET /global/health (P12). Refresh only via docs/runbook-opencode-contract.md, against an observed server. The slice ALSO pins the session deny-rule field names (permission, pattern, action) and the deny action: a deliberate, user-approved widening of D-55, because the session permission ruleset is the ENFORCED tool control, so a server rename must fail loudly rather than silently un-deny tools."
   },
   "paths": {
     "/session": {
@@ -51,6 +51,11 @@
         "required": ["type", "schema"],
         "type_enum": ["json_schema"],
         "schema_ref": "#/components/schemas/JSONSchema"
+      },
+      "PermissionRule": {
+        "properties": ["permission", "pattern", "action"],
+        "required": ["permission", "pattern", "action"],
+        "action_enum": ["allow", "ask", "deny"]
       },
       "AssistantMessage": {
         "properties": [

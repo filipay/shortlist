@@ -105,6 +105,32 @@ def _path_post(spec: dict[str, Any], path: str) -> dict[str, Any]:
     return post if isinstance(post, dict) else {}
 
 
+def _permission_rule_schema(
+    schemas: dict[str, Any], session_body: dict[str, Any]
+) -> dict[str, Any]:
+    """The `PermissionRule` schema the session `permission` array points at.
+
+    The live spec nests the deny rule behind the session body's `permission`
+    property: an array whose `items` is a `$ref` into `components.schemas`. A
+    wrapper schema (e.g. a `PermissionRuleset` that is itself an array) is
+    followed one level. The literal `PermissionRule` name is the fallback, so a
+    renamed rule still reports drift rather than resolving to `{}` silently.
+    """
+    items = _prop(session_body, "permission").get("items")
+    ref = _ref(items if isinstance(items, dict) else {})
+    if ref:
+        resolved = schemas.get(ref.rsplit("/", 1)[-1])
+        if isinstance(resolved, dict) and isinstance(resolved.get("properties"), dict):
+            return resolved
+        nested = _ref(resolved.get("items")) if isinstance(resolved, dict) else None
+        if nested:
+            candidate = schemas.get(nested.rsplit("/", 1)[-1])
+            if isinstance(candidate, dict):
+                return candidate
+    fallback = schemas.get("PermissionRule")
+    return fallback if isinstance(fallback, dict) else {}
+
+
 def _live_facts(spec: dict[str, Any]) -> dict[str, Any]:
     """Project the live spec into the fact keys the committed slice records."""
     components = spec.get("components")
@@ -136,6 +162,7 @@ def _live_facts(spec: dict[str, Any]) -> dict[str, Any]:
     text_part = text_part if isinstance(text_part, dict) else {}
 
     session_body = _json_content(session_post.get("requestBody"))
+    permission_rule = _permission_rule_schema(schemas, session_body)
     return {
         "session_request_properties": _name_set(session_body.get("properties")),
         "session_response_200_ref": _ref(session_response),
@@ -148,6 +175,9 @@ def _live_facts(spec: dict[str, Any]) -> dict[str, Any]:
         "output_format_required": _name_set(out_format.get("required")),
         "output_format_type_enum": _name_set(_prop(out_format, "type").get("enum")),
         "output_format_schema_ref": _ref(_prop(out_format, "schema")),
+        "permission_rule_properties": _name_set(permission_rule.get("properties")),
+        "permission_rule_required": _name_set(permission_rule.get("required")),
+        "permission_action_enum": _name_set(_prop(permission_rule, "action").get("enum")),
         "assistant_properties": _name_set(assistant.get("properties")),
         "assistant_required": _name_set(assistant.get("required")),
         "assistant_additional_properties": assistant.get("additionalProperties"),
@@ -175,6 +205,8 @@ def _committed_facts(fixture: dict[str, Any]) -> dict[str, Any]:
 
     out_format = schemas.get("OutputFormatJsonSchema")
     out_format = out_format if isinstance(out_format, dict) else {}
+    permission_rule = schemas.get("PermissionRule")
+    permission_rule = permission_rule if isinstance(permission_rule, dict) else {}
     assistant = schemas.get("AssistantMessage")
     assistant = assistant if isinstance(assistant, dict) else {}
     error = schemas.get("StructuredOutputError")
@@ -200,6 +232,9 @@ def _committed_facts(fixture: dict[str, Any]) -> dict[str, Any]:
         "output_format_required": _name_set(out_format.get("required")),
         "output_format_type_enum": _name_set(out_format.get("type_enum")),
         "output_format_schema_ref": out_format.get("schema_ref"),
+        "permission_rule_properties": _name_set(permission_rule.get("properties")),
+        "permission_rule_required": _name_set(permission_rule.get("required")),
+        "permission_action_enum": _name_set(permission_rule.get("action_enum")),
         "assistant_properties": _name_set(assistant.get("properties")),
         "assistant_required": _name_set(assistant.get("required")),
         "assistant_additional_properties": assistant.get("additionalProperties"),
