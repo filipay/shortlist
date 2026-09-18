@@ -1,378 +1,243 @@
 ---
 phase: 03-llm-port-structured-output
-reviewed: 2026-09-17T23:37:37Z
+reviewed: 2026-09-18T10:54:12Z
 depth: standard
-files_reviewed: 41
+files_reviewed: 11
 files_reviewed_list:
-  - .env.example
-  - alembic/versions/0003_llm_call_server_version.py
   - app/api/settings.py
-  - app/config.py
-  - app/db/models.py
-  - app/db/repositories/llm_call_repo.py
-  - app/db/repositories/queue_repo.py
-  - app/domain/models.py
-  - app/domain/schemas/__init__.py
   - app/domain/schemas/probe.py
-  - app/llm/__init__.py
   - app/llm/base.py
-  - app/llm/builders.py
-  - app/llm/contract.py
   - app/llm/opencode_server.py
-  - app/pipeline/run.py
-  - app/pipeline/stages.py
-  - app/web/templates/html/_listing_row.html
-  - app/web/templates/html/settings.html
-  - compose.yml
-  - docs/runbook-opencode-contract.md
-  - static/vendor/app.css
-  - tests/api/test_health.py
   - tests/api/test_llm_selftest.py
-  - tests/conftest.py
-  - tests/db/test_llm_call_repo.py
-  - tests/db/test_migration_contract.py
-  - tests/db/test_skeleton_boot.py
-  - tests/fixtures/opencode_providers.json
   - tests/llm/fixtures/opencode-doc.json
   - tests/llm/test_complete_structured.py
   - tests/llm/test_contract_live.py
   - tests/llm/test_contract_snapshot.py
-  - tests/llm/test_discovery_redaction.py
-  - tests/llm/test_salvage.py
   - tests/llm/test_trust_boundary.py
-  - tests/pipeline/test_finish_llm_counters.py
   - tests/pipeline/test_injection_finding.py
-  - tests/test_auth_seam.py
-  - tests/test_config.py
-  - tests/test_import_discipline.py
 findings:
   critical: 0
-  warning: 4
-  info: 6
-  total: 10
+  blocker: 0
+  warning: 2
+  info: 4
+  total: 6
 status: issues_found
 ---
 
 # Phase 3: Code Review Report
 
-**Reviewed:** 2026-09-17T23:37:37Z
+**Reviewed:** 2026-09-18T10:54:12Z
 **Depth:** standard
-**Files Reviewed:** 41
+**Files Reviewed:** 11
 **Status:** issues_found
 
 ## Summary
 
-Phase 3 lands a well-structured port/adapter split: `complete_structured` is total by
-construction (failure-as-value), the wire vocabulary is centralised in `app/llm/contract.py`,
-untrusted text is confined to `parts`, the single production `system` value is a module
-constant, and the discovery path copies identifiers only. The migration/model pair for
-`llm_calls.server_version` is in sync (`sa.String(32)` nullable in both), the `_finish` seam
-preserves omitted counters, and the secret sentinel is provably absent from logs, the DB and
-the page. Baseline suite corroborated: **826 passed / 3 deselected**.
+This is the narrowed re-review of gap-closure plans 03-08 and 03-09 (11 files changed
+since `bf3d4e1`). The four prior Warnings and the prior Info-05 are genuinely closed, and
+the closure is backed by tests that were executed, not just asserted in prose:
 
-Four Warning-level defects remain, all in the adapter/error-classification path and in the
-contract test's coverage of the tool-deny control:
+- **WR-01 (tools silently dropped) — CLOSED.** `complete_structured` now converts the port's
+  `Sequence[str]` to `{name: True}` and forwards it (`opencode_server.py:420,428`). Verified
+  end-to-end: `tools=("read","bash")` emits `{"read": True, "bash": True}`; an omitted/empty
+  `tools` emits no key. Covered by the two new tests in `test_trust_boundary.py`.
+- **WR-02 (retry ceiling literal) — CLOSED.** Both the Protocol (`base.py:122`) and the
+  adapter (`opencode_server.py:356`) declare `retries: int | None = None`; the
+  `settings.opencode_max_retries` fallback is now the live path. Verified: patching the
+  setting to 7 yields exactly 7 completion POSTs and `attempts == 7`.
+- **WR-03 (non-parseable payload misclassified) — CLOSED.** The new `except ValueError`
+  branch (`opencode_server.py:820-842`) classifies non-JSON `info.structured` as
+  `invalid`/`invalid` with the per-call identity and the trust-boundary observation intact.
+  Verified in-process: `structured="not json at all"` → `invalid`, `attempts=1`,
+  `provider`/`model`/`agent`/`part_types`/`info_keys` preserved. The branch is correctly
+  ordered after `except ValidationError` (`issubclass(ValidationError, ValueError) is True`).
+- **WR-04 (deny-rule shape unpinned) — CLOSED.** The fixture now carries `PermissionRule`,
+  the default-lane snapshot test pins it and routes through a helper with a guard-can-fail
+  companion, and the live lane projects the same three facts. A server rename now produces a
+  named failing pointer (default lane) or a diff (live lane).
+- **IN-05 (raising backend wrote no row, returned 200) — CLOSED.** The route records one
+  `error` `purpose='probe'` row, commits it, and returns 500 with the cause
+  (`settings.py:427-453`); the new test asserts 500, exactly one row, and the rendered cause.
+- **IN-03-from-prior (clean re-ingest clobber) — CLOSED.** The new pipeline test drives the
+  update path and asserts the recorded finding survives; it passes.
 
-1. `complete_structured` accepts a `tools` allow-list and **silently drops it** — the
-   parameter never reaches `to_message_body`, and its type does not even match the builder's.
-   The only `tools` tests call the builder directly, so the end-to-end forwarding is untested.
-2. The `retries` parameter's literal default of `2` makes the documented
-   `settings.opencode_max_retries` fallback **unreachable**, so a caller that omits `retries`
-   ignores the configured ceiling (PLAT-04). Demonstrated: with `opencode_max_retries = 7`,
-   an omitted `retries` still issues exactly 2 attempts.
-3. A malformed (non-parseable) `info.structured` string raises `ValueError` from
-   `from_json(allow_partial=True)`, escaping `_salvage`'s `except ValidationError`, and is
-   reclassified by the outer generic handler as `status="error"`, `error_kind="ValueError"`,
-   `attempts=0`, with `provider`/`model`/`agent`/`part_types`/`info_keys` all nulled. A model
-   output defect should be `invalid` and should preserve the identity/observation already
-   parsed from the response.
-4. The tool-deny wire shape (`{permission, pattern, action}` / `action: "deny"`) has **no
-   contract test** — it is absent from the `/doc` fixture, not asserted by the default-lane
-   snapshot test, and not projected by the live lane. Only the session property *name*
-   `permission` is covered (by the live lane's name-set diff). A server-side rename of the
-   rule's inner fields would silently turn the enforced deny into a no-op.
+Regression check: full default suite is **834 passed, 3 deselected** (was 826 passed / 3
+deselected before the eight new tests), `ruff check` is clean on all 11 files.
 
-No Critical findings: no injection, credential leak, auth bypass, unbounded call ceiling, or
-raise-leak from the port was found. The reset-route CSRF discussion in `app/api/settings.py`
-is pre-existing (the Phase-3 diff adds only the LLM selftest route and its context) and is
-deliberately documented; it is not reported here.
+Two Warning-level defects remain, both in the adapter's outer exception handlers and both
+carried over unaddressed from the prior review (prior IN-04, and the error-kind taxonomy
+leak) — the gap-closure strengthened per-attempt attribution but did not touch the handlers
+that run *outside* the retry loop. Neither is a Critical: there is no injection, credential
+leak, auth bypass, unbounded call ceiling, or raise-leak from the port, and the newly
+persisted surfaces are HTML-autoescaped.
 
 ## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: `complete_structured` accepts `tools` and silently discards it
+### WR-01: failures outside the retry loop discard resolved D-12 identity and report `attempts=0`
 
-**File:** `app/llm/opencode_server.py:355` (parameter) and `:413-423` (body construction);
-see also `app/llm/base.py:121` and `app/llm/builders.py:64`
+**File:** `app/llm/opencode_server.py:411-415` (session create), `:508-535` (outer handlers)
 
-**Issue:** The port (`LLMBackend.complete_structured`), the concrete adapter, and the method
-docstring all advertise an explicit per-name tool allow-list:
-
-> `tools` is accepted for the port contract (default empty = no message-level grant); an
-> explicit allow-list is emitted as a name→boolean map …
-
-but the `to_message_body(...)` call never passes `tools=`, so the argument is dead. Verified
-in-process: calling `complete_structured(..., tools=("read", "bash"))` produces a message body
-with keys `['format', 'model', 'parts', 'system']` and no `tools` key. There is also a type
-contract mismatch — the port declares `tools: Sequence[str]`, while the builder expects
-`Mapping[str, bool]`, so a naive `tools=tools` "fix" would build the wrong wire shape. The only
-tests of `tools` (`tests/llm/test_trust_boundary.py:53-78`) call `to_message_body` directly, so
-the adapter-level forwarding has no test at all.
-
-Today this fails closed (the session `permission` deny is the enforced control), but a Phase 5
-caller passing an explicit grant gets a silent no-op and no diagnostic.
-
-**Fix:** Convert at the adapter boundary and forward it:
-
-```python
-body = to_message_body(
-    schema=schema,
-    system=system,
-    parts=parts,
-    provider_id=provider_id,
-    model_id=model_id,
-    agent=agent,
-    retry_count=settings.opencode_structured_retry_count,
-    # An explicit per-name grant; empty stays absent (the session deny is the control).
-    tools={name: True for name in tools} if tools else None,
-)
-```
-
-Add a companion test that asserts the key is (and stays) absent when `tools=()` and present
-when `tools=("read",)` via `complete_structured` (not `to_message_body`).
-
-### WR-02: `retries` literal default bypasses `settings.opencode_max_retries`
-
-**File:** `app/llm/opencode_server.py:356` and `:402-403`
-
-**Issue:** The parameter is declared `retries: int = 2`, and the budget line is:
-
-```python
-budget = retries if retries is not None else settings.opencode_max_retries
-```
-
-Because `retries` can never be `None` when omitted (it defaults to the literal `2`, and the
-annotation forbids `None`), the `settings.opencode_max_retries` branch is unreachable for any
-caller that omits the argument. The surrounding comment and the method docstring claim the
-opposite ("whose default is `settings.opencode_max_retries`"; "`Settings` supplies only the
-DEFAULT"). Verified: with `settings.opencode_max_retries = 7`, an omitted `retries` still
-issues exactly 2 message POSTs and reports `attempts == 2`. The shipped route happens to pass
-`settings.opencode_max_retries` explicitly, which masks the defect; this is a PLAT-04 ("limits
-are config, not constants") violation waiting for the next caller.
-
-**Fix:** Make the default express the config, or make the fallback reachable:
-
-```python
-async def complete_structured(
-    self,
-    *,
-    schema: type[T],
-    system: str,
-    parts: Sequence[str],
-    model: str | None = None,
-    agent: str | None = None,
-    tools: Sequence[str] = (),
-    retries: int | None = None,
-) -> StructuredCallResult:
-```
-
-and keep `budget = retries if retries is not None else settings.opencode_max_retries`.
-
-### WR-03: a non-parseable `info.structured` string is misclassified and loses the audit identity
-
-**File:** `app/llm/opencode_server.py:792-810` (the `except ValidationError`), `:519-526`
-(the generic handler), `:566-574` / `:598-647` (`_salvage`)
-
-**Issue:** `_salvage` calls `pydantic_core.from_json(payload, allow_partial=True)`. `allow_partial`
-tolerates a *truncated* tail, but it raises `ValueError` (not `ValidationError`) for input that
-is not JSON at all — e.g. `"not json"` → `ValueError: expected ident at line 1 column 2`.
-`_classify_message_response` only catches `ValidationError`, so the `ValueError` escapes that
-method, propagates to the generic `except Exception` in `complete_structured`, and is rebuilt as
-a *fresh* failure with none of the data already parsed from the 200 response. Reproduced with a
-stub server returning `info.structured = "not json at all"`:
+**Issue:** `_resolve_model` runs first and succeeds, so `provider_id`/`model_id` are known.
+`_create_session` is then called *outside* the per-attempt retry loop, and any transport or
+timeout failure there escapes the loop and is caught by one of the outer handlers at
+`:508-527`, all of which hard-code `attempts=0` and pass no `provider`/`model`/`agent`.
+The same applies to the generic handler at `:528-535` (e.g. a non-JSON 200 from
+`_create_session`'s `response.json()`, or `to_message_body`'s wildcard `ValueError`).
+Reproduced in-process against a stubbed transport:
 
 ```
-ok: False  status: error  error_kind: ValueError
-attempts: 0  provider: None  model: None  agent: None
-part_types: None  info_keys: None
+transport-on-session -> error unreachable attempts= 0 provider= None model= None agent= None
+transport-on-message -> error unreachable attempts= 3 provider= p    model= m    agent= None
 ```
 
-Consequences: (a) a model-output defect is labelled a transport-class `error` instead of
-`invalid`, weakening the four-value taxonomy (D-52) that success criterion 2 relies on;
-(b) `attempts` is reported as `0` instead of the real issued count; (c) the D-12 identity
-(`provider`/`model`/`agent`) — the entire reason migration 0003 exists — is nulled even though
-`info.providerID`/`modelID`/`agent` were present and already parsed; (d) the trust-boundary
-observation (`part_types`, `info_keys`) captured moments earlier is discarded. No test covers a
-non-parseable structured string; `tests/llm/test_salvage.py` only covers a *parseable* truncated
-string. The same over-broad `except Exception` also converts genuine programming errors (e.g. a
-`TypeError` inside `_part_types`) into `error_kind=<ExceptionClassName>` rather than surfacing
-them.
+The message-send path is correctly attributed by the loop; the session-create path is not.
+Consequences: the `llm_calls` audit row understates the attempt count and nulls the
+`provider`/`model` columns whose existence is the stated reason migration 0003 was written
+(D-12), even though the values were resolved moments earlier. This is exactly the
+attribution property 03-08/03-09 set out to guarantee for per-attempt failures, left
+unguaranteed for the session handshake. No test exercises a session-create transport failure
+(`test_a_transport_failure_is_a_value` only asserts `error_kind == "unreachable"`), so the
+gap is invisible to the suite. Carried over from the prior review's IN-04, unclosed.
 
-**Fix:** classify the salvage failure as an invalid output and preserve the parsed identity and
-observation:
+**Fix:** Thread the already-resolved identity and the issued count into the outer handlers,
+e.g. capture `provider_id`/`model_id` before the `async with` and pass
+`attempts=issued, provider=provider_id, model=model_id, agent=agent` in each outer
+`_failure(...)`; add a test that fails `_create_session` with `httpx.ConnectError` and
+asserts `attempts == 1` and the resolved identity survive.
 
-```python
-try:
-    data = _salvage(schema, structured)
-except (ValidationError, ValueError) as exc:
-    detail = exc.errors()[0].get("msg") if isinstance(exc, ValidationError) and exc.errors() else str(exc)
-    return _failure(
-        status="invalid",
-        error_kind=ERROR_KIND_INVALID,
-        error=f"validation failed: {detail}" if detail else "validation failed",
-        attempts=attempts,
-        started=started,
-        server_version=server_version,
-        part_types=part_types,
-        info_keys=info_keys,
-        **identity,
-    )
+### WR-02: the generic handler emits a raw exception class name as `error_kind`, outside the D-52 taxonomy
+
+**File:** `app/llm/opencode_server.py:528-535` (specifically `error_kind=type(exc).__name__` at `:531`)
+
+**Issue:** `_failure`'s whole point is that `status` stays one of the four legal
+`llm_calls.status` values while `error_kind` carries the *specific cause* from the documented
+namespace (`unreachable`, `timeout`, `invalid`, `model_not_found`, `invalid_session`,
+`http_<code>`). The generic handler instead writes `type(exc).__name__` directly, so the
+recorded `error_kind` can be an implementation class name — demonstrated by passing the
+builder's forbidden wildcard:
+
+```
+tools=('*',) -> error ValueError attempts= 0 err= ValueError: the deprecated 'tools' map ...
 ```
 
-and add a companion test with `structured="not json"` asserting `status == "invalid"`, the
-provider/model survive, and `raw is None`.
+Any operator/UI logic that switches on the D-52 taxonomy cannot classify `ValueError`,
+`JSONDecodeError`, or `TypeError`. `attempts` is also dropped to 0 here (same root as
+WR-01). The behaviour is fail-closed (the failure is still a value), but it degrades the
+observability contract this phase is built around.
 
-### WR-04: the tool-deny rule shape is not covered by the contract test
-
-**File:** `app/llm/contract.py:82-88`, `tests/llm/fixtures/opencode-doc.json`,
-`tests/llm/test_contract_snapshot.py:131-137`, `tests/llm/test_contract_live.py` (no
-`permission` reference)
-
-**Issue:** Success criterion 4's enforced control is the session-level `permission` ruleset with
-the fixed shape `{permission, pattern, action}` and `action == "deny"`. The committed `/doc`
-snapshot lists `permission` as a session request property name but contains **no
-`PermissionRule` schema**, `test_the_session_contract_matches_the_snapshot` does not assert
-`permission` membership, and `_live_facts`/`_committed_facts` project no rule fields. So:
-`PERMISSION_RULE_FIELDS` and `PERMISSION_DENY_ACTION` are pinned only by constants asserting
-themselves (`tests/llm/test_trust_boundary.py:114-134`). If opencode renames the rule's fields
-or the `deny` action value, every default-lane test stays green and the live lane reports no
-diff, while `_create_session` keeps sending a ruleset the server may accept-but-ignore — i.e.
-tools silently re-enabled on a listing-driven session. The phase deliberately built this test
-machinery for exactly this class of rename (`format` vs `outputFormat`); the deny control
-(the security-critical half) is not inside it.
-
-**Fix:** Add a `PermissionRule` slice to `tests/llm/fixtures/opencode-doc.json`
-(`properties`, `required`, `action_enum`), assert it in `test_contract_snapshot.py`
-(`set(contract.PERMISSION_RULE_FIELDS) == required`, `contract.PERMISSION_DENY_ACTION in
-action_enum`), add the matching projection to `_live_facts`/`_committed_facts` in
-`test_contract_live.py`, and add a guard-can-fail companion using a deliberately wrong action
-value.
+**Fix:** map unexpected exceptions to a stable label (e.g. `error_kind="internal_error"`,
+with the class name kept only in `error` for the operator), and preserve `attempts`/identity
+as in WR-01.
 
 ## Info
 
-### IN-01: the guard-can-fail companion exercises a helper the real assertions do not use
+### IN-01: `tools: Sequence[str]` accepts a bare `str` and expands it per character
 
-**File:** `tests/llm/test_contract_snapshot.py:62-80` vs `:113-119`, `:142-158`
+**File:** `app/llm/opencode_server.py:420`; port signature `app/llm/base.py:121`
 
-**Issue:** `_missing_pointers` carries the docstring "One reusable helper so the guard-can-fail
-companion exercises the SAME code path the real assertion uses", but
+**Issue:** A single `str` satisfies `Sequence[str]` both statically and at runtime, so
+`tools="read"` does not mean "grant read" — the comprehension iterates characters:
+
+```text
+converted grant for tools='read': {'r': True, 'e': True, 'a': True, 'd': True}
+emitted tools: {'r': True, 'e': True, 'a': True, 'd': True}
+```
+
+No exception, no diagnostic; the session `permission` deny still backstops, so it fails safe,
+but a Phase 5 caller using a single-name string gets a silent nonsense grant. (The same
+`Sequence[str]`-vs-`str` footgun exists for `parts`, which is pre-existing.)
+
+**Fix:** reject a bare `str` explicitly (`if isinstance(tools, str): raise TypeError(...)`),
+or tighten the port type and document that callers pass a tuple/list.
+
+### IN-02: the `except ValueError` message over-claims that the payload was "not valid JSON"
+
+**File:** `app/llm/opencode_server.py:820-842`
+
+**Issue:** The clause catches *any* `ValueError` escaping `_salvage`, but only
+`from_json(..., allow_partial=True)` is currently a raw-`ValueError` source; the message
+"structured payload was not valid JSON" is correct today. `_salvage` is generic over the
+caller's schema, so a future schema whose validator surfaces a raw `ValueError` (rather than
+a pydantic-wrapped `ValidationError`) would be misdiagnosed and mislabelled `invalid` with a
+factually wrong cause. Low likelihood, but the failure mode is a misleading operator message.
+
+**Fix:** narrow the catch to the parse step — e.g. wrap the `from_json` call in `_salvage`
+in its own `try/except ValueError` that raises a dedicated exception type, and classify that
+type here — or reword the message to "structured payload could not be parsed/validated".
+
+### IN-03: the reusable pointer helper still is not used by the request/response assertions
+
+**File:** `tests/llm/test_contract_snapshot.py:62-80` vs `:139-145`, `:193-209`
+
+**Issue:** Prior review IN-01. `_missing_pointers` still carries the docstring "so the
+guard-can-fail companion exercises the SAME code path the real assertion uses", but
 `test_the_request_side_contract_matches_the_snapshot` and
-`test_the_response_side_contract_matches_the_snapshot` use inline membership assertions. Only
-`test_the_pointer_check_can_actually_fail` calls the helper, so the companion proves the helper
-has teeth while giving no evidence that the real assertions do.
+`test_the_response_side_contract_matches_the_snapshot` keep inline membership assertions,
+so only `test_the_pointer_check_can_actually_fail` runs the helper. The new permission check
+does route the real assertion through `_missing_permission_pointers`, making the asymmetry
+more visible rather than less.
 
-**Fix:** Route the real assertions through `_missing_pointers(...) == []` so one code path is
-genuinely shared, or delete the helper and rewrite the companion against the inline assertion.
+**Fix:** express the real assertions as `_missing_pointers(...) == []` (as the permission
+test now does), or drop the helper and rewrite the companion against the inline assertion.
 
-### IN-02: `ProbeResult` docstring describes a salvage mechanism the code does not use
+### IN-04: untrusted body/exception text is persisted into `llm_calls.error` without redaction or a length cap
 
-**File:** `app/domain/schemas/probe.py:11-13`
+**File:** `app/llm/opencode_server.py:575-583` / `:678-691` (prior IN-06, unchanged) and
+`app/api/settings.py:430` (new surface added by 03-09)
 
-**Issue:** The docstring states "plan 03-03's salvage path uses `PydanticUseDefault`". The
-implementation (`opencode_server._tolerant_validator`) never constructs `PydanticUseDefault`; it
-drops tolerated top-level fields from a copy and re-validates. The "every field must declare a
-default" requirement is still load-bearing (a default-less tolerated field re-raises), but the
-stated mechanism is wrong and will mislead a future contributor. `PydanticUseDefault` appears
-only in test code (`tests/llm/test_salvage.py`).
+**Issue:** The non-200 response-body excerpt (up to 200 chars) is written to `result.error`,
+persisted to the `Text` column `llm_calls.error`, and rendered (`settings.html:55`). The
+03-09 raise path adds a second, unbounded feed: `error=f"{type(exc).__name__}: {exc}"` is
+persisted and rendered too. Today every writer is a canned selftest body or a library
+exception, so the exposure is theoretical; once Phase 5 routes CV/listing content through
+this port, a server/proxy error page (or a future adapter exception embedding the request)
+could persist a fragment of personal data into an audit column that
+`tests/db/test_no_pii_columns.py` does not treat as PII (it is plain `Text`, not a JSON
+column). Enlarged in scope by the change under review; still Info because no current caller
+sends sensitive content.
 
-**Fix:** Reword to describe the drop-and-revalidate behaviour, keeping the reason all fields
-declare defaults.
-
-### IN-03: the "clean re-observation must not clobber a recorded signal" guard has no update-path test
-
-**File:** `app/db/repositories/listing_repo.py:112-126`,
-`tests/pipeline/test_injection_finding.py:157-189`
-
-**Issue:** The entire `None`-not-`{}` design of `quality_signals` exists so that a clean
-re-observation does not erase a previously recorded instruction-like finding (T-3-21). The
-guard is the `if value is not None: setattr(...)` loop on the **update** branch
-(`listing_repo.py:123-126`). Every persistence test in `test_injection_finding.py` exercises a
-first-time insert; no test re-runs the pipeline over an already-flagged listing with a clean
-payload and asserts the signal survives. A regression on the update path would be caught by no
-test.
-
-**Fix:** Add a test that runs once with instruction-like text, runs again with a clean
-description for the same canonical URL, and asserts `listings.quality_signals_json` still holds
-the original finding.
-
-### IN-04: outer exception handlers report `attempts=0` and drop the already-known identity
-
-**File:** `app/llm/opencode_server.py:499-526`; also `:706-714`
-
-**Issue:** The outer `except httpx.TimeoutException` / `except httpx.TransportError` handlers
-hard-code `attempts=0` and pass no `provider`/`model`/`agent`/`part_types`/`info_keys`, even
-when the failure occurred *after* `_resolve_model` succeeded (the realistic path is a transport
-failure during `_create_session`, which is outside the per-attempt retry loop). The recorded
-audit row therefore understates the attempt count and loses the resolved identity. Separately,
-the "response carried no info object" branch at `:706-714` passes `server_version` and
-`part_types` but not the resolved `provider_id`/`model_id`.
-
-**Fix:** Pass `attempts=issued`, and the resolved `provider=provider_id, model=model_id,
-agent=agent` in the outer handlers; add `provider`/`model`/`agent` to the no-info-object branch.
-
-### IN-05: a backend that raises produces no `llm_calls` row and a 200 response
-
-**File:** `app/api/settings.py:404-424`
-
-**Issue:** The route's defensive `except Exception` returns the settings page with HTTP 200 and
-writes no audit row. `complete_structured` is total by contract, so this is defensive — but if a
-future backend implementation does raise (e.g. a new adapter or a dependency change), a
-token-spending attempt leaves no cost/audit trace, and the 200 hides the failure from anything
-watching status codes. This path has no test. The reset route in the same file uses 400/409/500
-for its refusals, so the convention is also inconsistent.
-
-**Fix:** Return a non-200 status (e.g. 502) on the raised path and record an `error` row with
-`error_kind=type(exc).__name__` so an attempted call is still auditable; add a test that
-monkeypatches `complete_structured` to raise.
-
-### IN-06: the non-200 body excerpt is persisted into `llm_calls.error` without redaction
-
-**File:** `app/llm/opencode_server.py:566-574` and `:670-682`
-
-**Issue:** `_bounded_excerpt` takes up to 200 characters of the non-200 response body and puts
-it in `result.error`, which `llm_call_repo.record_llm_call` persists to the `llm_calls.error`
-column and `settings.html:55` renders. The docstring calls it "a diagnostic, not a copy", but a
-server/proxy error page (or a 4xx that echoes the request body) can carry arbitrary text. For
-Phase 3's canned selftest body this is harmless; once Phase 5 sends CV text and listing bodies,
-an echoing 4xx could persist a fragment of CV/listing content into an audit column that
-`tests/db/test_no_pii_columns.py` treats as non-JSON but not as PII-safe.
-
-**Fix:** Before the LLM path carries real CV data, either drop the body excerpt entirely, or
-sanitise/cap it to a fixed set of safe fields (status line only), and document the decision in
-the same place `NON_200_BODY_EXCERPT_CHARS` lives.
+**Fix:** before the LLM path carries real content, cap and redact the persisted `error`
+(e.g. status line + exception class only, fixed `NON_200_BODY_EXCERPT_CHARS` ceiling on both
+surfaces), and document the decision where `NON_200_BODY_EXCERPT_CHARS` lives.
 
 ---
 
 ## Verified clean (selected focus areas)
 
-- **Migration/model drift:** `alembic/versions/0003_llm_call_server_version.py:39` adds nullable
-  `sa.String(32)`; `app/db/models.py:455` mirrors it as `Column(String(32))`. Item 14 of
-  `tests/db/test_migration_contract.py` introspects the migrated DB, not the ORM, so drift fails
-  loudly. Downgrade is symmetric.
-- **Credential redaction:** `parse_providers` copies identifier keys only; `ProviderModel` is
-  `extra="forbid"`; the raw discovery body is never logged, cached or attached; the sentinel
-  tests cover structlog, caplog, stdout and every DB table.
-- **`raw` response body:** never persisted, never logged; every failure branch sets `raw=None`;
-  `StructuredCallResult` is `extra="forbid"`.
-- **Prompt boundary:** `SELFTEST_SYSTEM_PROMPT` is an AST-verified single `Constant`; the
-  builder emits `system` as a bare `Name`; untrusted content only enters `parts`.
-- **`_finish` seam:** omitted counters preserve recorded values; `ranked_count` untouched;
-  `run_pipeline()` still writes zero `llm_calls` rows (D-49 holds).
-- **Bound parameters:** no SQL string interpolation in any repository changed here.
+- **Tool grant forwarding (WR-01 closure):** `tool_grant` is built once and forwarded to
+  `to_message_body`; empty stays `None` so no `tools` key is emitted; the builder's wildcard
+  guard still fires. End-to-end tests use `complete_structured`, not the builder directly.
+- **Retry ceiling (WR-02 closure):** `retries: int | None = None` on both Protocol and
+  adapter; `budget = retries if retries is not None else settings.opencode_max_retries`;
+  explicit bounds honoured; `max(1, ...)` keeps `retries=0` at one attempt. Setting-patched
+  test observes 7 attempts.
+- **Parse-failure classification (WR-03 closure):** `except ValidationError` precedes
+  `except ValueError` (subclass relation verified); the new branch preserves
+  `provider`/`model`/`agent`/`part_types`/`info_keys` and `attempts`; `raw` stays `None` on
+  every failure branch.
+- **Deny-rule contract (WR-04 closure):** fixture `PermissionRule` slice; default-lane test
+  pins properties/required/action and has a guard-can-fail companion; live lane projects the
+  same facts for a real diff. `additionalProperties: false` invariants asserted where the
+  builder/receivers rely on them.
+- **Raising-backend path (IN-05 closure):** exactly one committed `probe` row, `run_id`
+  NULL, `status='error'`, exception class in `error`, HTTP 500; page names the cause. No
+  `runs` row created (D-50 intact).
+- **Clean re-ingest (T-3-21):** `upsert_listing`'s update branch applies
+  `if value is not None`, and `NormalisedListing.quality_signals_json` returns `None` (not
+  `{}`) for a clean payload; the new two-run test exercises and passes the update path.
+- **Trust boundary:** `SELFTEST_SYSTEM_PROMPT` remains an AST-verified single `Constant`;
+  `parts` is the only untrusted channel; the wildcard is rejected in the deprecated `tools`
+  map; the observation carries part/key names only (sentinel tests cover log + DB + page).
+- **Privacy/redaction:** discovery identifiers only; `ProviderModel`/`StructuredCallResult`
+  `extra="forbid"`; `raw` never persisted or logged; no new secret in the fixture or tests.
+- **Prompt-injection handling:** the counts-only finding is stored on
+  `listings.quality_signals_json`; no matched text/excerpt/position reaches the DB or page.
+- **Default suite:** 834 passed / 3 deselected; `ruff check` clean on the changed files.
 
 ---
 
-_Reviewed: 2026-09-17T23:37:37Z_
+_Reviewed: 2026-09-18T10:54:12Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
