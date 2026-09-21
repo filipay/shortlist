@@ -1,0 +1,5 @@
+# The golden renderer baseline and the committed templates are compared
+# byte-for-byte. A checkout with automatic line-ending conversion would otherwise
+# change the committed golden bytes, so both paths pin LF.
+tests/golden/** text eol=lf
+app/latex/templates/** text eol=lf

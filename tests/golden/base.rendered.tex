@@ -1,0 +1,63 @@
+% =============================================================================
+% cv.tex.jinja — the committed application template for the deterministic CV
+% renderer (D-71). This file is application code, versioned with the renderer.
+%
+% This is a deliberate correction to ARCHITECTURE.md's volume listing, which
+% places templates under the CV volume. A template is code: changing it is a code
+% change plus a deliberate update of tests/golden/base.rendered.tex, never a
+% silent edit of a user's data file.
+%
+% The committed golden baseline that guards this template is never
+% auto-overwritten by its test: a golden test that writes its own expectation
+% grades its own homework.
+%
+% Delimiters are the LaTeX-safe backslash-VAR and backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow. Do not add a clock call, a generation timestamp or a document
+% identifier — any date in the output must come from the fact store.
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=1in}
+\hypersetup{hidelinks}
+
+\titleformat{\section}{\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+
+\begin{document}
+\begin{center}
+  {\LARGE\bfseries Alex Example}\\
+  alex.example@example.invalid\\
+  https://example.invalid/alex\\
+\end{center}
+\section*{Experience}
+\noindent\textbf{Northwind Labs} --- \textit{Senior Engineer} \hfill 2021-03 -- 2024-09\\
+\noindent\textit{Dublin, IE}\par
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+  \item Reduced p99 latency 40\% by rewriting the ingest path
+  \item Led the migration to a single-writer queue
+  \item Mentored four engineers through their first on-call rotation
+\end{itemize}
+\section*{Skills}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+  languages & Python \\
+  databases & PostgreSQL \\
+  infrastructure & Terraform \\
+\end{tabularx}
+\end{document}

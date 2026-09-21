@@ -1,0 +1,76 @@
+% =============================================================================
+% cv.tex.jinja — the committed application template for the deterministic CV
+% renderer (D-71). This file is application code, versioned with the renderer.
+%
+% This is a deliberate correction to ARCHITECTURE.md's volume listing, which
+% places templates under the CV volume. A template is code: changing it is a code
+% change plus a deliberate update of tests/golden/base.rendered.tex, never a
+% silent edit of a user's data file.
+%
+% The committed golden baseline that guards this template is never
+% auto-overwritten by its test: a golden test that writes its own expectation
+% grades its own homework.
+%
+% Delimiters are the LaTeX-safe backslash-VAR and backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow. Do not add a clock call, a generation timestamp or a document
+% identifier — any date in the output must come from the fact store.
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=1in}
+\hypersetup{hidelinks}
+
+\titleformat{\section}{\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+
+\begin{document}
+\BLOCK{ if plan.name }
+\begin{center}
+  {\LARGE\bfseries \VAR{plan.name}}\\
+\BLOCK{ if plan.contact_email }
+  \VAR{plan.contact_email}\\
+\BLOCK{ endif }
+\BLOCK{ for link in plan.contact_links }
+  \VAR{link}\\
+\BLOCK{ endfor }
+\end{center}
+\BLOCK{ endif }
+\BLOCK{ for section in plan.sections }
+\section*{\VAR{section.title}}
+\BLOCK{ for entry in section.entries }
+\noindent\textbf{\VAR{entry.org}} --- \textit{\VAR{entry.title}} \hfill \VAR{entry.dates}\\
+\BLOCK{ if entry.location }
+\noindent\textit{\VAR{entry.location}}\par
+\BLOCK{ endif }
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+\BLOCK{ for bullet in entry.bullets }
+  \item \VAR{bullet.text}
+\BLOCK{ endfor }
+\end{itemize}
+\BLOCK{ endfor }
+\BLOCK{ if section.skills }
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\BLOCK{ for skill in section.skills }
+  \VAR{skill.group} & \VAR{skill.label} \\
+\BLOCK{ endfor }
+\end{tabularx}
+\BLOCK{ endif }
+\BLOCK{ endfor }
+\end{document}
