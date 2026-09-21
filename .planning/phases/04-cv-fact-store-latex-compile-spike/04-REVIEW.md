@@ -317,3 +317,31 @@ honesty guards silently stop existing on the next checkout.
 _Reviewed: 2026-09-21T15:41:13Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
+
+## Fix dispositions
+
+Applied by the gsd-code-fixer on 2026-09-21. Each fix is one atomic commit with a
+regression test proven to fail before the change and pass after. Verification: full
+hermetic suite `971 passed, 14 deselected` (baseline 964 plus the 7 new regression
+tests), run with `.venv/bin/python -m pytest -q .` from `/workspace/job-search`.
+
+| Finding | Disposition | Commit |
+|---------|-------------|--------|
+| WR-01 | **Fixed** — the current-row clear now runs inside the SAVEPOINT with the insert, so a failed insert rolls back both and the previous revision stays the one current row. Regression test forces a flush failure and asserts `current == 1` and the prior revision. | `6dabe66` |
+| WR-03 | **Fixed** — the hard-coded `_HEALTH_TIMEOUT_SECONDS` / `_LOG_TAIL_CHARS` are promoted to `Settings.latex_probe_timeout_seconds` (5.0) and `Settings.latex_log_tail_chars` (4000); `app/latex/compile.py` resolves both at call time. Forwarded through `compose.yml` and `.env.example`, and the phase-four ceiling guards now cover both. | `2665764` |
+| WR-02 | **Fixed** — distinct org/title names that slugify to one ID are reported via `ImportReport.org_id_collisions` / `title_id_collisions` (and the summary) instead of being dropped silently; first-wins is preserved so the report is loud while the draft still loads. | `8711cbb` |
+| IN-02 | **Fixed** — a missing identity name is surfaced as `ImportReport.unresolved_fields == ("meta.name",)` and in the summary, rather than an unexplained `meta: {}`. | `8711cbb` |
+
+Documented defaults preserved for WR-03 so behaviour is unchanged: the probe still
+times out at 5.0s and the engine log tail stays 4000 chars unless an operator
+overrides them.
+
+**Left open deliberately, not fixed in this pass:**
+
+- **WR-04** — `_flatten` strips escaped braces, leaving a dangling backslash.
+- **IN-01** — `sanitise_preamble` has no production caller.
+- **IN-03** — `is_current` is written but never read.
+- **IN-04** — the dependency guard does not enforce full manifest lockstep.
+- **IN-05** — `finalize` escapes `str` only; non-str values are a latent bypass.
+- **IN-06** — `line_statement_prefix = "%%"` collides with LaTeX `%%` comments.
+- **IN-07** — three phase-4 test files exist only as untracked working-tree files.
