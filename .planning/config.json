@@ -47,7 +47,10 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "_auto_chain_active": false
+    "_auto_chain_active": false,
+    "use_worktrees": false,
+    "build_command": ".venv/bin/python -m compileall -q app",
+    "test_command": ".venv/bin/python -m pytest -q"
   },
   "ship": {
     "pr_body_sections": [
