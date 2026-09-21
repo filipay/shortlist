@@ -62,6 +62,28 @@ def _count_pages(pdf_path: Path) -> int:
     return len(PdfReader(str(pdf_path)).pages)
 
 
+def extract_pdf_text(pdf_path: Path) -> str:
+    """The raw extracted text of every page, concatenated. Synchronous by nature.
+
+    This is deliberately the **only** PDF-reading helper in the package, beside
+    `_count_pages` — both use the one already-pinned `pypdf` dependency, and a
+    future reader adds no second PDF library, no OCR pass and no external
+    command-line extraction fallback.
+
+    It is blocking, so every caller on an event-loop path must reach it through
+    `asyncio.to_thread` (the same discipline `_count_pages` follows), or a
+    multi-page extraction stalls the single worker.
+
+    The output is **raw and lossy**, and that is the honest contract: `pypdf` can
+    drop spaces entirely and does not expand ligatures by default. The extractor
+    is therefore never asked to "clean up" its own output; the comparison
+    normaliser (`app/domain/tex.py`) is what folds those artefacts, so the
+    extraction stays a faithful record of what the PDF actually carries.
+    """
+    reader = PdfReader(str(pdf_path))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
