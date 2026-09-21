@@ -30,9 +30,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# `git` is required to install JobSpy from its pinned git commit.
+# `git` is required to install JobSpy from its pinned git commit; `curl` is
+# required by the Tectonic install RUN below (the slim base ships no curl).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -48,6 +49,56 @@ RUN pip install --no-cache-dir -r requirements.txt
 # were Dockerfile instructions ("unknown instruction: ..."). Keep it a one-liner.
 ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
 RUN JOBSPY_SHA="$JOBSPY_SHA" python -c "import importlib.metadata as md, json, os; vcs = json.loads(md.distribution('python-jobspy').read_text('direct_url.json')).get('vcs_info', {}); assert vcs.get('vcs') == 'git', 'python-jobspy is not a VCS install: %r' % (vcs,); assert vcs.get('commit_id') == os.environ['JOBSPY_SHA'], 'wrong revision: %r != %r' % (vcs.get('commit_id'), os.environ['JOBSPY_SHA']); print('python-jobspy pinned at', os.environ['JOBSPY_SHA'])"
+
+# --- Tectonic, the LaTeX engine (CV-05 / D-73/D-74) --------------------------
+# Install the pinned Tectonic binary and verify it in the SAME RUN that fetches it.
+# Mirrors the JobSpy assertion above: a checksum in a separate layer can be reused
+# by the cache while the download changed underneath it. The musl build is static,
+# so it adds no runtime library dependency. The two ARGs make the pin greppable;
+# TECTONIC_SHA256 was re-derived from the release metadata at implementation time
+# (GitHub Releases API, tag tectonic@0.17.0, verified against a real download).
+# Deliberately single-line shell, no heredoc, for the same classic-builder-fallback
+# reason the JobSpy assertion gives. Ends with --version so a binary that cannot
+# execute fails the BUILD rather than becoming a runtime mystery.
+ARG TECTONIC_VERSION=0.17.0
+ARG TECTONIC_SHA256=8533d07f9ccbd7a65824b9e0459041bca34af1eb33daba48f59215593753a3b7
+RUN cd /tmp \
+    && curl -fsSL -o tectonic.tar.gz "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${TECTONIC_VERSION}/tectonic-${TECTONIC_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    && echo "${TECTONIC_SHA256}  tectonic.tar.gz" | sha256sum -c - \
+    && tar -xzf tectonic.tar.gz -C /usr/local/bin tectonic \
+    && rm -f tectonic.tar.gz \
+    && tectonic --version
+
+# D-75 requires the cached-only flag and the untrusted-mode option to be confirmed
+# against the INSTALLED binary, not carried from documentation. This puts the
+# binary's own option list in the build log beside the pinned version.
+RUN tectonic --help
+
+# Deterministic, HOME-independent cache location; set BEFORE the prime (Pitfall 2/
+# T-04-09). This path must equal settings.tectonic_cache_dir and compose.yml's
+# default for TECTONIC_CACHE_DIR, or a runtime compile looks in a cache the build
+# never primed. TECTONIC_UNTRUSTED_MODE is the belt to the argv's braces: a future
+# argv edit cannot quietly undo the sandbox (T-04-05).
+ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache \
+    TECTONIC_UNTRUSTED_MODE=1
+
+# The `latex` lane (D-69) must be literally runnable inside the image:
+# `docker compose run --rm app pytest -m latex`. The runtime stage deliberately
+# installs no dev tooling from requirements.txt, so the two test-only pins are
+# added explicitly here, and the test tree (with the fixture) must be present
+# before the cache prime below.
+COPY pyproject.toml ./
+COPY tests ./tests
+RUN pip install --no-cache-dir pytest==9.1.1 pytest-asyncio==1.4.0
+
+# Prime the package cache AND prove the engine works, at build time (D-74). This
+# layer is the reason the runtime can pass --only-cached, and it is the build-time
+# proof the engine actually runs — the same shape as the migration smoke below.
+# The `test -f` turns "the command exited 0" into "the engine produced an
+# artefact"; the primed set is exactly this fixture's package set.
+RUN tectonic --outdir /tmp/prime tests/fixtures/cv/awesomecv_standin.tex \
+    && test -f /tmp/prime/awesomecv_standin.pdf \
+    && rm -rf /tmp/prime
 
 COPY alembic.ini ./
 COPY alembic ./alembic

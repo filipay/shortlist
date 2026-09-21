@@ -1,0 +1,75 @@
+% =============================================================================
+% awesomecv_standin.tex — a SYNTHETIC stand-in, NOT anyone's CV.
+%
+% It exists so the test suite and the image build can compile a real document
+% without a real CV entering git. The package set is deliberately the macro-heavy
+% one a popular modern template (awesome-cv style) relies on — fontspec with an
+% OpenType font, paracol/tabularx, enumitem, titlesec, hyperref, geometry — plus
+% its own \newcommand entry macro. If this compiles, a simpler document will too,
+% so the measurement is conservative (D-61). No third-party template is vendored.
+%
+% The main font is declared BY FILENAME with an explicit face map, not by symbolic
+% name: Tectonic resolves fonts by filename, TeX Live by kpathsea, and this form
+% resolves in both (Pitfall 4). The by-symbolic-name form is kept commented below
+% so the plan-04-05 spike can compile it once and record what the engine accepted.
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+% --- SPIKE (do not activate): the by-symbolic-name declaration ---------------
+% \setmainfont{TeX Gyre Pagella}
+% ---------------------------------------------------------------------------
+
+\geometry{margin=1in}
+\hypersetup{hidelinks}
+
+% An entry macro whose body uses #1/#2/#3 — the macro-heavy case D-61 chooses.
+\newcommand{\cventry}[3]{%
+  \noindent\textbf{#1} --- \textit{#2} \hfill #3\par\vspace{2pt}%
+}
+
+\titleformat{\section}{\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries Alex Example}\\[2pt]
+  alex.example@example.invalid\\
+  \href{https://example.invalid/alex}{example.invalid/alex}
+\end{center}
+
+\section{Experience}
+
+\cventry{Northwind Labs}{Senior Engineer}{2021-03 -- 2024-09, Dublin, IE}
+
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+  \item Reduced p99 latency 40\% by rewriting the ingest path
+  \item Led the migration to a single-writer queue
+  \item Mentored four engineers through their first on-call rotation
+\end{itemize}
+
+\section{Skills}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+  Languages & Python \\
+  Databases & PostgreSQL \\
+  Infrastructure & Terraform \\
+\end{tabularx}
+
+\end{document}

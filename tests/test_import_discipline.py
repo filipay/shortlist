@@ -89,13 +89,22 @@ def test_domain_imports_no_io() -> None:
 # is scoped deliberately: `app/sources/linkedin.py` and `app/sources/indeed.py`
 # legitimately `import httpx` for the public-page probe and never call the LLM, so a
 # blanket all-of-`app/` rule would fail on day one and teach nothing (Pitfall P6).
-# `subprocess` has no legitimate user outside `app/llm` today, so that half is global.
 APP_DIR = PROJECT_ROOT / "app"
-LLM_DIR = APP_DIR / "llm"
 LLM_CALL_PATH_DIRS = ("app/pipeline", "app/api", "app/web", "app/domain", "app/probe")
 #: Excluded from the httpx scan on purpose — the board transports. Asserted below
 #: to actually import httpx, so the exclusion cannot become an empty courtesy.
 EXCLUDED_HTTPX_DIRS = ("app/sources",)
+#: The DECLARED process hosts. `subprocess` is confined to these and nothing else.
+#: `app/llm` spawns the opencode CLI fallback; `app/latex` spawns the compile
+#: engine. `app/latex` is a second process host BY DESIGN (D-76) — the compile
+#: port — and the two port boundaries must not merge: moving the compile call into
+#: `app/llm/` to satisfy the letter of a single-host rule would collapse them.
+#: Asserted below to actually import `subprocess`, so the carve-out is not an empty
+#: courtesy.
+SUBPROCESS_EXEMPT_DIRS = ("app/llm", "app/latex")
+SUBPROCESS_EXEMPT_ROOTS = tuple(
+    PROJECT_ROOT / relative for relative in SUBPROCESS_EXEMPT_DIRS
+)
 
 
 def _python_modules(directory: Path) -> list[Path]:
@@ -131,12 +140,12 @@ def test_the_llm_call_path_imports_no_httpx() -> None:
     )
 
 
-def test_no_module_outside_app_llm_imports_subprocess() -> None:
+def test_subprocess_is_confined_to_declared_process_hosts() -> None:
     offenders: dict[str, list[str]] = {}
     scanned = 0
 
     for path in _python_modules(APP_DIR):
-        if LLM_DIR in path.parents:
+        if any(root in path.parents for root in SUBPROCESS_EXEMPT_ROOTS):
             continue
         scanned += 1
         if _imports_of(path, "subprocess"):
@@ -144,7 +153,8 @@ def test_no_module_outside_app_llm_imports_subprocess() -> None:
 
     assert scanned > 0, "no modules were scanned — the guard is vacuous"
     assert offenders == {}, (
-        f"a process spawn outside app/llm is an RCE path outside the port: {offenders}"
+        "a process spawn outside a declared process host is an RCE path outside "
+        f"a port: {offenders}"
     )
 
 
@@ -176,6 +186,31 @@ def test_the_sources_exclusion_is_deliberate_not_accidental() -> None:
 
     assert flagged > 0, (
         "no excluded transport imports httpx — the exclusion no longer has a reason"
+    )
+
+
+def test_the_latex_exclusion_is_deliberate_not_accidental() -> None:
+    """`app/latex` genuinely imports `subprocess` and is genuinely outside the scan.
+
+    Copied in shape from `test_the_sources_exclusion_is_deliberate_not_accidental`:
+    the carve-out must not become an empty courtesy, and none of the declared
+    process hosts may sit inside a directory the global guard still scans.
+    """
+    exempt_roots = [PROJECT_ROOT / relative for relative in SUBPROCESS_EXEMPT_DIRS]
+
+    hosts = [path for root in exempt_roots for path in _python_modules(root)]
+    assert hosts, "no declared process host modules exist — the rationale is stale"
+
+    # Every declared host is genuinely excluded by the guard's skip predicate.
+    for path in hosts:
+        assert any(root in path.parents for root in SUBPROCESS_EXEMPT_ROOTS), (
+            f"{path} is not covered by SUBPROCESS_EXEMPT_ROOTS"
+        )
+
+    flagged = sum(1 for path in hosts if _imports_of(path, "subprocess"))
+    assert flagged > 0, (
+        "no declared process host imports subprocess — the exclusion no longer "
+        "has a reason"
     )
 
 

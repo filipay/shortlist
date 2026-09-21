@@ -7,6 +7,8 @@ inspection: no threshold literal lives outside this module.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: Models evidenced to be UNABLE to satisfy the schema-constrained call this
@@ -123,6 +125,40 @@ class Settings(BaseSettings):
     stale_after_days: int = 14
     # The queue read model's page size (D-42 "Load more" paging).
     queue_page_size: int = 25
+
+    # --- LaTeX engine (CV-05 / PLAT-04 / D-76) --------------------------------
+    # Every engine ceiling is configuration, not a constant. The selector picks
+    # exactly ONE engine and `get_latex_engine()` never falls back to the other
+    # (D-75): a silent fallback would make LATEX_ENGINE stop describing what ran.
+    latex_engine: Literal["tectonic", "texlive"] = "tectonic"
+    #: The pinned Tectonic binary; D-73 installs it to this exact path.
+    tectonic_binary: str = "/usr/local/bin/tectonic"
+    #: Explicit and HOME-independent. Tectonic otherwise creates `~/.cache/Tectonic`,
+    #: and with no home directory it attempts that with permissive permissions
+    #: (T-04-09). Must equal the image ENV and compose.yml's default.
+    tectonic_cache_dir: str = "/opt/tectonic-cache"
+    #: The single compile ceiling for BOTH engines (say so, so a later reader does
+    #: not "fix" the shared ceiling into two fields): a hung engine must not pin the
+    #: single worker (T-04-08).
+    tectonic_timeout_seconds: int = 60
+    #: D-75's cached-only mode as configuration, so a build-time prime run can differ
+    #: from a runtime render run. When true the argv passes `--only-cached`.
+    tectonic_offline: bool = True
+    #: The TeX Live fallback engine — `xelatex`, never `pdflatex` (Pitfall 10:
+    #: pdflatex cannot load fontspec, so it would be available in name only).
+    latex_xelatex_binary: str = "/usr/bin/xelatex"
+    #: The fact-store volume root (D-58); mounted `./cv:/cv` in compose.yml.
+    cv_dir: str = "/cv"
+    #: The artefact volume root (D-58); mounted `./artifacts:/artifacts`.
+    artifacts_dir: str = "/artifacts"
+    #: The D-59 importer's bounds: a line cap and a nesting-depth cap, so a
+    #: pathological document cannot make the parser unbounded.
+    tex_import_max_lines: int = 20000
+    tex_import_max_depth: int = 12
+    # NOTE: `meta.max_pages` (CV-R3) is deliberately NOT duplicated here. That page
+    # budget lives in the fact store as DATA (D-65); a settings twin would create
+    # two sources for one limit. This block is the PLAT-04 surface for the engine,
+    # not for the page budget.
 
 
 settings = Settings()
