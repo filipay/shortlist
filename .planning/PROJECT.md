@@ -28,7 +28,13 @@ can act on. Every other feature is downstream of that.
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ **PLAT-02** — The LLM is reached through opencode as a sibling service with no
+      second provider key required (Phase 3). A real schema-constrained call completes
+      through `opencode serve` end to end on the shipped default model.
+- ✓ **PLAT-05** — The opencode structured-output contract is covered by a test that
+      fails loudly on an upgrade (Phase 3). The `@pytest.mark.live` lane diffs the
+      live `/doc` spec against the pinned fixture, so a wire-shape change surfaces
+      immediately rather than silently corrupting structured output.
 
 ### Active
 
@@ -54,7 +60,6 @@ can act on. Every other feature is downstream of that.
 - [ ] Web UI: preview the tailored CV and download the compiled PDF
 - [ ] Manual "run search now" trigger plus scheduled runs (e.g. daily)
 - [ ] Runs as a Docker container locally for easy access
-- [ ] opencode as the LLM backend (via `opencode serve`, CLI as fallback)
 
 ### Out of Scope
 
@@ -121,7 +126,8 @@ can act on. Every other feature is downstream of that.
 |----------|-----------|---------|
 | Assisted apply, not full auto-submit | Avoid LinkedIn/Indeed account bans and low-quality mass applications; user chose it deliberately | — Pending |
 | LaTeX as the CV source and tailoring target | Templates and recompiles cleanly; avoids brittle PDF/DOCX manipulation | — Pending |
-| opencode as the LLM backend | Reuses the user's existing opencode setup and models; no second provider or key to manage | — Pending |
+| opencode as the LLM backend | Reuses the user's existing opencode setup and models; no second provider or key to manage | ✓ Good — validated in Phase 3: a real schema-constrained call completes end to end through `opencode serve` with no second provider key |
+| Pin the opencode wire contract and guard it with a live contract test | The opencode HTTP API is still evolving (a `format` vs `outputFormat` inconsistency exists today) and structured output is load-bearing for ranking and tailoring; a silently changed wire shape would corrupt results instead of failing. Pinning the server version plus a `@pytest.mark.live` `/doc` diff makes an upgrade fail loudly | ✓ Good — shipped in Phase 3 (`PLAT-05`); lane is deselected by default and run by the operator |
 | Pluggable source adapters from day one | User wants LinkedIn/Indeed first but intends to add sources; bolting this on later would be a rewrite | — Pending |
 | Rules filter before LLM ranking | Caps LLM spend and makes results explainable; user selected this over pure LLM scoring | — Pending |
 | No auth in v1 | Keeps first implementation small; Authentik OAuth is an explicit later feature | — Pending |
@@ -148,4 +154,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-15 after project research and the Resume-Matcher reuse spike (D9 closed: pattern-copy, greenfield confirmed)*
+*Last updated: 2026-09-21 after Phase 3 (LLM Port + Structured Output) — PLAT-02 and PLAT-05 validated; opencode sibling-service LLM path proven end to end*
