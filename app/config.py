@@ -9,6 +9,21 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: Models evidenced to be UNABLE to satisfy the schema-constrained call this
+#: phase exists to make. A structured call forces the tool choice to `required`
+#: (opencode implements `format` structured output through the tool it injects
+#: into the session), and the provider rejects a forced tool call from a
+#: reasoning-mode model with HTTP 400
+#: `invalid_request_error: Thinking mode does not support this tool_choice` —
+#: uniformly across agents, variants and permission shapes. The provider's whole
+#: model set is reasoning-capable, so "pick a non-reasoning model" is not a
+#: mitigation; the only remedy is a model that honours the forced tool call.
+#: `tests/test_config.py` fails if the shipped default is reverted to one of
+#: these, or if this set is emptied so the guard passes vacuously.
+KNOWN_FORCED_TOOL_CHOICE_INCOMPATIBLE_MODELS: frozenset[str] = frozenset(
+    {"deepseek-v4.1-flash"}
+)
+
 
 class Settings(BaseSettings):
     """Environment-driven settings. Every field has a safe default."""
@@ -30,7 +45,16 @@ class Settings(BaseSettings):
     # --- opencode backend (D-05..D-10) ---------------------------------------
     # The server is user-managed and external; the app never owns or pins it.
     opencode_base_url: str = "http://host.docker.internal:4096"
-    opencode_model: str = "deepseek-v4.1-flash"
+    #: The model a schema-constrained call resolves when the caller omits `model`.
+    #: **It must accept a forced tool call**: opencode implements `format`
+    #: structured output through a tool it injects into the session and forces
+    #: `toolChoice: "required"` on every such call, so an incapable model makes
+    #: every structured call fail at the provider. The previously shipped default
+    #: was rejected upstream with HTTP 400
+    #: `invalid_request_error: Thinking mode does not support this tool_choice`;
+    #: `minimax-m3` is the live-evidenced default that returns `structured` with
+    #: `status=ok`. See `docs/runbook-opencode-contract.md`.
+    opencode_model: str = "minimax-m3"
     opencode_server_password: str = ""
     #: Bounded timeout for the health/discovery calls (T-01-32): a hung request
     #: must not pin the single worker. Configuration, not a constant (PLAT-04).

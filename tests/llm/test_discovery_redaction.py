@@ -29,6 +29,7 @@ import httpx
 import pytest
 import structlog
 
+from app.config import settings
 from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
 from app.llm.opencode_server import (
@@ -426,11 +427,12 @@ async def test_resolve_model_returns_the_provider_and_model(
     backend = OpenCodeServerBackend()
 
     async def _fake_discovery() -> DiscoveryResult:
-        return _discovery(("opencode-go", "deepseek-v4.1-flash"))
+        return _discovery(("opencode-go", settings.opencode_model))
 
     monkeypatch.setattr(backend, "discover_models", _fake_discovery)
 
-    assert await backend._resolve_model() == ("opencode-go", "deepseek-v4.1-flash")
+    # No argument: this exercises the real default path, not a forced id.
+    assert await backend._resolve_model() == ("opencode-go", settings.opencode_model)
 
 
 async def test_resolve_model_fails_loud_on_a_miss(
@@ -449,7 +451,7 @@ async def test_resolve_model_fails_loud_on_a_miss(
     assert isinstance(resolved, StructuredCallResult)
     assert resolved.ok is False
     assert resolved.status == "error"
-    assert "deepseek-v4.1-flash" in (resolved.error or "")
+    assert settings.opencode_model in (resolved.error or "")
 
 
 async def test_resolve_model_fails_loud_when_discovery_is_unreachable(
@@ -477,13 +479,13 @@ async def test_resolve_model_is_deterministic_under_ambiguity(
 
     async def _fake_discovery() -> DiscoveryResult:
         return _discovery(
-            ("z-provider", "deepseek-v4.1-flash"),
-            ("a-provider", "deepseek-v4.1-flash"),
+            ("z-provider", settings.opencode_model),
+            ("a-provider", settings.opencode_model),
         )
 
     monkeypatch.setattr(backend, "discover_models", _fake_discovery)
 
-    assert await backend._resolve_model() == ("a-provider", "deepseek-v4.1-flash")
+    assert await backend._resolve_model() == ("a-provider", settings.opencode_model)
 
 
 if __name__ == "__main__":  # pragma: no cover

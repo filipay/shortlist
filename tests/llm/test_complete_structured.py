@@ -202,9 +202,15 @@ def _backend(
     recorder: Recorder,
     *,
     provider_id: str = "opencode-go",
-    model_id: str = "deepseek-v4.1-flash",
+    model_id: str = settings.opencode_model,
 ) -> OpenCodeServerBackend:
-    """A backend whose discovery/health are stubbed and whose transport is `recorder`."""
+    """A backend whose discovery/health are stubbed and whose transport is `recorder`.
+
+    The stubbed discovery advertises `settings.opencode_model`, so its 24
+    `complete_structured` callers resolve the model the port actually looks for
+    without passing `model=` — moving the shipped default then leaves every
+    default-lane resolution site green by construction.
+    """
     backend = OpenCodeServerBackend()
 
     async def _discover() -> DiscoveryResult:
@@ -392,7 +398,7 @@ async def test_the_session_body_carries_the_model_and_the_deny_ruleset(
 
     session_body = recorder.requests[0][2]
     assert session_body["model"] == {
-        "id": "deepseek-v4.1-flash",
+        "id": settings.opencode_model,
         "providerID": "opencode-go",
     }
     assert session_body["permission"]
@@ -440,7 +446,8 @@ async def test_an_unresolvable_model_fails_loud(
 
     assert result.ok is False
     assert result.status == "error"
-    assert "deepseek-v4.1-flash" in (result.error or "")
+    # The error names the model the port was ASKED for (the implicit default).
+    assert settings.opencode_model in (result.error or "")
     # Fail-loud means nothing was sent: no session, no message.
     assert recorder.requests == []
 

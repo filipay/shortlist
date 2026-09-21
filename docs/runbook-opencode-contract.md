@@ -92,6 +92,39 @@ Do **not** "correct" the constant back to the docs' spelling, and do not add an
 adaptive client that accepts either name: absorbing a rename silently is the
 failure mode this whole runbook exists to prevent (D-54).
 
+## Choosing a model that can satisfy a forced tool call
+
+A schema-constrained call is not a plain chat completion. opencode implements
+`format` structured output through a tool it injects into the session, and it sets
+the tool choice to **`required`** on every such call. The configured model must
+therefore accept a forced tool call; a model that refuses one makes every
+schema-constrained call fail at the provider, with an error that does not obviously
+name the model as the cause.
+
+The previously shipped default, `deepseek-v4.1-flash`, is one such model. Against a
+running 1.18.31 server it is rejected upstream with:
+
+```
+HTTP 400 invalid_request_error: Thinking mode does not support this tool_choice
+```
+
+The rejection is independent of the agent, the variant and the permission shape, and
+the provider's whole model set is reasoning-capable — so "choose a non-reasoning
+model" is not an available mitigation. The remedy is to select a model that honours
+the forced tool call and confirm it: `minimax-m3` is the evidenced-capable shipped
+default, and the `/settings` **Test LLM backend** button runs exactly the
+schema-constrained call that exercises this requirement.
+
+`format.retryCount` cannot rescue an incapable model. In 1.18.31 the field is
+accepted on the wire but unused — the server's own retry counter is effectively
+hardcoded to zero — so a provider-side `tool_choice` rejection is returned on the
+first attempt with `retries: 0` and no `structured` key, however high the configured
+retry count is.
+
+`app/config.py` records the known-incompatible model in
+`KNOWN_FORCED_TOOL_CHOICE_INCOMPATIBLE_MODELS`, and `tests/test_config.py` guards the
+shipped default against it.
+
 ## Recording the evidence
 
 Paste the live lane's output into the phase verification notes and keep:

@@ -20,7 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from app.config import Settings, settings
+from app.config import (
+    KNOWN_FORCED_TOOL_CHOICE_INCOMPATIBLE_MODELS,
+    Settings,
+    settings,
+)
 from app.pipeline.run import build_budget, default_query
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +49,9 @@ REQUIRED_SETTINGS_FIELDS = (
     "opencode_completion_timeout_seconds",
     "opencode_max_retries",
     "opencode_structured_retry_count",
+    # The model a schema-constrained call resolves by default: a configuration
+    # fact whose shipped value this task moves, so the surface guard covers it.
+    "opencode_model",
     # A pre-existing LIMIT_FIELDS entry the surface guard had omitted; covered here
     # so "every LIMIT_FIELDS name is a required field" actually holds.
     "probe_cache_ttl_seconds",
@@ -113,6 +120,8 @@ def test_documented_defaults() -> None:
     assert Settings.model_fields["probe_country_indeed"].default == "ireland"
     assert Settings.model_fields["probe_max_detail_fetches"].default == 0
     assert Settings.model_fields["dedup_fuzzy_threshold"].default == 88
+    # The shipped model default must be a model that can honour a forced tool call.
+    assert Settings.model_fields["opencode_model"].default == "minimax-m3"
 
 
 def test_the_phase_three_ceilings_are_guarded() -> None:
@@ -187,6 +196,50 @@ def test_the_phase_three_ceilings_are_environment_tunable(
     assert refreshed.opencode_completion_timeout_seconds == 7.5
     assert refreshed.opencode_max_retries == 5
     assert refreshed.opencode_structured_retry_count == 4
+
+
+def test_the_shipped_model_default_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A constructed `Settings()` is the correct read here — the override is the point."""
+    monkeypatch.setenv("OPENCODE_MODEL", "glm-5.3")
+
+    assert Settings().opencode_model == "glm-5.3"
+
+
+# --- the shipped model default must be able to satisfy a forced tool call ------
+
+
+def test_the_default_model_is_not_a_known_forced_tool_call_incompatible_model() -> None:
+    """The guard reads the DECLARED default, never an ambient-env-affected `Settings()`."""
+    incompatible = KNOWN_FORCED_TOOL_CHOICE_INCOMPATIBLE_MODELS
+
+    # A vacuous guard is not a guard: the set must name the evidenced counter-example.
+    assert incompatible, "the incompatible-model set was emptied — the guard is vacuous"
+    assert "deepseek-v4.1-flash" in incompatible
+
+    declared = Settings.model_fields["opencode_model"].default
+    assert declared not in incompatible, (
+        f"the shipped opencode_model default {declared!r} is a model documented as "
+        "unable to satisfy a forced tool call — it cannot make the schema-constrained "
+        "call success criterion 1 requires"
+    )
+
+
+def test_the_compose_model_default_agrees_with_the_declared_one() -> None:
+    """Three operator surfaces, one value: the expected spelling is DERIVED."""
+    declared = str(Settings.model_fields["opencode_model"].default)
+
+    compose = (PROJECT_ROOT / "compose.yml").read_text(encoding="utf-8")
+    assert f"OPENCODE_MODEL=${{OPENCODE_MODEL:-{declared}}}" in compose, (
+        "compose.yml's OPENCODE_MODEL passthrough default disagrees with the "
+        "declared Settings default — a host without a .env would get a different model"
+    )
+
+    env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert f"OPENCODE_MODEL={declared}" in env_example, (
+        ".env.example's OPENCODE_MODEL value disagrees with the declared default"
+    )
 
 
 def test_build_budget_reads_every_ceiling_from_settings(

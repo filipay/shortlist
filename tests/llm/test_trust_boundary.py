@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 import structlog
 
+from app.config import settings
 from app.domain.schemas.probe import ProbeResult
 from app.llm import builders, contract, opencode_server
 from app.llm.builders import to_message_body, to_message_parts
@@ -228,7 +229,7 @@ async def test_the_session_request_actually_sends_the_deny_ruleset(
     assert rules[0][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_DENY_ACTION
     assert rules[-1][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_ALLOW_ACTION
     assert session_body["model"] == {
-        "id": "deepseek-v4.1-flash",
+        "id": settings.opencode_model,
         "providerID": "opencode-go",
     }
 

@@ -14,7 +14,9 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - OPENCODE_BASE_URL=${OPENCODE_BASE_URL:-http://host.docker.internal:4096}
-      - OPENCODE_MODEL=${OPENCODE_MODEL:-deepseek-v4.1-flash}
+      # The default must accept a forced tool call (opencode forces
+      # toolChoice=required for a schema-constrained call). See app/config.py.
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-minimax-m3}
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-} # from an uncommitted .env
       - DATABASE_URL_ASYNC=sqlite+aiosqlite:////data/jobsearch.db
       - DATABASE_URL_SYNC=sqlite:////data/jobsearch.db # Alembic uses this
