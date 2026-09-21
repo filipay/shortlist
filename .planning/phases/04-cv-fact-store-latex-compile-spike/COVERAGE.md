@@ -1,0 +1,1 @@
+No external API integration: this phase is entirely local — a structured CV fact store, a LaTeX renderer, and a subprocess call to a locally-installed Tectonic binary. No external API, SDK, network service, or third-party endpoint is integrated.

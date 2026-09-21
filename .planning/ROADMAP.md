@@ -173,9 +173,29 @@ wire-inaccurate on the response name; plan 03-02 carries the correction into the
   3. The container compiles LaTeX to PDF offline via Tectonic, with the engine selectable as configuration and a `Dockerfile.texlive` fallback available.
   4. The spike on the real `.tex` produces a written verdict on whether the document decomposes into `cv.yaml` and whether Tectonic's bundle covers its preamble — with the hand-authored `cv.yaml` fallback recorded if it does not.
 
-**Plans**: TBD
+**Plans:** 0/5 plans complete (planned 2026-09-21)
+
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — The two new dependencies (`pypdf`, `pyyaml`), behind a blocking human gate, plus the `latex` lane's default-lane exclusion
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — Tracer: a committed `.tex` compiles to a real PDF offline through the engine port; the engine, its cache prime and its TeX Live fallback are configuration
+- [ ] 04-03-PLAN.md — The structured CV: fact store with stable enumerated IDs, deterministic render through one escape choke point, and the byte-exact golden file
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-04-PLAN.md — The fact-equivalence lane over extracted PDF text, with its mutation control, and the CV revision log
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-05-PLAN.md — The spike: bounded `.tex` import, the partial verdict with its real-document trigger, and the compile runbook
 
 **Research flag:** highest research need — the real `.tex` is unavailable to research. The plan must contain a spike task on one section, a Tectonic bundle-coverage check, and a pdfTeX-primitive/bibliography check before Phase 6 is estimated.
+
+**Resolution (recorded during planning, 2026-09-21):** the spike is planned as a **partial verdict plus a trigger** (D-62), not as a measurement. 04-05 ships the bounded importer, the executable spike script at `scripts/cv-tex-spike.sh`, and `docs/probes/2026-09-21-cv-tex-spike.md` with a `PARTIAL` marker and an `UNRESOLVED` section naming the exact command that closes it; STATE.md's blocking unknown #1 stays **open** and now points at that trigger. The bundle-coverage and pdfTeX-primitive checks are concrete runnable commands recorded in that document, and the `Dockerfile.texlive` fallback's availability is a one-off hand-run measurement (D-76) recorded there — or explicitly recorded as not yet taken. Two research corrections are carried into the plans: the `cv.yaml` shape lives in ARCHITECTURE §7.2 (not §7.3, which is the patch), and the renderer's template is application code in `app/latex/templates/` (not in the `cv/` volume, which stays purely the human's data).
 
 ### Phase 5: Ranking — CORE VALUE
 
@@ -259,7 +279,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
-| 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
+| 4. CV Fact Store + LaTeX Compile Spike | 0/5 | Planned   | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
