@@ -149,17 +149,51 @@ def test_the_session_and_message_model_shapes_are_distinct_and_not_inverted() ->
     assert session_body["model"] != message_body["model"]
 
 
-# --- 3. the permission ruleset is deny-only ------------------------------------
+# --- 3. the permission ruleset: fail-closed, with one ordered carve-out --------
 
 
-def test_the_default_deny_ruleset_is_deny_only() -> None:
+def test_the_default_deny_ruleset_stays_fail_closed_with_one_carve_out() -> None:
+    """The catch-all deny stays first; the structured-output carve-out follows it.
+
+    A wrong shape here either re-opens every user-facing tool (if the catch-all
+    moves or disappears) or strips the internal tool opencode needs to produce a
+    structured payload (if the carve-out is absent or ordered first).
+    """
     rules = opencode_server.DEFAULT_DENY_RULES
 
     assert rules, "a default posture that denies nothing is not a default deny"
     for rule in rules:
         assert tuple(rule) == contract.PERMISSION_RULE_FIELDS
-        assert rule["action"] == contract.PERMISSION_DENY_ACTION
-        assert rule["action"] not in {"allow", "ask"}
+
+    # Rule 0 is the catch-all deny — first, so its fail-closed default holds for
+    # every name a later rule does not explicitly re-grant.
+    assert rules[0] == {
+        contract.PERMISSION_RULE_FIELDS[0]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[1]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[2]: contract.PERMISSION_DENY_ACTION,
+    }
+
+    # Exactly one rule allows, and it grants the server-internal tool only.
+    allow_rules = [
+        rule
+        for rule in rules
+        if rule[contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_ALLOW_ACTION
+    ]
+    assert len(allow_rules) == 1
+    assert (
+        allow_rules[0][contract.PERMISSION_RULE_FIELDS[0]]
+        == contract.STRUCTURED_OUTPUT_TOOL_NAME
+    )
+    assert (
+        allow_rules[0][contract.PERMISSION_RULE_FIELDS[1]] == contract.PERMISSION_WILDCARD
+    )
+
+    # The deny is a BEHAVIOUR, not a rule action: every user-facing tool evaluates
+    # to denied, asserted through the evaluator rather than by iterating actions.
+    for name in ("bash", "read", "write"):
+        assert opencode_server.ruleset_allows_tool(rules, name) is False, (
+            f"{name} is granted by the default ruleset"
+        )
 
 
 def test_the_session_body_carries_the_deny_ruleset() -> None:
@@ -169,10 +203,12 @@ def test_the_session_body_carries_the_deny_ruleset() -> None:
         permission=opencode_server.DEFAULT_DENY_RULES,
     )
 
-    assert contract.PERMISSION_FIELD in body
-    assert body[contract.PERMISSION_FIELD]
-    for rule in body[contract.PERMISSION_FIELD]:
-        assert rule[contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_DENY_ACTION
+    sent = body[contract.PERMISSION_FIELD]
+    assert sent
+    # The builder copies the rules verbatim, so the FIRST sent rule is the
+    # catch-all deny and the LAST sent rule is the carve-out.
+    assert sent[0][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_DENY_ACTION
+    assert sent[-1][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_ALLOW_ACTION
 
 
 async def test_the_session_request_actually_sends_the_deny_ruleset(
@@ -188,12 +224,66 @@ async def test_the_session_request_actually_sends_the_deny_ruleset(
 
     session_body = recorder.requests[0][2]
     assert contract.PERMISSION_FIELD in session_body
+    rules = session_body[contract.PERMISSION_FIELD]
+    assert rules[0][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_DENY_ACTION
+    assert rules[-1][contract.PERMISSION_RULE_FIELDS[2]] == contract.PERMISSION_ALLOW_ACTION
     assert session_body["model"] == {
         "id": "deepseek-v4.1-flash",
         "providerID": "opencode-go",
     }
-    for rule in session_body[contract.PERMISSION_FIELD]:
-        assert rule["action"] == "deny"
+
+
+def test_the_carve_out_must_follow_the_catch_all_deny() -> None:
+    """Order is enforced by behaviour: moving the carve-out flips the grant to denied.
+
+    opencode resolves a merged ruleset by last match wins, so `wildcard-deny` then
+    `allow` grants the internal tool, while the reversed order does not. If the
+    evaluator used first-match or presence-only semantics, the shipped ruleset and
+    this deliberately reordered one would be indistinguishable and the test would
+    pass vacuously.
+    """
+    catch_all = {
+        contract.PERMISSION_RULE_FIELDS[0]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[1]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[2]: contract.PERMISSION_DENY_ACTION,
+    }
+    carve_out = {
+        contract.PERMISSION_RULE_FIELDS[0]: contract.STRUCTURED_OUTPUT_TOOL_NAME,
+        contract.PERMISSION_RULE_FIELDS[1]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[2]: contract.PERMISSION_ALLOW_ACTION,
+    }
+    reordered = (carve_out, catch_all)
+
+    assert (
+        opencode_server.ruleset_allows_tool(
+            opencode_server.DEFAULT_DENY_RULES,
+            contract.STRUCTURED_OUTPUT_TOOL_NAME,
+        )
+        is True
+    )
+    assert (
+        opencode_server.ruleset_allows_tool(
+            reordered, contract.STRUCTURED_OUTPUT_TOOL_NAME
+        )
+        is False
+    ), "moving the carve-out before the catch-all must flip the grant to denied"
+
+
+def test_the_evaluator_denies_an_unmentioned_tool_name() -> None:
+    """Guard-can-fail companion: the evaluator must not default to allowed."""
+    assert (
+        opencode_server.ruleset_allows_tool(
+            opencode_server.DEFAULT_DENY_RULES, "no-such-tool-name"
+        )
+        is False
+    )
+    assert (
+        opencode_server.ruleset_allows_tool(
+            opencode_server.DEFAULT_DENY_RULES,
+            contract.STRUCTURED_OUTPUT_TOOL_NAME,
+        )
+        is True
+    ), "the shipped carve-out name must evaluate to granted"
 
 
 # --- 4. text parts only --------------------------------------------------------

@@ -81,11 +81,29 @@ TEXT_PART_FIELDS = (PART_TYPE_FIELD, "text")
 #: where the enforced deny lives.
 PERMISSION_FIELD = "permission"
 PERMISSION_RULE_FIELDS = ("permission", "pattern", "action")
-#: The only action this phase emits. `allow`/`ask` are never sent.
+#: The fail-closed action. `ask` is never sent. `allow` is emitted for exactly ONE
+#: rule — the server-internal structured-output carve-out (`PERMISSION_ALLOW_ACTION`
+#: below) — because opencode 1.18.31 implements structured output through a tool it
+#: injects into the session, and a catch-all deny that suppresses that tool makes
+#: every schema-constrained call fail (RESEARCH Pitfall P5 item 4).
 PERMISSION_DENY_ACTION = "deny"
+#: The one non-deny action this phase emits: the structured-output carve-out's
+#: action. Order-sensitive — see `opencode_server.DEFAULT_DENY_RULES`.
+PERMISSION_ALLOW_ACTION = "allow"
 #: A bare `"*"` is legal as a `permission` key/pattern. It is deliberately NOT
 #: legal in the deprecated `tools` map — hence no `TOOLS_WILDCARD` constant exists.
 PERMISSION_WILDCARD = "*"
+#: The synthetic tool opencode 1.18.31 injects into the session when the message
+#: body carries `format`: the server forces the tool choice to `required` and
+#: captures the structured payload only inside that tool's `execute()`. Our
+#: session ruleset must therefore grant exactly this name (and nothing else), or
+#: every schema-constrained call fails with `StructuredOutputError` while the
+#: default lane stays green (Pitfall P5 item 4).
+STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput"
+#: The `parts[].type` value of a tool invocation. Used by the differential cause
+#: to tell a model that declined the forced tool call from a ruleset that stripped
+#: the tool — a TYPE NAME only, never the part's text.
+PART_TYPE_TOOL = "tool"
 #: The deprecated message-level `tools` field: a name→boolean map of explicit
 #: per-name GRANTS. Never a bare `"*"`, and never an empty map (an undocumented
 #: empty map is not a deny).
@@ -106,6 +124,8 @@ __all__ = [
     "MESSAGE_REQUIRED_FIELDS",
     "MESSAGE_TOOLS_FIELD",
     "PART_TYPE_FIELD",
+    "PART_TYPE_TOOL",
+    "PERMISSION_ALLOW_ACTION",
     "PERMISSION_DENY_ACTION",
     "PERMISSION_FIELD",
     "PERMISSION_RULE_FIELDS",
@@ -117,6 +137,7 @@ __all__ = [
     "STRUCTURED_ERROR_MESSAGE_PATH",
     "STRUCTURED_ERROR_NAME",
     "STRUCTURED_ERROR_RETRIES_PATH",
+    "STRUCTURED_OUTPUT_TOOL_NAME",
     "STRUCTURED_RESPONSE_PATH",
     "TEXT_PART_FIELDS",
     "TEXT_PART_TYPE",

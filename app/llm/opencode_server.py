@@ -27,7 +27,7 @@ a result object rather than raised, so a broken backend can never 500 a route.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Annotated
 
 import httpx
@@ -48,6 +48,7 @@ from app.llm.contract import (
     MESSAGE_MODEL_FIELDS,
     MESSAGE_PATH,
     PART_TYPE_FIELD,
+    PERMISSION_ALLOW_ACTION,
     PERMISSION_DENY_ACTION,
     PERMISSION_RULE_FIELDS,
     PERMISSION_WILDCARD,
@@ -57,6 +58,7 @@ from app.llm.contract import (
     STRUCTURED_ERROR_MESSAGE_PATH,
     STRUCTURED_ERROR_NAME,
     STRUCTURED_ERROR_RETRIES_PATH,
+    STRUCTURED_OUTPUT_TOOL_NAME,
     STRUCTURED_RESPONSE_PATH,
 )
 
@@ -94,20 +96,68 @@ TOLERATED_SCHEMA_ERRORS: frozenset[str] = frozenset({"missing", "int_parsing"})
 #: `permission` is the server's DOCUMENTED control — the message-level `tools` map
 #: is deprecated and its wildcard semantics are undocumented (assumptions A2/A6), so
 #: the deny is enforced per SESSION here rather than per message. Every rule carries
-#: all of `PERMISSION_RULE_FIELDS` and an action of `PERMISSION_DENY_ACTION`.
+#: all of `PERMISSION_RULE_FIELDS`.
 #:
-#: This is a DEFAULT, deliberately changeable (a future server may reshape the
-#: ruleset). It must also be WATCHED: opencode implements structured output through
-#: an internal tool, so an over-broad deny could break the very path this phase
-#: proves — which is why `complete_structured` records the returned part types and
-#: `info` key names (the observation) instead of assuming the deny is harmless.
+#: **The ORDER is load-bearing.** opencode resolves the merged ruleset by LAST MATCH
+#: WINS (RESEARCH §"`allow`/`ask`/`deny`, wildcard patterns, last match wins"), so
+#: the catch-all deny MUST stay FIRST and the single carve-out MUST follow it:
+#:
+#: * rule 0 — wildcard `permission`, wildcard `pattern`, `deny`: the fail-closed
+#:   default for every user-facing tool (`bash`, `read`, `write`, …);
+#: * rule 1 — `STRUCTURED_OUTPUT_TOOL_NAME`, wildcard `pattern`, `allow`: the ONE
+#:   grant, for the server-internal tool opencode injects when the message body
+#:   carries `format`, because the server captures the structured payload only
+#:   inside that tool and a catch-all deny that also suppresses it makes every
+#:   schema-constrained call fail (Pitfall P5 item 4).
+#:
+#: Reordering the two flips the evaluated grant back to denied, which
+#: `test_the_carve_out_must_follow_the_catch_all_deny` fails on. This is a DEFAULT,
+#: deliberately changeable (a future server may reshape the ruleset).
 DEFAULT_DENY_RULES: tuple[dict[str, str], ...] = (
     {
         PERMISSION_RULE_FIELDS[0]: PERMISSION_WILDCARD,
         PERMISSION_RULE_FIELDS[1]: PERMISSION_WILDCARD,
         PERMISSION_RULE_FIELDS[2]: PERMISSION_DENY_ACTION,
     },
+    {
+        PERMISSION_RULE_FIELDS[0]: STRUCTURED_OUTPUT_TOOL_NAME,
+        PERMISSION_RULE_FIELDS[1]: PERMISSION_WILDCARD,
+        PERMISSION_RULE_FIELDS[2]: PERMISSION_ALLOW_ACTION,
+    },
 )
+
+
+def ruleset_allows_tool(
+    ruleset: Sequence[Mapping[str, str]], tool_name: str
+) -> bool:
+    """Whether `ruleset` grants `tool_name`, under last-match-wins semantics.
+
+    opencode merges a session ruleset by last match wins, so this evaluates the
+    rules IN ORDER, remembers the action of the LAST rule that matches on the
+    NAME dimension, and returns True only when that action is
+    `PERMISSION_ALLOW_ACTION`.
+
+    A rule matches when its `permission` is either the wildcard or exactly
+    `tool_name` AND its `pattern` is `PERMISSION_WILDCARD`. A non-wildcard
+    `pattern` scopes the rule to a path/resource this name-only question cannot
+    evaluate, so it is treated as NON-matching — fail-closed: an unscopable grant
+    is never read as a grant.
+
+    Deliberately NOT implemented with `any()`, a first-match break, or a
+    presence check for the allow rule: each of those makes the shipped ruleset and
+    a reordered one indistinguishable, and the ordering guarantee would then rest
+    on a comment instead of on behaviour.
+    """
+    matched_action: str | None = None
+    for rule in ruleset:
+        permission = rule.get(PERMISSION_RULE_FIELDS[0])
+        pattern = rule.get(PERMISSION_RULE_FIELDS[1])
+        if pattern != PERMISSION_WILDCARD:
+            continue
+        if permission != PERMISSION_WILDCARD and permission != tool_name:
+            continue
+        matched_action = rule.get(PERMISSION_RULE_FIELDS[2])
+    return matched_action == PERMISSION_ALLOW_ACTION
 
 
 def parse_providers(payload: object) -> list[ProviderModel]:
@@ -313,7 +363,8 @@ class OpenCodeServerBackend:
 
         The body is built by the pure `to_session_body`, so the SESSION model shape
         (`{id: modelID, providerID}` — the inverse of the message body's) and the
-        deny-only `permission` ruleset are encoded in exactly one place. A response
+        order-sensitive `DEFAULT_DENY_RULES` ruleset (catch-all deny, then the
+        structured-output carve-out) are encoded in exactly one place. A response
         with no usable `ses…` id is a value, not an exception: this stays total.
         """
         response = await client.post(
@@ -898,4 +949,5 @@ __all__ = [
     "OpenCodeServerBackend",
     "TOLERATED_SCHEMA_ERRORS",
     "parse_providers",
+    "ruleset_allows_tool",
 ]
