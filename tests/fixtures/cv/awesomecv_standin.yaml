@@ -1,0 +1,73 @@
+# =============================================================================
+# awesomecv_standin.yaml — a SYNTHETIC stand-in fact store, NOT anyone's CV.
+#
+# It is committed, and it mirrors tests/fixtures/cv/awesomecv_standin.tex fact
+# for fact (the 04-02/04-03 shared fixture contract). It exists so the renderer
+# and the fact-equivalence lane can be exercised without a real CV entering git.
+#
+# NO REAL CV CONTENT MAY EVER BE ADDED TO THIS FILE. The human's real documents
+# live in the gitignored `cv/` volume, never here. Every address below uses the
+# reserved `.invalid` TLD, which can never resolve.
+# =============================================================================
+schema_version: 1
+
+meta:
+  name: "Alex Example"
+  contact:
+    email: "alex.example@example.invalid"
+    phone: null
+    links:
+      - "https://example.invalid/alex"
+  max_pages: 2
+
+sections:
+  - id: sec.experience
+    title_key: sec.experience
+    order: 10
+    entries:
+      - id: "exp/northwind-labs-2021"
+        org_id: org.northwind
+        title_id: title.senior_engineer
+        start: "2021-03"
+        end: "2024-09"
+        location: "Dublin, IE"
+        bullets:
+          - id: "bul/northwind-labs-2021/1"
+            text: "Reduced p99 latency 40% by rewriting the ingest path"
+            evidence: verbatim
+            metrics: ["40%", "p99"]
+          - id: "bul/northwind-labs-2021/2"
+            text: "Led the migration to a single-writer queue"
+            evidence: verbatim
+          - id: "bul/northwind-labs-2021/3"
+            text: "Mentored four engineers through their first on-call rotation"
+            evidence: verbatim
+
+  - id: sec.skills
+    title_key: sec.skills
+    order: 30
+    entries: []
+    skills:
+      - id: skill.python
+        label: "Python"
+        group: languages
+        weight: 1.0
+      - id: skill.postgresql
+        label: "PostgreSQL"
+        group: databases
+        weight: 1.0
+      - id: skill.terraform
+        label: "Terraform"
+        group: infrastructure
+        weight: 1.0
+
+orgs:
+  - id: org.northwind
+    name: "Northwind Labs"
+    aliases: []
+
+titles:
+  - id: title.senior_engineer
+    name: "Senior Engineer"
+
+gaps: []

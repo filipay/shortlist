@@ -8,3 +8,15 @@ node_modules/
 .pytest_cache/
 pytest-of-*/
 *.egg-info/
+# The human's real CV documents and the compiled artefacts derived from them.
+# Same class as `.env`: personal data that must never enter git. Without these
+# two entries the first broad `git add` commits the user's real CV.
+cv/
+artifacts/
+# The two rules above are deliberately unanchored so a stray volume anywhere is
+# caught. That also matches the CODE and TEST directories named `cv`, so they are
+# negated back in — otherwise `app/cv/`, `tests/cv/` and `tests/fixtures/cv/`
+# would be untrackable.
+!app/cv/
+!tests/cv/
+!tests/fixtures/cv/
