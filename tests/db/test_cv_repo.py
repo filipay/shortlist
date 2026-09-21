@@ -179,6 +179,48 @@ async def test_exactly_one_row_is_current_after_two_snapshots(
     assert current.id != first.id
 
 
+async def test_a_failed_insert_leaves_the_previous_revision_current(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-01: the current-row clear must roll back WITH the failed insert.
+
+    Before the fix the clear ran in the OUTER transaction, ahead of the
+    SAVEPOINT, so a failed INSERT committed the clear and left the table with
+    ZERO current rows. The payload below is unserialisable, so the INSERT raises
+    inside the SAVEPOINT; the previous revision must remain the one current row.
+    """
+    async with session_factory() as session:
+        first = await snapshot_version(
+            session, facts_json=PAYLOAD, schema_version=1, source="hand", now=NOW
+        )
+        await session.commit()
+
+    assert await _count_current(session_factory) == 1
+
+    async with session_factory() as session:
+        # `{1, 2}` is not JSON-serialisable, so the flush inside the SAVEPOINT
+        # raises. The exception class is SQLAlchemy's to choose; what matters is
+        # that it propagates rather than being swallowed.
+        with pytest.raises(Exception):
+            await snapshot_version(
+                session,
+                facts_json={"unserialisable": {1, 2}},
+                schema_version=1,
+                source="hand",
+                now=LATER,
+            )
+        await session.commit()
+
+    assert await _count_all(session_factory) == 1
+    assert await _count_current(session_factory) == 1
+
+    async with session_factory() as session:
+        current = await current_version(session)
+
+    assert current is not None
+    assert current.id == first.id
+
+
 # --- current_version -----------------------------------------------------------
 
 

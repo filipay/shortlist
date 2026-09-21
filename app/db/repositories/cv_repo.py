@@ -76,9 +76,6 @@ async def snapshot_version(
     moment = now if now is not None else datetime.now(UTC)
     version_text = str(schema_version)
 
-    await session.execute(
-        update(CvVersion).where(CvVersion.is_current.is_(True)).values(is_current=False)
-    )
     row = CvVersion(
         label=label,
         schema_version=version_text,
@@ -87,7 +84,16 @@ async def snapshot_version(
         created_at=moment,
         is_current=True,
     )
+    # BOTH statements live inside the SAVEPOINT: clearing the previous current
+    # flag and inserting the new row roll back together, so a failed insert
+    # cannot leave the table with zero current rows (WR-01). Issue the clear
+    # before `session.add(row)` so the INSERT is not autoflushed ahead of it.
     async with session.begin_nested():
+        await session.execute(
+            update(CvVersion)
+            .where(CvVersion.is_current.is_(True))
+            .values(is_current=False)
+        )
         session.add(row)
         await session.flush()
 
