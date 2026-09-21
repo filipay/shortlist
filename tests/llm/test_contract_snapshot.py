@@ -310,7 +310,10 @@ def test_the_default_lane_cannot_run_the_live_lane() -> None:
     config = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
     ini_options = config["tool"]["pytest"]["ini_options"]
 
-    assert "-m 'not live'" in ini_options["addopts"]
+    # The exclusion is additive (Phase 4 widened it to `not live and not latex`),
+    # so assert the `live` lane is still deselected rather than freeze the whole
+    # addopts string.
+    assert "not live" in ini_options["addopts"]
     assert any(str(marker).startswith("live:") for marker in ini_options["markers"])
 
 

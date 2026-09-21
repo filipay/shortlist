@@ -17,6 +17,14 @@ structlog==26.1.0
 # (D-31). Exact pin only, cleared by a blocking human checkpoint (T-02-04).
 rapidfuzz==3.14.6
 
+# CV fact-equivalence lane (CV-03): PDF page count and text extraction.
+# Exact pin only, cleared by a blocking human checkpoint (T-04-01).
+pypdf==6.19.0
+
+# CV fact store (CV-01, D-66): `app/cv/factstore.py` loads cv.yaml at module
+# scope, so this must be a RUNTIME pin — not the dev-only entry it once was.
+pyyaml==6.0.3
+
 # Acquisition — from git at the pinned FULL SHA, never the stale PyPI release.
 # Note: the distribution is named `python-jobspy`, NOT `jobspy` (the PyPI `jobspy`
 # name is an unrelated project). Naming the wrong distribution makes pip report a
