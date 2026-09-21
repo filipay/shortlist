@@ -276,5 +276,24 @@ def test_the_engine_passthrough_guard_can_actually_fail() -> None:
     assert any("LATEX_ENGINE" in problem for problem in problems), problems
 
 
+def test_dockerfile_creates_every_outdir_it_hands_to_an_engine() -> None:
+    """Tectonic does not create its --outdir.
+
+    Regression guard for the build-time cache prime, which passed
+    `--outdir /tmp/prime` and failed the image build with "output directory
+    does not exist". The runtime path never hits this because the caller stages
+    a real workdir, which is exactly why the hermetic lane could not catch it.
+    """
+    checked: list[str] = []
+    for line in _dockerfile_logical_lines():
+        for outdir in re.findall(r"--outdir\s+(\S+)", line):
+            checked.append(outdir)
+            assert f"mkdir -p {outdir}" in line, (
+                f"RUN passes --outdir {outdir} without creating it first: {line}"
+            )
+
+    assert checked, "no --outdir found in the Dockerfile — the guard checks nothing"
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(0)

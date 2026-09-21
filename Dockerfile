@@ -95,8 +95,11 @@ RUN pip install --no-cache-dir pytest==9.1.1 pytest-asyncio==1.4.0
 # layer is the reason the runtime can pass --only-cached, and it is the build-time
 # proof the engine actually runs — the same shape as the migration smoke below.
 # The `test -f` turns "the command exited 0" into "the engine produced an
-# artefact"; the primed set is exactly this fixture's package set.
-RUN tectonic --outdir /tmp/prime tests/fixtures/cv/awesomecv_standin.tex \
+# artefact"; the primed set is exactly this fixture's package set. Tectonic does
+# NOT create its --outdir (it fails with "output directory does not exist"), and
+# the runtime path never hits this because the caller stages a real workdir.
+RUN mkdir -p /tmp/prime \
+    && tectonic --outdir /tmp/prime tests/fixtures/cv/awesomecv_standin.tex \
     && test -f /tmp/prime/awesomecv_standin.pdf \
     && rm -rf /tmp/prime
 
