@@ -3,26 +3,34 @@ status: testing
 phase: 04-cv-fact-store-latex-compile-spike
 source: 04-VERIFICATION.md
 started: 2026-09-21T16:00:00Z
-updated: 2026-09-21T17:45:00Z
+updated: 2026-09-21T18:05:00Z
 ---
 
 # Phase 04 — Human Verification (UAT)
 
-Verification returned `human_needed` with 20/29 must-haves verified. No must-have
-FAILED, so this is not a gap-closure cycle: the phase is hermetically proven but
-its two externally dependent halves — the in-container Tectonic compile and the
-real-document fact-equivalence/spike — were never executed in this environment.
+Verification first returned `human_needed` (20/29, then 26/29). No must-have ever
+FAILED, so this was never a gap-closure cycle: the phase was hermetically proven
+but its two externally dependent halves — the in-container Tectonic compile and
+the real-document fact-equivalence/spike — had never been executed in this
+environment.
+
+This UAT changed that. The operator built the image and ran the container lane,
+which caught two real defects (below). The three code-review warnings that then
+held verification at `human_needed` were fixed with failing-first tests, and
+re-verification returned **`passed`, 29/29 must-haves**. The phase was marked
+complete on that basis. The items still outstanding below are deferred
+operator-only checks, not blockers.
 
 Every item below is **operator-only**. None of them can be satisfied by a
 hermetic test run, and none may be recorded as passed until it is actually run.
 
 ## Current Test
 
-**Test 3 of 6 — Bundle coverage per preamble package**
-- expected: each of fontspec, geometry, tabularx, paracol, enumitem, titlesec,
-  hyperref is reported as held by the bundle (or the missing ones are added to
-  the build-time prime and the image rebuilt)
-- awaiting: operator (requires the pinned Tectonic binary inside the image)
+No blocking test is awaiting. The phase advanced on `verification.status: passed`
+(29/29 must-haves) after the three code-review warnings were fixed. Two operator
+checks remain deferred by design — item 4 (optional TeX Live measurement) and
+item 5 (the real-document spike, which keeps STATE blocking unknown #1 open).
+Item 3 was superseded by item 1 and is no longer outstanding.
 
 ## Container evidence gathered during UAT
 
@@ -74,7 +82,7 @@ now passes in-container, reading the binary's own help. The existing argv is cor
 test: `docker compose run --rm app tectonic -X bundle search <package>` for each of fontspec, geometry, tabularx, paracol, enumitem, titlesec, hyperref
 expected: Each package is reported as held by the bundle (or the missing ones are added to the build-time prime and the image rebuilt).
 why_human: Requires the pinned binary inside the image.
-result: [pending] — note the command must run *inside* the container and takes a package name; running it on the host fails with `command not found: tectonic`.
+result: SUPERSEDED by item 1 — run inside the container it printed only the version/workspace notes and no package lines, which is inconclusive rather than negative (the offline container has no fetched bundle index) and is the wrong proof anyway: `bundle search` queries the full default bundle, not the primed cache. Item 1 is authoritative: the stand-in requests exactly these seven packages and compiled offline under `--only-cached` (10/10 passed). Not recorded as passed on an empty result.
 
 ### 4. Measure the TeX Live fallback (D-76) or leave it unclaimed
 test: `docker build -f Dockerfile.texlive -t job-search-copilot:texlive .` then compile the fixture with `LATEX_ENGINE=texlive`
@@ -99,20 +107,34 @@ result: PASSED — approve/reject checkpoint presented with read-only evidence (
 - total: 6
 - passed: 3
 - failed: 0
-- pending: 3 (items 3, 4, 5)
+- superseded: 1 (item 3 — superseded by item 1)
+- pending: 2 (items 4, 5 — both deferred by design)
 
-Item 3 is a one-command confirmation. Item 4 is optional and may legitimately
-stay "Not taken". Item 5 depends on a document that is deliberately absent from
-this repository and is the only item that is a real external blocker.
+Item 3 returned no result lines and is superseded by item 1, which is
+authoritative because the stand-in requests exactly the seven preamble packages
+and compiled offline under `--only-cached` (10/10 passed). Item 4 is optional and
+may legitimately stay "Not taken". Item 5 depends on a document that is
+deliberately absent from this repository and is the only item that is a real
+external blocker, so STATE blocking unknown #1 stays open until it runs.
 
 ## Gaps
 
 No blocking product gaps. Two defects found by this UAT are fixed, guarded and
-committed (`0edde77`, `a8a5321`); the hermetic suite is at 964 passed. Four known
-non-blocking code warnings remain recorded in `04-REVIEW.md` (WR-01 `cv_repo.py`
-`is_current` cleared outside the SAVEPOINT; WR-02 `import_tex.py` silent
-slug-collision of distinct organisation names; WR-03 hard-coded
-`_HEALTH_TIMEOUT_SECONDS`/`_LOG_TAIL_CHARS`; WR-04 `_flatten` leaving a dangling
-backslash) and five non-blocking companion-assertion gaps in `04-SECURITY.md`.
-None of these fail a requirement. Suggested follow-up:
-`/gsd-code-review 04 --fix`.
+committed (`0edde77`, `a8a5321`); the hermetic suite is now at **971 passed
+(14 deselected)**.
+
+The three code-review warnings that held verification at `human_needed` are
+fixed, each shipping a regression test that failed before the fix:
+
+| Finding | Fix commit | Regression test |
+| --- | --- | --- |
+| WR-01 `cv_repo.py` `is_current` cleared outside the SAVEPOINT | `6dabe66` | `tests/db/test_cv_repo.py::test_a_failed_insert_leaves_the_previous_revision_current` |
+| WR-03 hard-coded `_HEALTH_TIMEOUT_SECONDS`/`_LOG_TAIL_CHARS` | `2665764` | `tests/test_config.py` ceiling + call-time tests |
+| WR-02 slug-collision of distinct organisation names (+ IN-02 missing identity name) | `8711cbb` | `tests/cv/test_import_tex.py` collision + `unresolved_fields` tests |
+
+Re-verification after those fixes returned `passed`, 29/29 must-haves.
+
+Still open deliberately (recorded in `04-REVIEW.md` → "Left open deliberately"):
+WR-04 (`_flatten` leaving a dangling backslash), IN-01, IN-03..IN-07, plus five
+non-blocking companion-assertion gaps in `04-SECURITY.md`. None of these fail a
+requirement.
