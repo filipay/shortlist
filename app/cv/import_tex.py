@@ -107,6 +107,16 @@ class ImportReport:
     unresolved_lines: dict[str, tuple[int, ...]] = field(default_factory=dict)
     unresolved_sections: int = 0
     entry_id_collisions: tuple[str, ...] = ()
+    #: WR-02: enumeration IDs two DISTINCT names collapsed onto. The reported
+    #: value is the derived ID (a slug), never the raw CV name — the report stays
+    #: free of source text by construction. A non-empty tuple means first-wins
+    #: merged two different employers/titles, which a human must resolve.
+    org_id_collisions: tuple[str, ...] = ()
+    title_id_collisions: tuple[str, ...] = ()
+    #: IN-02: fact-store paths the bounded parser did not resolve, reported rather
+    #: than left indistinguishable from an intentionally empty value. `meta.name`
+    #: is here whenever the importer emitted no identity name.
+    unresolved_fields: tuple[str, ...] = ()
     truncated: bool = False
 
     def summary(self) -> str:
@@ -124,6 +134,14 @@ class ImportReport:
             lines.append(
                 "entry id collisions: " + ", ".join(self.entry_id_collisions)
             )
+        if self.org_id_collisions:
+            lines.append("org id collisions: " + ", ".join(self.org_id_collisions))
+        if self.title_id_collisions:
+            lines.append(
+                "title id collisions: " + ", ".join(self.title_id_collisions)
+            )
+        if self.unresolved_fields:
+            lines.append("unresolved fields: " + ", ".join(self.unresolved_fields))
         if self.unresolved_macros:
             lines.append("unresolved macros:")
             for name in self.unresolved_macros:
@@ -309,6 +327,9 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
     section_keys: set[str] = set()
     orgs: dict[str, str] = {}
     titles: dict[str, str] = {}
+    #: WR-02: derived IDs two distinct names collapsed onto (first-wins merge).
+    org_collisions: list[str] = []
+    title_collisions: list[str] = []
     entry_meta: list[tuple[dict[str, Any], str | None, str | None]] = []
     unresolved_counts: dict[str, int] = {}
     unresolved_lines: dict[str, list[int]] = {}
@@ -392,13 +413,25 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
             if len(args) > 0:
                 org_name = _flatten(args[0], max_depth)
                 if org_name:
-                    orgs.setdefault(_org_id(org_name), org_name)
-                    entry["org_id"] = _org_id(org_name)
+                    org_id = _org_id(org_name)
+                    if org_id in orgs and orgs[org_id] != org_name:
+                        # Two distinct names that slugify alike (WR-02): keep the
+                        # first name but report the collision rather than dropping
+                        # the second silently — a wrong employer could otherwise
+                        # reach the rendered CV.
+                        org_collisions.append(org_id)
+                    else:
+                        orgs.setdefault(org_id, org_name)
+                    entry["org_id"] = org_id
             if len(args) > 1:
                 title_name = _flatten(args[1], max_depth)
                 if title_name:
-                    titles.setdefault(_title_id(title_name), title_name)
-                    entry["title_id"] = _title_id(title_name)
+                    title_id = _title_id(title_name)
+                    if title_id in titles and titles[title_id] != title_name:
+                        title_collisions.append(title_id)
+                    else:
+                        titles.setdefault(title_id, title_name)
+                    entry["title_id"] = title_id
             if len(args) > 2:
                 parsed = _parse_date_range(_flatten(args[2], max_depth))
                 if parsed is not None:
@@ -500,6 +533,13 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
         "gaps": [],
     }
 
+    # IN-02: `meta` is emitted empty so the fact store can load the structural
+    # facts, but a nameless CV must not be silent — report the unresolved identity
+    # path (derived from the emitted meta, so a future extractor clears it).
+    unresolved_fields: tuple[str, ...] = (
+        ("meta.name",) if not draft["meta"].get("name") else ()
+    )
+
     report = ImportReport(
         sections_parsed=sections_parsed,
         entries_parsed=sum(1 for entry, _org, _start in entry_meta if "id" in entry),
@@ -510,6 +550,9 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
         unresolved_lines={name: tuple(values) for name, values in unresolved_lines.items()},
         unresolved_sections=unresolved_sections,
         entry_id_collisions=tuple(collisions),
+        org_id_collisions=tuple(dict.fromkeys(org_collisions)),
+        title_id_collisions=tuple(dict.fromkeys(title_collisions)),
+        unresolved_fields=unresolved_fields,
         truncated=truncated,
     )
     return draft, report

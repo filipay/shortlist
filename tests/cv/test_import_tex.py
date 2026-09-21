@@ -315,5 +315,54 @@ def test_a_preamble_macro_that_wraps_section_is_understood() -> None:
     assert draft["sections"][0]["title_key"] == "sec.experience"
 
 
+# --- WR-02: distinct names that slugify alike must be loud, not silently merged --
+
+
+def test_distinct_org_names_that_slugify_alike_are_reported() -> None:
+    """`Acme Ltd` and `Acme-Ltd` both slugify to `acme-ltd`.
+
+    Before the fix the second name was dropped with nothing in the report to say
+    so, so a wrong employer could be rendered silently. The collision must now
+    be reported through the report surface.
+    """
+    source = _doc(
+        "\\section{Experience}\n"
+        "\\cvrole{Acme Ltd}{Engineer}{2020-01 -- 2021-01}\n"
+        "\\cvrole{Acme-Ltd}{Manager}{2022-01 -- 2023-01}\n",
+        preamble=ENTRY_MACRO,
+    )
+
+    _, report = parse_tex(source)
+
+    assert "org.acme-ltd" in report.org_id_collisions
+    assert "collision" in report.summary().lower()
+
+
+def test_distinct_org_names_that_do_not_slugify_alike_report_no_collision() -> None:
+    """The guard-can-fail companion: no false positives on ordinary documents."""
+    source = _doc(
+        "\\section{Experience}\n"
+        "\\cvrole{Acme Ltd}{Engineer}{2020-01 -- 2021-01}\n"
+        "\\cvrole{Globex}{Manager}{2022-01 -- 2023-01}\n",
+        preamble=ENTRY_MACRO,
+    )
+
+    _, report = parse_tex(source)
+
+    assert report.org_id_collisions == ()
+
+
+# --- IN-02: a missing identity name is loud, not an empty `meta: {}` -----------
+
+
+def test_a_missing_identity_name_is_reported_rather_than_silent() -> None:
+    """The bounded parser emits `meta: {}`; the missing name must be surfaced."""
+    draft, report = parse_tex(_doc("\\section{Skills}\n"))
+
+    assert draft["meta"] == {}
+    assert "meta.name" in report.unresolved_fields
+    assert "meta.name" in report.summary()
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
