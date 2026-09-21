@@ -207,6 +207,18 @@ requirements to re-ask:
 
 </decisions>
 
+<plan_time_clarifications>
+- **C-1 (plan-time, 2026-09-21, plan-phase checkpoint):** D-65 cites "§7.3" for the
+  `cv.yaml` shape, but §7.3 is the **patch** section — the shape lives in **§7.2**.
+  Resolved with the user: adopt **§7.2 as written** — `meta` (`name`, `contact`,
+  plus `max_pages` per D-65, which §7.2 omits) + `sections: [{id, title_key, order,
+  entries | skills}]` + enumerated `orgs` / `titles` + a separate `gaps:`
+  collection. D-65's prose list ("identity/contact, experience, education, skills,
+  projects") names the **section set**, not flat top-level keys. This is what the
+  patch engine requires: `ReorderSection.section_id` and bullet ids only validate
+  against an id-bearing list. Record the §7.3→§7.2 citation correction.
+</plan_time_clarifications>
+
 <canonical_refs>
 ## Canonical References
 
