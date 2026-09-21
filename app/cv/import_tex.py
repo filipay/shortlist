@@ -359,7 +359,8 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
             probe = after + 1 if after < length and text[after] == "*" else after
             heading, end, ok = _capture_group(text, probe, max_depth)
             if not ok:
-                unresolved_sections += 1
+                # A `\section` token with no brace group is a reference (e.g. inside
+                # `\titleformat`), not an invocation: report the token, count no heading.
                 _record(unresolved_counts, unresolved_lines, "\\section", lineno)
                 cursor = after
                 continue
@@ -453,6 +454,17 @@ def parse_tex(source: str) -> tuple[dict[str, Any], ImportReport]:
                     env_stack.remove(environment)
                     env_stack.reverse()
             cursor = end if ok else after
+            continue
+
+        if name == "newcommand":
+            # Skip the DECLARATION, body included: otherwise the body's `#1`/`\textbf`
+            # and the macro's own name at the declaration site are re-read as content.
+            declaration = _NEWCOMMAND_RE.match(text, cursor)
+            if declaration is not None:
+                _body, end, ok = _capture_group(text, declaration.end() - 1, max_depth)
+                cursor = end if ok else declaration.end()
+                continue
+            cursor = after
             continue
 
         if name in _GLUE_COMMANDS:
