@@ -135,6 +135,8 @@ can act on. Every other feature is downstream of that.
 | Docker for local deployment | One-command access locally, and a path to hosted deployment without repackaging | — Pending |
 | Conditional greenfield — confirmed by the Resume-Matcher spike | Prior art (Resume-Matcher, 28.4k★, Apache-2.0) covers the CV half but breaks three of the four differentiators: HTML→Chromium output (its "LaTeX" is a React/CSS theme), no opencode-compatible LLM path, and no ingestion. Its anti-fabrication policy is repair-not-block — the opposite of ours. Verdict: pattern-copy | ✓ Good |
 | Never fabricate CV content | Ethical hard line; tailoring is reorder/re-weight/suggest/flag only | — Pending |
+| Model the CV as structured data (enumerated IDs), never free-text `.tex` from the LLM | Makes fabrication structurally impossible — the model can only reorder and re-weight real bullet IDs, so it cannot invent an employer or skill the schema does not have; the renderer stays deterministic and testable | ✓ Good — shipped in Phase 4: `app/domain/cv.py` carries stable enumerated IDs, escaping is centralised at one non-bypassable Jinja `finalize` choke point, and the committed golden baseline renders byte-identically |
+| Tectonic as the LaTeX engine, pinned by version and SHA256, with the package cache primed at image build | ~124 MB vs multi-GB TeX Live, auto-fetches packages, and a pinned digest makes a swapped binary fail the build rather than silently change output | ✓ Good — validated in Phase 4: the container's offline compile of the committed fixture passed 10/10 and the installed binary's own `--help` confirmed the argv flags (D-75) |
 
 ## Evolution
 
@@ -154,4 +156,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-21 after Phase 3 (LLM Port + Structured Output) — PLAT-02 and PLAT-05 validated; opencode sibling-service LLM path proven end to end*
+*Last updated: 2026-09-21 after Phase 4 (CV Fact Store + LaTeX Compile Spike) — CV-as-data and the pinned Tectonic compile spine validated; the real-document `.tex → cv.yaml` measurement remains open*

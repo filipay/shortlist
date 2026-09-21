@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-21)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 04 — CV Fact Store + LaTeX Compile Spike
+**Current focus:** Phase 5 — Ranking — CORE VALUE
 
 ## Current Position
 
@@ -83,6 +83,10 @@ Recent decisions affecting current work:
 - [Phase 03]: `DEFAULT_DENY_RULES` is order-enforced — the catch-all deny stays first and the server-internal `StructuredOutput` carve-out follows it, evaluated last-match-wins; reordering fails a default-lane test.
 - [Phase 03]: the wire contract is pinned in `app/llm/contract.py` (`format` / `info.structured`, no adaptive fallback) and a `@pytest.mark.live` lane diffs the live `/doc` against the committed fixture, so an opencode upgrade fails loudly instead of silently corrupting structured output.
 - [Phase 03]: a structured-output failure persists its differential cause on `llm_calls.error`, distinguishing "the ruleset did not grant the tool" from "the grant survived but the model emitted no tool part" — and it survives a page reload with no new column.
+- [Phase 04]: the CV is modeled as structured data with stable enumerated IDs, never free-text `.tex` from the model — fabrication becomes structurally impossible, and escaping is centralised at one non-bypassable Jinja `finalize` choke point with a committed golden baseline that renders byte-identically.
+- [Phase 04]: Tectonic is the LaTeX engine, pinned by version **and** SHA256 with the package cache primed at image build; the container's offline compile of the committed fixture passed 10/10 and the installed binary's own `--help` confirmed the argv flags (D-75).
+- [Phase 04]: the `latex` pytest lane is collected-but-skipped in the hermetic pass by design (D-69) — a skipped lane is **not** a pass, so engine-dependent claims stay recorded as UNRUN rather than rounded up.
+- [Phase 04]: engine ceilings are Settings fields (`latex_probe_timeout_seconds`, `latex_log_tail_chars`), not module constants, so the container and `.env` can tune them.
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-21T11:57:25.471Z
+Last session: 2026-09-21T18:10:00.000Z
 Stopped at: Phase 04 complete, ready to plan Phase 5
-Resume file: .planning/phases/04-cv-fact-store-latex-compile-spike/04-CONTEXT.md
+Resume file: None
