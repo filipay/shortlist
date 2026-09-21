@@ -135,6 +135,30 @@ do not write the number.
 **Never paste listing text into the document.** Counts, status codes and fill-rates
 only: the document is committed, and listing content can carry recruiter PII.
 
+## The second probe: the LaTeX CV decomposition spike (Phase 4)
+
+`docs/probes/` now holds **two** probes, with two different instruments and two
+different cadences:
+
+| | Scraper survival (Phase 1) | LaTeX CV decomposition (Phase 4) |
+|---|---|---|
+| Instrument | `app/probe/survival.py` + `scripts/run-probe.sh` | `app/cv/import_tex.py` + `scripts/cv-tex-spike.sh` |
+| Cadence | once per day, target ≥3 distinct days | once against the real document, re-runnable whenever the CV changes |
+| Verdict | `docs/probes/2026-09-15-scraper-survival.md` | `docs/probes/2026-09-21-cv-tex-spike.md` |
+
+The LaTeX spike turns the human's `cv/base.tex` into a **review draft** fact store
+plus a report of everything the bounded parser could not resolve. Nothing is
+guessed, and the draft is written to a separate path — never back over the source
+and never over `cv.yaml`. It is **re-runnable whenever the real CV changes**.
+
+- Verdict: `docs/probes/2026-09-21-cv-tex-spike.md` — status `PARTIAL` until the
+  real document is measured, with an `UNRESOLVED` section naming the exact trigger.
+- Command: `bash scripts/cv-tex-spike.sh`.
+- Container compile lane and the engine switch: `docs/runbook-latex-compile.md`.
+
+**Never paste CV text or personal detail into either document.** Counts, package
+names, versions, commands and unit-suffixed durations only.
+
 ## Closing WINDOWS.md #3 (the deferred structural marker)
 
 `probe()` currently asserts HTTP status, a minimum body length and the absence of
