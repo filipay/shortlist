@@ -114,6 +114,31 @@ async def test_the_seam_is_overridable_through_dependency_overrides(
     assert body["tectonic"]["version"] == "fake-9.9.9"
 
 
+@pytest.mark.parametrize("choice", sorted(ENGINE_BUILDERS))
+def test_compile_creates_the_workdir_it_stages_into(
+    choice: str, tmp_path: Path
+) -> None:
+    """Regression: staging must create its own directory.
+
+    `_compile` writes `cv.tex` into `workdir` BEFORE spawning, so a workdir the
+    caller had not created raised FileNotFoundError at the staging write, which
+    the engine's own `except FileNotFoundError` reported as a missing binary.
+    That is exactly how the container `latex` lane failed with "the engine binary
+    was not found: /usr/local/bin/tectonic" while the engine was present and
+    running. Asserting the directory exists is what makes this fail pre-fix.
+    """
+    workdir = tmp_path / "staged"
+    assert not workdir.exists()
+
+    result = asyncio.run(
+        ENGINE_BUILDERS[choice]("/nonexistent/engine").compile(tex="x", workdir=workdir)
+    )
+
+    assert workdir.is_dir(), "the staging directory must exist after compile()"
+    assert result.ok is False
+    assert result.error_kind == "not_found"
+
+
 def test_the_protocol_check_can_actually_fail() -> None:
     """A guard that cannot fail is not a guard."""
 

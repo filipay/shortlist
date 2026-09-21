@@ -148,6 +148,13 @@ async def _compile(
     pdf_path = workdir / _PDF_NAME
     tex_hash = _sha256_hex(tex.encode("utf-8"))
     try:
+        # Staging creates its own directory. Do not remove: the write below runs
+        # BEFORE the spawn, so a workdir the caller did not create raises
+        # FileNotFoundError here and the `except FileNotFoundError` further down
+        # reports it as "the engine binary was not found" — which is how a
+        # present, working engine was reported missing. `exist_ok` keeps the
+        # already-created-directory path (the documented usage) free.
+        workdir.mkdir(parents=True, exist_ok=True)
         source.write_text(tex, encoding="utf-8", newline="\n")
         argv = build_argv(source, workdir)
         proc = await asyncio.create_subprocess_exec(
