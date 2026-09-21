@@ -1,0 +1,114 @@
+# syntax=docker/dockerfile:1
+#
+# The TeX Live FALLBACK image (D-76). This image is NOT built by
+# `docker compose up`; it exists to be built once BY HAND to *measure* the
+# fallback, and the result is recorded in the phase verdict document. The switch
+# is:
+#
+#   docker build -f Dockerfile.texlive -t job-search-copilot:texlive .
+#   LATEX_ENGINE=texlive docker run --rm job-search-copilot:texlive pytest -m latex
+#
+# Build it by hand, compile the fixture through it, and RECORD the result — the
+# image size (`docker image inspect --format '{{.Size}}'`), the build duration,
+# the compile argv and the resulting page count — in the phase verdict document
+# (docs/probes/2026-09-21-cv-tex-spike.md, owned by plan 04-05), so the fallback's
+# "available" claim is a measurement rather than a written intention (D-76).
+#
+# It installs a CURATED TeX Live subset (not texlive-full, which is ~4.2 GB) and
+# selects its own engine with `ENV LATEX_ENGINE=texlive`, so no compose edit is
+# needed to run it. It deliberately installs NO Tectonic binary and NO build-time
+# cache prime — TeX Live has neither.
+#
+# Two stages: the asset builder (Node, image-build only) and the runtime, mirroring
+# the primary Dockerfile. The built CSS + vendored JS are committed under
+# static/vendor/ so the repo runs without Node.
+
+# --- Stage 1: vendor HTMX/Alpine and build Tailwind --------------------------
+FROM node:24-slim AS assets
+WORKDIR /app
+RUN npm install --no-save --no-audit --no-fund \
+    htmx.org@2.0.10 \
+    alpinejs@3.17.3 \
+    tailwindcss@4.3.3 \
+    @tailwindcss/cli@4.3.3
+COPY assets/tailwind/input.css ./assets/tailwind/input.css
+COPY app/web/templates ./app/web/templates
+RUN mkdir -p ./static/vendor \
+    && ./node_modules/.bin/tailwindcss -i ./assets/tailwind/input.css -o ./static/vendor/app.css --minify \
+    && cp ./node_modules/htmx.org/dist/htmx.min.js ./static/vendor/htmx.min.js \
+    && cp ./node_modules/alpinejs/dist/cdn.min.js ./static/vendor/alpine.min.js
+
+# --- Stage 2: runtime --------------------------------------------------------
+# Python 3.13 — never 3.14 (Playwright/curl_cffi/lxml wheel coverage, D-17).
+FROM python:3.13-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# The curated TeX Live subset the fixture needs. `texlive-xetex` is
+# non-negotiable (fontspec requires XeLaTeX/LuaLaTeX); `texlive-latex-extra`
+# supplies paracol/titlesec and is the heavy one; `fonts-texgyre` supplies the
+# .otf files the by-filename declaration resolves against. `git` is required to
+# install JobSpy from its pinned commit.
+#
+# Deliberately absent: `texlive-fonts-extra` (GB-scale, unnecessary). `biber`/
+# `biblatex` are only needed if the CV ever grows a bibliography — if it does,
+# `biber` MUST be pinned to 2.17 (Tectonic's bundled biblatex control file v3.8
+# rejects Debian's 2.18).
+#
+# The fallback's OWN code-execution control (T-04-05): `--untrusted` is a Tectonic
+# option and means nothing to xelatex, so the fallback disables shell-escape in its
+# TeX Live configuration — `shell_escape = f` is TeX Live's "disabled" setting,
+# installed through Debian's own texmf.d mechanism — as the belt to its argv's
+# braces, exactly as TECTONIC_UNTRUSTED_MODE is on the primary path. The argv also
+# carries `-no-shell-escape`.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        texlive-xetex \
+        texlive-latex-recommended \
+        texlive-latex-extra \
+        texlive-fonts-recommended \
+        fonts-texgyre \
+        fonts-lmodern \
+        git \
+    && printf 'shell_escape = f\n' > /etc/texmf/texmf.d/95shell-escape.cnf \
+    && update-texmf \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Fail the build unless JobSpy came from the pinned git commit (mirrors the
+# primary Dockerfile; single-line `python -c`, never a heredoc).
+ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
+RUN JOBSPY_SHA="$JOBSPY_SHA" python -c "import importlib.metadata as md, json, os; vcs = json.loads(md.distribution('python-jobspy').read_text('direct_url.json')).get('vcs_info', {}); assert vcs.get('vcs') == 'git', 'python-jobspy is not a VCS install: %r' % (vcs,); assert vcs.get('commit_id') == os.environ['JOBSPY_SHA'], 'wrong revision: %r != %r' % (vcs.get('commit_id'), os.environ['JOBSPY_SHA']); print('python-jobspy pinned at', os.environ['JOBSPY_SHA'])"
+
+# The `latex` lane must be runnable inside this image too; the runtime stage
+# deliberately installs no dev tooling from requirements.txt.
+COPY pyproject.toml ./
+COPY tests ./tests
+RUN pip install --no-cache-dir pytest==9.1.1 pytest-asyncio==1.4.0
+
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY app ./app
+COPY entrypoint.sh ./
+RUN chmod +x ./entrypoint.sh
+
+# Vendored assets produced by the builder stage.
+COPY --from=assets /app/static/vendor ./static/vendor
+
+# Exercise `alembic upgrade head` against a throwaway file (shape unchanged from
+# the primary Dockerfile).
+RUN DATABASE_URL_SYNC=sqlite:////tmp/migration-smoke.db alembic upgrade head \
+    && rm -f /tmp/migration-smoke.db /tmp/migration-smoke.db-wal /tmp/migration-smoke.db-shm
+
+# This image selects its own engine, so no compose edit is needed to run it.
+ENV LATEX_ENGINE=texlive
+
+EXPOSE 8000
+
+CMD ["./entrypoint.sh"]

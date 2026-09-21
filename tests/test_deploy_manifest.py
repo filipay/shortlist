@@ -198,5 +198,83 @@ def test_compose_sets_the_async_database_url_key() -> None:
     )
 
 
+# --- the Phase-4 engine surface (CV-05 / PLAT-04 / D-58) ----------------------
+
+#: The engine keys that must be forwarded through compose.yml AND documented in
+#: .env.example, or a host-side override silently loses to the in-code default.
+ENGINE_PASSTHROUGH_KEYS = (
+    "LATEX_ENGINE",
+    "TECTONIC_BINARY",
+    "TECTONIC_CACHE_DIR",
+    "TECTONIC_OFFLINE",
+    "TECTONIC_TIMEOUT_SECONDS",
+    "LATEX_XELATEX_BINARY",
+    "CV_DIR",
+    "ARTIFACTS_DIR",
+    "TEX_IMPORT_MAX_LINES",
+    "TEX_IMPORT_MAX_DEPTH",
+)
+
+
+def _expected_compose_default(key: str) -> str:
+    """The compose spelling of the declared `Settings` default, DERIVED not copied.
+
+    Booleans render lowercase in compose (`true`), which pydantic-settings parses
+    back to `True`; every other type renders as `str(default)`.
+    """
+    from app.config import Settings
+
+    default = Settings.model_fields[key.lower()].default
+    if isinstance(default, bool):
+        return str(default).lower()
+    return str(default)
+
+
+def _passthrough_problems(compose_text: str, env_text: str) -> list[str]:
+    """Every way the engine passthrough surface disagrees with `Settings`."""
+    problems: list[str] = []
+    for key in ENGINE_PASSTHROUGH_KEYS:
+        pattern = re.escape(key) + r"=\$\{" + re.escape(key) + r":-([^}]*)\}"
+        match = re.search(pattern, compose_text)
+        if match is None:
+            problems.append(f"{key} is missing from compose.yml `${{KEY:-default}}` form")
+        else:
+            expected = _expected_compose_default(key)
+            if match.group(1) != expected:
+                problems.append(
+                    f"{key} compose default {match.group(1)!r} != declared "
+                    f"Settings default {expected!r}"
+                )
+        if f"{key}=" not in env_text:
+            problems.append(f"{key} is missing from .env.example")
+    return problems
+
+
+def test_compose_mounts_the_cv_and_artifacts_volumes() -> None:
+    app = _compose()["services"]["app"]
+    volumes = [str(volume) for volume in app.get("volumes", [])]
+
+    assert any(volume.startswith("./cv:/cv") for volume in volumes), volumes
+    assert any(volume.startswith("./artifacts:/artifacts") for volume in volumes), volumes
+
+
+def test_compose_and_env_example_forward_every_engine_key() -> None:
+    compose_text = (ROOT / "compose.yml").read_text(encoding="utf-8")
+    env_text = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert _passthrough_problems(compose_text, env_text) == []
+
+
+def test_the_engine_passthrough_guard_can_actually_fail() -> None:
+    """A guard that cannot fail is not a guard."""
+    compose_text = (ROOT / "compose.yml").read_text(encoding="utf-8")
+    env_text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    doctored = compose_text.replace("LATEX_ENGINE=${LATEX_ENGINE:-tectonic}", "")
+
+    problems = _passthrough_problems(doctored, env_text)
+
+    assert any("LATEX_ENGINE" in problem for problem in problems), problems
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(0)

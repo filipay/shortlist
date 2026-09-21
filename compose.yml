@@ -10,6 +10,8 @@ services:
     ports: ["8000:8000"] # v1 is local-only; do not expose beyond the host
     volumes:
       - ./data:/data # jobsearch.db (+ -wal, -shm) — back up the WAL too (M8)
+      - ./cv:/cv # the fact-store root: base.tex / cv.yaml (D-58); create it on the host first
+      - ./artifacts:/artifacts # compiled PDFs (D-58). The host dir must exist or Docker creates it root-owned (Pitfall 11b)
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -37,4 +39,18 @@ services:
       - OPENCODE_COMPLETION_TIMEOUT_SECONDS=${OPENCODE_COMPLETION_TIMEOUT_SECONDS:-120}
       - OPENCODE_MAX_RETRIES=${OPENCODE_MAX_RETRIES:-2}
       - OPENCODE_STRUCTURED_RETRY_COUNT=${OPENCODE_STRUCTURED_RETRY_COUNT:-2}
+      # Phase-4 LaTeX engine, forwarded for the same reason as the knobs above.
+      # Every default matches app/config.py exactly. TECTONIC_CACHE_DIR MUST equal
+      # the image ENV value (Dockerfile), or a runtime compile looks in a cache the
+      # build never primed.
+      - LATEX_ENGINE=${LATEX_ENGINE:-tectonic}
+      - TECTONIC_BINARY=${TECTONIC_BINARY:-/usr/local/bin/tectonic}
+      - TECTONIC_CACHE_DIR=${TECTONIC_CACHE_DIR:-/opt/tectonic-cache}
+      - TECTONIC_OFFLINE=${TECTONIC_OFFLINE:-true}
+      - TECTONIC_TIMEOUT_SECONDS=${TECTONIC_TIMEOUT_SECONDS:-60}
+      - LATEX_XELATEX_BINARY=${LATEX_XELATEX_BINARY:-/usr/bin/xelatex}
+      - CV_DIR=${CV_DIR:-/cv}
+      - ARTIFACTS_DIR=${ARTIFACTS_DIR:-/artifacts}
+      - TEX_IMPORT_MAX_LINES=${TEX_IMPORT_MAX_LINES:-20000}
+      - TEX_IMPORT_MAX_DEPTH=${TEX_IMPORT_MAX_DEPTH:-12}
     command: ["./entrypoint.sh"]
