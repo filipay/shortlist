@@ -173,7 +173,7 @@ wire-inaccurate on the response name; plan 03-02 carries the correction into the
   3. The container compiles LaTeX to PDF offline via Tectonic, with the engine selectable as configuration and a `Dockerfile.texlive` fallback available.
   4. The spike on the real `.tex` produces a written verdict on whether the document decomposes into `cv.yaml` and whether Tectonic's bundle covers its preamble — with the hand-authored `cv.yaml` fallback recorded if it does not.
 
-**Plans:** 3/5 plans executed (planned 2026-09-21)
+**Plans:** 4/5 plans executed (planned 2026-09-21)
 
 Plans:
 **Wave 1**
@@ -187,7 +187,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-04-PLAN.md — The fact-equivalence lane over extracted PDF text, with its mutation control, and the CV revision log
+- [x] 04-04-PLAN.md — The fact-equivalence lane over extracted PDF text, with its mutation control, and the CV revision log
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -279,7 +279,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
-| 4. CV Fact Store + LaTeX Compile Spike | 3/5 | In Progress|  |
+| 4. CV Fact Store + LaTeX Compile Spike | 4/5 | In Progress|  |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
