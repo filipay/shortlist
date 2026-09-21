@@ -65,9 +65,12 @@
       </p>
       <p class="settings-note" id="probe-observation-structured">
         Structured payload: {% if probe_structured %}present{% else %}absent{% endif %}.
-        A healthy successful call returns the text part and a <code>structured</code>
-        key; any other part type, or a missing <code>structured</code> key on a
-        success, is a finding — not a guess.
+        A healthy successful call returns the server-internal structured-output tool
+        part plus the <code>structured</code> key. A tool part that is not that
+        internal tool, or a missing <code>structured</code> key on a success, is a
+        finding — not a guess. When a structured call fails, the Cause line above
+        names which side is at fault: a ruleset that stripped the internal tool, or a
+        model that declined the forced tool call.
       </p>
     </div>
     {% endif %}

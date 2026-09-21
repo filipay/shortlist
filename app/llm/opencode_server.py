@@ -48,6 +48,7 @@ from app.llm.contract import (
     MESSAGE_MODEL_FIELDS,
     MESSAGE_PATH,
     PART_TYPE_FIELD,
+    PART_TYPE_TOOL,
     PERMISSION_ALLOW_ACTION,
     PERMISSION_DENY_ACTION,
     PERMISSION_RULE_FIELDS,
@@ -707,6 +708,55 @@ def _salvage(schema: type[T], payload: object) -> T:
     return adapter.validate_python(parsed)
 
 
+#: The differential cause clauses (T-3-30). Both are FIXED literals naming only the
+#: internal tool name and the tool part type — never part text, never a payload
+#: value, never a request-derived string (T-3-31).
+_STRUCTURED_RULESET_CAUSE = (
+    "the session ruleset does not grant the internal "
+    f"{STRUCTURED_OUTPUT_TOOL_NAME} tool, so the model had no way to produce a "
+    "structured payload; re-check the ruleset ordering"
+)
+_STRUCTURED_MODEL_CAUSE = (
+    f"the ruleset grants the internal {STRUCTURED_OUTPUT_TOOL_NAME} tool but the "
+    f"response carried no {PART_TYPE_TOOL} part, so the model or provider did not "
+    "honour the forced tool call; check that the configured model accepts a "
+    "required tool choice"
+)
+
+
+def _structured_tool_note(
+    *, granted: bool, part_types: list[str] | None
+) -> str | None:
+    """The differential cause clause for a structured-output failure, or None.
+
+    Two otherwise byte-identical failures — our ruleset stripped the internal
+    tool, or the model declined the forced tool call — are told apart here:
+
+    * `part_types is None` → None. No parts list was observed, so the helper must
+      not accuse either side on absent evidence.
+    * `granted is False` → the ruleset cause (the tool was never available).
+    * `granted is True` and `PART_TYPE_TOOL` present in `part_types` → None: the
+      tool ran, so the failure is a schema/validation defect the existing cause
+      already describes.
+    * `granted is True` and the observed parts contain no tool part → the
+      model/provider cause (the model was free to call the tool and did not).
+
+    Returns fixed sentences only; it never reads part text or a payload value.
+    """
+    if part_types is None:
+        return None
+    if not granted:
+        return _STRUCTURED_RULESET_CAUSE
+    if PART_TYPE_TOOL in part_types:
+        return None
+    return _STRUCTURED_MODEL_CAUSE
+
+
+def _with_note(cause: str, note: str | None) -> str:
+    """Append the differential note to a cause, joined by `"; "`."""
+    return f"{cause}; {note}" if note else cause
+
+
 def _classify_message_response(
     response: object,
     *,
@@ -761,6 +811,16 @@ def _classify_message_response(
     # assigned to `self`, logged, cached or persisted (P9).
     part_types = _part_types(payload)
 
+    # The differential (T-3-30): computed once and attached to the two
+    # structured-failure branches only, so an operator can tell a ruleset that
+    # stripped the internal tool from a model that declined the forced call.
+    # `DEFAULT_DENY_RULES` is read as a module global here, so a monkeypatched
+    # reordered ruleset is observable in the classified result.
+    structured_tool_note = _structured_tool_note(
+        granted=ruleset_allows_tool(DEFAULT_DENY_RULES, STRUCTURED_OUTPUT_TOOL_NAME),
+        part_types=part_types,
+    )
+
     info = payload.get("info") if isinstance(payload, dict) else None
     if not isinstance(info, dict):
         return _failure(
@@ -813,7 +873,7 @@ def _classify_message_response(
             return _failure(
                 status="invalid",
                 error_kind=ERROR_KIND_INVALID,
-                error=cause,
+                error=_with_note(cause, structured_tool_note),
                 attempts=server_attempts,
                 started=started,
                 server_version=server_version,
@@ -840,7 +900,7 @@ def _classify_message_response(
         return _failure(
             status="invalid",
             error_kind=ERROR_KIND_INVALID,
-            error="response carried no structured payload",
+            error=_with_note("response carried no structured payload", structured_tool_note),
             attempts=attempts,
             started=started,
             server_version=server_version,

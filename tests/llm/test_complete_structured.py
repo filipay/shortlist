@@ -26,7 +26,7 @@ import pytest
 
 from app.config import Settings, settings
 from app.domain.schemas.probe import ProbeResult
-from app.llm import opencode_server
+from app.llm import contract, opencode_server
 from app.llm.base import (
     DiscoveryResult,
     ProbeOutcome,
@@ -44,9 +44,11 @@ from app.llm.contract import (
     FORMAT_TYPE_FIELD,
     MESSAGE_MODEL_FIELDS,
     MESSAGE_PATH,
+    PART_TYPE_TOOL,
     SESSION_MODEL_FIELDS,
     SESSION_PATH,
     STRUCTURED_ERROR_NAME,
+    STRUCTURED_OUTPUT_TOOL_NAME,
 )
 from app.llm.opencode_server import OpenCodeServerBackend, parse_providers
 
@@ -728,6 +730,129 @@ async def test_no_failure_branch_leaks_the_raw_response_body(
     assert result.ok is False
     assert result.raw is None, "a failure branch must not carry the response body"
     assert sentinel not in repr(vars(result))
+
+
+# --- the differential cause: ruleset vs model (Task 3 / T-3-30) ----------------
+
+TEXT_PART = {"type": "text", "text": "..."}
+TOOL_PART = {"type": PART_TYPE_TOOL, "text": "..."}
+
+
+def test_the_structured_tool_note_has_all_four_branches() -> None:
+    """A tool part observed with the grant present is a schema defect, not a grant fault."""
+    assert (
+        opencode_server._structured_tool_note(
+            granted=True, part_types=["text", PART_TYPE_TOOL]
+        )
+        is None
+    )
+    # No parts observed: accuse neither side on absent evidence.
+    assert (
+        opencode_server._structured_tool_note(granted=True, part_types=None) is None
+    )
+    assert (
+        opencode_server._structured_tool_note(granted=False, part_types=None) is None
+    )
+    # Grant absent -> the ruleset cause.
+    ruleset_note = opencode_server._structured_tool_note(
+        granted=False, part_types=["text"]
+    )
+    assert ruleset_note is not None
+    assert "does not grant the internal" in ruleset_note
+    assert STRUCTURED_OUTPUT_TOOL_NAME in ruleset_note
+    # Grant present, no tool part -> the model/provider cause.
+    model_note = opencode_server._structured_tool_note(
+        granted=True, part_types=["text"]
+    )
+    assert model_note is not None
+    assert "carried no tool part" in model_note
+    assert STRUCTURED_OUTPUT_TOOL_NAME in model_note
+    assert model_note != ruleset_note
+
+
+async def test_a_structured_error_without_a_tool_part_carries_the_model_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two indistinguishable failures are now told apart on the persisted `error`."""
+    body = _structured_error_body(retries=0, message="schema retries exhausted")
+    body["parts"] = [TEXT_PART]
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=1
+    )
+
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    assert result.part_types == ["text"]
+    error = result.error or ""
+    assert "carried no tool part" in error
+    assert "does not grant the internal" not in error
+
+
+async def test_a_reordered_ruleset_carries_the_ruleset_cause_instead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The companion: the same response under a stripped grant names the OTHER side.
+
+    Monkeypatching the module's `DEFAULT_DENY_RULES` to the Task-1 reordered tuple
+    proves the two causes are behaviourally distinguishable, not merely different
+    strings that happen to be returned.
+    """
+    catch_all = {
+        contract.PERMISSION_RULE_FIELDS[0]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[1]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[2]: contract.PERMISSION_DENY_ACTION,
+    }
+    carve_out = {
+        contract.PERMISSION_RULE_FIELDS[0]: STRUCTURED_OUTPUT_TOOL_NAME,
+        contract.PERMISSION_RULE_FIELDS[1]: contract.PERMISSION_WILDCARD,
+        contract.PERMISSION_RULE_FIELDS[2]: contract.PERMISSION_ALLOW_ACTION,
+    }
+    monkeypatch.setattr(opencode_server, "DEFAULT_DENY_RULES", (carve_out, catch_all))
+
+    body = _structured_error_body(retries=0, message="schema retries exhausted")
+    body["parts"] = [TEXT_PART]
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=1
+    )
+
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    error = result.error or ""
+    assert "does not grant the internal" in error
+    assert "carried no tool part" not in error
+
+
+async def test_the_missing_structured_payload_branch_also_carries_the_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A success without `info.structured` is the second structured-failure branch."""
+    body = {
+        "info": {
+            "providerID": "opencode-go",
+            "modelID": "deepseek-v4.1-flash",
+            "structured": None,
+        },
+        "parts": [TEXT_PART],
+    }
+    recorder = Recorder(message_body=body)
+    backend = _backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=1
+    )
+
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    error = result.error or ""
+    assert "response carried no structured payload" in error
+    assert "carried no tool part" in error
 
 
 # --- discovery accepts the live shape (the P1 fix) -----------------------------
