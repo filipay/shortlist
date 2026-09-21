@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Walking Skeleton + Foundations** - A scraped listing exists in the DB, is browsable, and the stack runs locally; the scraper-survival probe is answered (completed 2026-09-15)
 - [x] **Phase 2: Clean, Filtered, Queryable Queue** - No duplicates; hard rules applied with recorded reasons; runs observable (completed 2026-09-17)
-- [ ] **Phase 3: LLM Port + Structured Output** - Any schema-constrained call works end to end through opencode, with the contract pinned
+- [x] **Phase 3: LLM Port + Structured Output** - Any schema-constrained call works end to end through opencode, with the contract pinned (completed 2026-09-21)
 - [ ] **Phase 4: CV Fact Store + LaTeX Compile Spike** - The structured CV reproduces the base CV and Tectonic compiles the real `.tex` (runs in parallel with Phases 2–3)
 - [ ] **Phase 5: Ranking — CORE VALUE** - One ranked, explained queue with per-factor breakdown and named gaps
 - [ ] **Phase 6: Tailoring + Verification** - A tailored, verified CV PDF, previewable and downloadable
@@ -128,7 +128,7 @@ Plans:
   3. A CI contract test reads the installed server's `GET /doc` and fails loudly if the structured-output field name changes — resolving and pinning the `format` vs `outputFormat` ambiguity.
   4. Untrusted listing text reaches the model only as user content (never the system prompt) and tools are disabled by default.
 
-**Plans:** 9/9 plans executed (7 executed, 2 gap-closure pending)
+**Plans:** 10/10 plans complete
 
 Plans:
 **Wave 1**
@@ -258,7 +258,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 |-------|----------------|--------|-----------|
 | 1. Walking Skeleton + Foundations | 7/7 | Complete    | 2026-09-15 |
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
-| 3. LLM Port + Structured Output | 9/9 | In Progress|  |
+| 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 0/0 | Not started | - |
 | 5. Ranking — CORE VALUE | 0/0 | Not started | - |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
