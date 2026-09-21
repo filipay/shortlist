@@ -68,6 +68,11 @@ REQUIRED_SETTINGS_FIELDS = (
     "artifacts_dir",
     "tex_import_max_lines",
     "tex_import_max_depth",
+    # Phase 4 (WR-03): the `/health` probe ceiling and the bounded engine-log
+    # tail were module constants in `app/latex/compile.py`; both are Settings
+    # fields now (PLAT-04). Kept at the same defaults so behaviour is unchanged.
+    "latex_probe_timeout_seconds",
+    "latex_log_tail_chars",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -100,6 +105,9 @@ LIMIT_FIELDS = (
     # not what the literal scan exists to catch.
     "tectonic_timeout_seconds",
     "tex_import_max_lines",
+    # Phase 4 (WR-03): the bounded engine-log tail (4000, above
+    # DISTINCTIVE_THRESHOLD_FLOOR, so it genuinely contributes to the scan).
+    "latex_log_tail_chars",
 )
 
 #: The Phase-4 ceilings (PLAT-04 applied to the LaTeX lane), listed explicitly so a
@@ -109,12 +117,19 @@ PHASE_FOUR_CEILINGS = (
     "tectonic_timeout_seconds",
     "tex_import_max_lines",
     "tex_import_max_depth",
+    # WR-03: the `/health` probe ceiling and the engine-log tail bound. The
+    # probe timeout is a FLOAT, so it is guarded at the surface tier only.
+    "latex_probe_timeout_seconds",
+    "latex_log_tail_chars",
 )
 
 #: The Phase-4 ceilings that are DISTINCTIVE integers (the literal scan's set).
 PHASE_FOUR_DISTINCTIVE_CEILINGS = (
     "tectonic_timeout_seconds",
     "tex_import_max_lines",
+    # WR-03: the bounded engine-log tail (4000) joins the scan; the probe
+    # timeout is a float and is therefore not scannable (see LIMIT_FIELDS).
+    "latex_log_tail_chars",
 )
 
 #: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
@@ -255,6 +270,55 @@ def test_the_phase_three_ceilings_are_environment_tunable(
     assert refreshed.opencode_completion_timeout_seconds == 7.5
     assert refreshed.opencode_max_retries == 5
     assert refreshed.opencode_structured_retry_count == 4
+
+
+def test_the_phase_four_ceilings_are_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-03: a config field no test can override is only half a config field."""
+    assert Settings.model_fields["latex_probe_timeout_seconds"].default == 5.0
+    assert Settings.model_fields["latex_log_tail_chars"].default == 4000
+
+    monkeypatch.setenv("LATEX_PROBE_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("LATEX_LOG_TAIL_CHARS", "512")
+
+    refreshed = Settings()
+
+    assert refreshed.latex_probe_timeout_seconds == 2.5
+    assert refreshed.latex_log_tail_chars == 512
+
+
+def test_the_engine_log_tail_bound_comes_from_settings_at_call_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WR-03: a patched setting must change what `compile.py` DOES.
+
+    Asserting the field exists is not enough — the module used to own a private
+    `_LOG_TAIL_CHARS` constant that no setting could influence.
+    """
+    from app.latex import compile as compile_module
+
+    monkeypatch.setattr(settings, "latex_log_tail_chars", 10)
+
+    assert compile_module._tail("0123456789ABCDEF") == "6789ABCDEF"
+
+
+async def test_the_probe_timeout_comes_from_settings_at_call_time(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WR-03: a slow engine must time out at the SETTING, not a hard-coded 5.0."""
+    from app.latex import compile as compile_module
+
+    slow = tmp_path / "slow-engine"
+    slow.write_text("#!/bin/sh\nsleep 2\n", encoding="utf-8")
+    slow.chmod(0o755)
+
+    monkeypatch.setattr(settings, "latex_probe_timeout_seconds", 0.05)
+
+    probe = await compile_module._probe(str(slow))
+
+    assert probe.available is False
+    assert probe.error == "timeout"
 
 
 def test_the_shipped_model_default_is_environment_tunable(

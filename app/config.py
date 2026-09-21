@@ -144,6 +144,15 @@ class Settings(BaseSettings):
     #: D-75's cached-only mode as configuration, so a build-time prime run can differ
     #: from a runtime render run. When true the argv passes `--only-cached`.
     tectonic_offline: bool = True
+    #: The `--version` probe ceiling used by `/health` (T-04-08). Deliberately
+    #: short, and configuration rather than a module constant (PLAT-04): the probe
+    #: runs on every health request, so it is an operator-tunable budget in
+    #: practice. The float analogue of `opencode_timeout_seconds`.
+    latex_probe_timeout_seconds: float = 5.0
+    #: The engine log is reduced to a bounded tail before it lands on
+    #: `CompileResult`. Configuration, not a constant (PLAT-04): a noisy engine
+    #: can otherwise attach an arbitrarily long log to every failure value.
+    latex_log_tail_chars: int = 4000
     #: The TeX Live fallback engine — `xelatex`, never `pdflatex` (Pitfall 10:
     #: pdflatex cannot load fontspec, so it would be available in name only).
     latex_xelatex_binary: str = "/usr/bin/xelatex"

@@ -30,6 +30,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from app.config import settings
 from app.latex.base import CompileResult, EngineProbe
 
 #: The V1-CLI option names Tectonic actually documents for cached-only mode and
@@ -43,11 +44,11 @@ TECTONIC_UNTRUSTED_FLAG = "--untrusted"
 #: its own or selecting it would silently drop the sandbox (T-04-05).
 TEXLIVE_NO_SHELL_ESCAPE_FLAG = "-no-shell-escape"
 
-#: The `--version` probe timeout, deliberately short: `/health` calls it, and a
-#: probe must never approach the compile ceiling.
-_HEALTH_TIMEOUT_SECONDS = 5.0
-#: The engine log is reduced to a bounded tail before it lands on `CompileResult`.
-_LOG_TAIL_CHARS = 4000
+#: The `--version` probe timeout and the bounded engine-log tail are Settings
+#: fields (`latex_probe_timeout_seconds`, `latex_log_tail_chars`), not module
+#: constants: the probe runs on every `/health` request, so it is an
+#: operator-tunable budget (WR-03 / PLAT-04). Resolved at CALL time so a patched
+#: `Settings` changes behaviour, not just its own surface.
 #: The staged source filename and the basename the engine writes its PDF under.
 _SOURCE_NAME = "cv.tex"
 _PDF_NAME = "cv.pdf"
@@ -88,8 +89,10 @@ def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _tail(text: str, limit: int = _LOG_TAIL_CHARS) -> str:
-    return text[-limit:] if len(text) > limit else text
+def _tail(text: str, limit: int | None = None) -> str:
+    """The last `limit` (default: the configured `latex_log_tail_chars`) chars."""
+    resolved = settings.latex_log_tail_chars if limit is None else limit
+    return text[-resolved:] if len(text) > resolved else text
 
 
 def _first_line(text: str) -> str | None:
@@ -105,8 +108,15 @@ def _elapsed_ms(started: float) -> int:
     return int(round((time.monotonic() - started) * 1000))
 
 
-async def _probe(binary: str, timeout: float = _HEALTH_TIMEOUT_SECONDS) -> EngineProbe:
-    """Run `<binary> --version` with a short bounded timeout. Never raises."""
+async def _probe(binary: str, timeout: float | None = None) -> EngineProbe:
+    """Run `<binary> --version` with a short bounded timeout. Never raises.
+
+    `timeout` defaults to the configured `latex_probe_timeout_seconds`, read at
+    call time so a patched `Settings` takes effect (WR-03).
+    """
+    resolved_timeout = (
+        settings.latex_probe_timeout_seconds if timeout is None else timeout
+    )
     try:
         proc = await asyncio.create_subprocess_exec(
             binary,
@@ -115,7 +125,9 @@ async def _probe(binary: str, timeout: float = _HEALTH_TIMEOUT_SECONDS) -> Engin
             stderr=subprocess.STDOUT,
         )
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=resolved_timeout
+            )
         except TimeoutError:
             proc.kill()
             await proc.wait()
