@@ -4,7 +4,7 @@ Phase 4 success criterion 3: *"the CV compiles to a PDF offline inside the
 container, with the LaTeX engine selectable as configuration and a working
 fallback."*
 
-The engine is deliberately absent from developer machines, so the compile lane is
+The engine is absent from developer machines by design, so the compile lane is
 **operator-run inside the image**. This page is the operator half of the
 `04-VALIDATION.md` Manual-Only table; the written verdict is
 `docs/probes/2026-09-21-cv-tex-spike.md`.
