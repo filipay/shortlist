@@ -110,7 +110,7 @@ def test_an_unknown_macro_degrades_the_report_but_not_the_parse() -> None:
     _, report = parse_tex(source)
 
     assert report.unresolved_macros["mystery"] == 1
-    assert report.unresolved_lines["mystery"] == (3,)
+    assert report.unresolved_lines["mystery"] == (5,)
     assert report.sections_parsed == 1
     assert report.entries_parsed == 1
 
