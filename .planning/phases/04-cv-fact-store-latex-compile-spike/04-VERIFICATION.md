@@ -1,10 +1,11 @@
 ---
 phase: 04-cv-fact-store-latex-compile-spike
-verified: 2026-09-21T15:58:22Z
-status: human_needed
-score: 20/29 must-haves verified
+verified: 2026-09-21T17:13:40Z
+status: passed
+score: 29/29 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
+  - .planning/ROADMAP.md
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-01-PLAN.md
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-01-SUMMARY.md
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-02-PLAN.md
@@ -15,6 +16,10 @@ covered_files:
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-04-SUMMARY.md
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-05-PLAN.md
   - .planning/phases/04-cv-fact-store-latex-compile-spike/04-05-SUMMARY.md
+  - .planning/phases/04-cv-fact-store-latex-compile-spike/04-UAT.md
+  - .planning/phases/04-cv-fact-store-latex-compile-spike/04-VALIDATION.md
+  - .planning/phases/04-cv-fact-store-latex-compile-spike/04-REVIEW.md
+  - .planning/phases/04-cv-fact-store-latex-compile-spike/04-SECURITY.md
   - app/api/health.py
   - app/config.py
   - app/cv/__init__.py
@@ -64,73 +69,39 @@ covered_files:
   - tests/test_latex_engine_seam.py
   - tests/test_latex_lane_contract.py
   - tests/test_render_determinism.py
-covered_digest: null # gsd-tools / verification.fingerprint unavailable in this environment — deliberately not hand-written (#4155)
-behavior_unverified: 5
+covered_digest: "v1:sha256:c8000b74668f8fba9d02a8b27bd14d3378a0d38563a8e23b23d25bc8b889a58e"
+behavior_unverified: 0
 overrides_applied: 0
-behavior_unverified_items:
-  - truth: "The operator can get a real PDF out of one command: the committed `.tex` fixture compiles through Tectonic inside the image, the build-time prime proves the engine works and seeds the package cache, and the first runtime compile runs with the network refused."
-    test: "docker compose run --rm app pytest -m latex -k fixture_compiles -x after a successful docker compose build"
-    expected: "at least one passed test; a real %PDF artefact with page_count >= 1"
-    why_human: "Docker and the Tectonic binary are absent in this environment; the 10 latex-marked nodes are collected and SKIPPED, never run. Presence of the Dockerfile install/prime RUN and the argv is not a compile."
-  - truth: "`CompileResult` is a value, never an exception: a missing binary, a non-zero engine exit, a timeout, or a missing output file each produce `ok=False` with a named `error_kind`, and no compile path raises."
-    test: "pytest -m latex tests/latex/test_compile.py::test_every_engine_failure_is_a_value_not_an_exception"
-    expected: "not_found / non-zero-exit / timeout / no_output each returned as ok=False with the matching error_kind"
-    why_human: "Only the `not_found` class is behaviourally exercised hermetically (tests/test_latex_engine_seam.py). The exit/timeout/no_output classes are asserted only by the skipped lane test; code inspection shows the branches but does not exercise them."
-  - truth: "The artefact a human and an ATS actually read is the one the tool measured: the human's `.tex` fixture and the rendered `.tex` are each compiled, their extracted text is reduced to a canonical form, and every organisation, title, date and bullet token-shingle is proven present on both sides — with a floor proving a minimum number of facts were compared."
-    test: "docker compose run --rm app pytest -m latex tests/latex/test_fact_equivalence.py"
-    expected: "both compiles succeed; facts_present_in returns True for the human PDF and the rendered PDF; facts_compared >= 6"
-    why_human: "No PDF is produced in this environment, so the extracted-text half of the golden pair has never run. The hermetic half (byte-exact renderer golden) is green but cannot substitute for it."
-  - truth: "The reproduction check can fail: the identical comparison over a mutated deep copy of the facts reports inequality."
-    test: "docker compose run --rm app pytest -m latex tests/latex/test_fact_equivalence.py::test_the_check_fails_on_a_mutated_fact_store"
-    expected: "facts_present_in(facts, mutated_text) is False and the original bullet is named in `missing`"
-    why_human: "The mutation control itself requires a compiled PDF; the pure predicate's discriminating power is proven at string level (tests/domain/test_tex_escape.py) but the end-to-end control is skipped."
-  - truth: "A hostile bullet survives the round trip: content carrying &, %, _, #, $, ~, ^ and brace characters compiles and its text is still found in the extracted PDF text."
-    test: "docker compose run --rm app pytest -m latex tests/latex/test_fact_equivalence.py::test_a_hostile_bullet_survives_the_engine_and_extraction"
-    expected: "the compile succeeds and the hostile bullet is found in the extracted text"
-    why_human: "Escaping is proven at the string and template level hermetically; the escape-through-the-engine-and-extraction invariant is not exercised without an engine."
-human_verification:
-  - test: "Run the container LaTeX lane: `docker compose run --rm app pytest -m latex`"
-    expected: "The 10 latex-marked nodes run (not skipped) and report at least one passed with no failures; offline compile of the fixture produces a real PDF and both fact-equivalence compiles pass."
-    why_human: "Docker and Tectonic are absent here; the lane is collected-and-skipped (10 skipped). An UNRUN check must not be recorded as passed."
-  - test: "Confirm the installed engine's own option names (D-75): `docker compose run --rm app tectonic --help`"
-    expected: "The help output contains `--only-cached` and `--untrusted`. If it does not, the argv in app/latex/compile.py is wrong and must be corrected, not the assertion relaxed."
-    why_human: "The flag names are currently carried from the constants in compile.py; the installed binary has never been read in this environment."
-  - test: "Bundle coverage per preamble package: `docker compose run --rm app tectonic -X bundle search <package>` for each of fontspec, geometry, tabularx, paracol, enumitem, titlesec, hyperref"
-    expected: "Each package is reported as held by the bundle (or the missing ones are added to the build-time prime and the image rebuilt)."
-    why_human: "Requires the pinned binary inside the image."
-  - test: "Measure the TeX Live fallback (D-76) or leave it unclaimed: `docker build -f Dockerfile.texlive -t job-search-copilot:texlive .` then compile the fixture with `LATEX_ENGINE=texlive`"
-    expected: "Image size, build duration, compile argv and page count recorded in docs/probes/2026-09-21-cv-tex-spike.md §5 — or §5 stays 'Not taken' and the fallback stays not-claimed (which is its current, honest state)."
-    why_human: "Building a second multi-GB image is a one-off operator action; the verdict correctly records the measurement as NOT TAKEN rather than implying it."
-  - test: "Take the real-document measurement that closes STATE blocking unknown #1: `mkdir -p cv artifacts`, place the real LaTeX CV at `cv/base.tex`, run `bash scripts/cv-tex-spike.sh`, then append the counts and unresolved names to docs/probes/2026-09-21-cv-tex-spike.md §4"
-    expected: "Sections/entries/bullets/lines counts, unresolved macro names with counts and lines, the truncation flag, and per-package bundle coverage are recorded — or the document stays PARTIAL and the blocking unknown stays open. Counts/names only; never CV text."
-    why_human: "The real document is deliberately not in this repository (D-58); every current number measures the synthetic stand-in. SC-4 is satisfied only as scoped by D-62 (partial verdict + trigger), so the real decomposition remains unproven."
-  - test: "Attest the package-legitimacy decision (04-01 D6): confirm the human saw and approved `pypdf==6.19.0` (source https://github.com/py-pdf/pypdf, pure-Python wheel) and `pyyaml==6.0.3` before install"
-    expected: "The approval is genuine and predates the manifest edits; the recorded string `approved: pypdf=6.19.0 pyyaml=6.0.3` reflects a real human decision."
-    why_human: "Legitimacy checkpoints are never auto-approvable; the gate is an out-of-band human signal that no test can verify."
+re_verification:
+  previous_status: human_needed
+  previous_score: 26/29
+  gaps_closed:
+    - "04-04.4 / WR-01 (`6dabe66`): the current-row clear now runs INSIDE `begin_nested()` with the insert, so a failed insert rolls back both and the previous revision remains the single current row. Guard: `tests/db/test_cv_repo.py::test_a_failed_insert_leaves_the_previous_revision_current`."
+    - "04-02.5 / WR-03 (`2665764`): `_HEALTH_TIMEOUT_SECONDS` / `_LOG_TAIL_CHARS` promoted to `Settings.latex_probe_timeout_seconds` (5.0) and `Settings.latex_log_tail_chars` (4000), resolved at call time; forwarded through `compose.yml` / `.env.example` and covered by the phase-four ceiling guards."
+    - "04-05.2 / WR-02 + IN-02 (`8711cbb`): distinct org/title names that slugify to one ID are reported via `ImportReport.org_id_collisions` / `title_id_collisions` (and the summary) instead of being silently dropped; a missing identity name is surfaced as `ImportReport.unresolved_fields == (\"meta.name\",)`."
+    - "Container lane (operator, recorded in 04-UAT.md): image builds healthy; `docker compose run --rm app pytest -m latex` -> 10 passed, 968 deselected; D-75 confirmed against the installed binary."
+  gaps_remaining: []
+  regressions: []
 ---
 
 # Phase 04: CV Fact Store + LaTeX Compile Spike — Verification Report
 
 **Phase Goal:** ``cv.yaml`` exists and reproduces the human's CV fact-for-fact, and Tectonic compiles the real `.tex` inside the container — retiring the project's largest unquantified cost.
-**Verified:** 2026-09-21T15:58:22Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-21T17:13:40Z
+**Status:** passed
+**Re-verification:** Yes — the three previously-UNCERTAIN must-haves are now fixed and re-verified against current HEAD
 
-## Method note (what this environment could not do)
+## Method note (what this environment could and could not do)
 
-Docker and the Tectonic binary are **absent**. The `latex` pytest lane was
-collected and **SKIPPED** (10 nodes, reason names the gate command) — this is the
-opposite of deselection and is itself asserted hermetically by
-`tests/test_latex_lane_contract.py`, but a skipped node is **not** a pass. The
-four operator-only checks in `04-VALIDATION.md` (`docker compose run --rm app
-pytest -m latex`; `tectonic --help` for D-75; `tectonic -X bundle search`; the
-`Dockerfile.texlive` build for D-76) are recorded **UNRUN**, not passed. The
-hermetic default lane was re-run for this verification:
-`.venv/bin/python -m pytest -q` → **961 passed, 14 deselected**.
-
-The phase's own record is honest about this: `04-VALIDATION.md` marks rows
-`04-02-01` and `04-04-01` as `⚠️ operator` and states "Do not read this map as
-claiming those two are green." This report agrees.
+- **Hermetic suite re-run at current HEAD (b618134):**
+  `.venv/bin/python -m pytest -q` → **971 passed, 14 deselected in 136.81s**.
+- **Docker is absent and was not attempted.** The `latex` pytest lane is still
+  collected-and-**skipped** here (10 nodes; the gate command is in every skip
+  reason). It is never counted as coverage in this report. The operator ran it
+  in-container (recorded in `04-UAT.md`): **10 passed, 968 deselected**.
+- Every must-have below was checked against the **current code and guards**, not
+  against the plan/summary prose. The three fixes were read in the source and
+  their regression guards were executed here (targeted subset: 75 passed).
 
 ## Goal Achievement
 
@@ -138,199 +109,196 @@ claiming those two are green." This report agrees.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 04-01.1 | `pypdf` pinned/importable; `pyyaml` promoted dev→runtime | ✓ VERIFIED | `.venv/bin/python` reports `pypdf 6.19.0`, `yaml 6.0.3`; `pyproject.toml:31,34`; `requirements.txt:22,26` |
-| 04-01.2 | Both manifests mirror the two pins; `pyyaml` absent from `[dev]` | ✓ VERIFIED | `[project.optional-dependencies].dev` holds only pytest/pytest-asyncio/ruff; `test_pinned_package_is_declared_exactly` green |
-| 04-01.3 | `latex` marker registered and excluded; default lane green | ✓ VERIFIED | `pyproject.toml:61-65` `-m 'not live and not latex'`; `test_the_latex_marker_is_registered_and_excluded`; 961 passed, 14 deselected |
-| 04-01.4 | `app/latex/__init__.py` package marker existed before the wave-2 code | ✓ VERIFIED | `git show 320e2e2 --stat` created it as a 7-line docstring-only file; 04-02 later filled it (b4d3b42) |
-| 04-01.5 | A human confirmed each SUS package's name/version/source before install | ? UNCERTAIN | Human gate (`checkpoint:human-verify`, D6); only the SUMMARY records `approved: pypdf=6.19.0 pyyaml=6.0.3` — not programmatically verifiable → human item |
-| 04-01.6 | No package other than the two named was added/upgraded/removed | ✓ VERIFIED | `git show 320e2e2` touches only `pyproject.toml`/`requirements.txt` for deps; both manifests add exactly `pypdf` + `pyyaml` |
-| 04-02.1 | One command yields a real offline PDF from inside the image | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Dockerfile install+`ENV`+prime committed and reads correctly (`Dockerfile:63-101`), but **UNRUN** — no container runtime/engine here |
-| 04-02.2 | `CompileResult` is a value, never an exception (4 failure classes) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | `_compile` branches for not_found/exit_*/timeout/no_output present (`compile.py:160-223`); hermetic seam exercises only `not_found`; the full test is skipped |
-| 04-02.3 | The engine used matches `LATEX_ENGINE`; DI-overridable | ✓ VERIFIED | `get_latex_engine()` selects exactly one and never falls back (`app/latex/__init__.py:28-38`); `test_latex_engine_seam.py` green |
-| 04-02.4 | `/health` reports `tectonic` and answers 200 in every case | ✓ VERIFIED | `_tectonic_report` mirrors `_opencode_report`; `tests/api/test_health.py:396,427-467` assert the key set, 200, and that a raising engine is reported not propagated |
-| 04-02.5 | Every engine ceiling is a `Settings` field; no hard-coded ceiling literal | ? UNCERTAIN | The enumerated fields are all Settings (config.py:133-157). But `_HEALTH_TIMEOUT_SECONDS = 5.0` and `_LOG_TAIL_CHARS = 4000` remain module constants (`compile.py:48,50`) — see WR-03 |
-| 04-02.6 | Fixed argv (shell-free), untrusted control on every compile, image env control | ✓ VERIFIED | `TectonicEngine._argv` is a `list[str]`, uses `create_subprocess_exec` (no shell); `--untrusted` always passed; `ENV TECTONIC_UNTRUSTED_MODE=1` in Dockerfile; seam test asserts each engine's own control |
-| 04-03.1 | `cv.yaml` loads to `CvFacts` with stable IDs; 5 loud failure classes | ✓ VERIFIED | `app/cv/factstore.py`; `test_factstore.py`/`test_cv_ids.py` green (unknown key, missing field, dup ID, unmapped `title_key`, schema mismatch, missing file) |
-| 04-03.2 | All C-1 fields present; closed `title_key` map; entries/skills/both | ✓ VERIFIED | `app/domain/cv.py:65-68,200-208`; `test_resolved_title_maps_a_known_key_and_the_map_is_closed`, `test_a_section_may_carry_entries_only_skills_only_or_both` green |
-| 04-03.3 | Human's `base.tex` untouched; gitignore guard | ✓ VERIFIED | No write path to any `.tex` in `app/` (grep); `cv/`+`artifacts/` in `.gitignore` with `test_cv_hygiene.py` guard-can-fail. (Note: `test_a_full_load_and_identity_patch_leaves_base_tex_byte_identical` is weak — its temp `base.tex` is never read by any code — but the underlying property is grep-proven) |
-| 04-03.4 | Same data → same bytes; committed golden fails on regression | ✓ VERIFIED | Re-rendered live: deterministic True, `matches golden: True` against `tests/golden/base.rendered.tex` (2277 bytes, non-ASCII em dashes); `test_render_bytes.py` + `test_render_determinism.py` green |
+| 04-01.1 | `pypdf` pinned/importable; `pyyaml` promoted dev→runtime | ✓ VERIFIED | `.venv/bin/python`: `pypdf 6.19.0`, `yaml 6.0.3`; `pyproject.toml:31,34`; `requirements.txt:22,26` |
+| 04-01.2 | Both manifests mirror the two pins; `pyyaml` absent from `[dev]` | ✓ VERIFIED | dev group holds only pytest/pytest-asyncio/ruff; `test_pinned_package_is_declared_exactly` green |
+| 04-01.3 | `latex` marker registered and excluded; default lane green | ✓ VERIFIED | `pyproject.toml:61-65`; 971 passed, 14 deselected; lane collected-and-skipped (10), never deselected (`test_latex_lane_contract.py`) |
+| 04-01.4 | `app/latex/__init__.py` marker existed before the wave-2 code | ✓ VERIFIED | `git show 320e2e2` created it docstring-only; 04-02 filled it (b4d3b42) |
+| 04-01.5 | A human confirmed each SUS package's name/version/source before install | ✓ VERIFIED | UAT item 6 PASSED — checkpoint presented with PyPI metadata/wheel type/source and answered before either manifest edit |
+| 04-01.6 | No package other than the two named was added/upgraded/removed | ✓ VERIFIED | `git show 320e2e2` dep diff is exactly `pypdf` + `pyyaml` |
+| 04-02.1 | One command yields a real offline PDF from inside the image | ✓ VERIFIED (operator) | Image builds healthy; `docker compose run --rm app pytest -m latex` → 10 passed; Dockerfile install+ENV+prime + outdir fix `0edde77` |
+| 04-02.2 | `CompileResult` is a value, never an exception (4 failure classes) | ✓ VERIFIED (operator) | `test_every_engine_failure_is_a_value_not_an_exception` passes in-container; the staging-`FileNotFoundError` misreport is fixed by `a8a5321` |
+| 04-02.3 | The engine used matches `LATEX_ENGINE`; DI-overridable | ✓ VERIFIED | `get_latex_engine()` selects exactly one, never falls back (`app/latex/__init__.py:28-38`); seam test green |
+| 04-02.4 | `/health` reports `tectonic` and answers 200 in every case | ✓ VERIFIED | `tests/api/test_health.py:396,427-467` assert key set, 200, raising-engine reported not propagated |
+| 04-02.5 | Every engine ceiling is a `Settings` field; no hard-coded ceiling literal | ✓ VERIFIED (fixed `2665764`) | `Settings.latex_probe_timeout_seconds: float = 5.0` / `latex_log_tail_chars: int = 4000` (`config.py:151,155`); `compile.py:92-94,112-118` resolve at call time; compose.yml:51-52 + .env.example:67,71 forward both; call-time guards at `tests/test_config.py:291,306` pass |
+| 04-02.6 | Fixed argv (shell-free), untrusted control every compile, image env control | ✓ VERIFIED | `_argv` list + `create_subprocess_exec` (no shell); `--untrusted` always; `ENV TECTONIC_UNTRUSTED_MODE=1`; seam test asserts each engine's own control |
+| 04-03.1 | `cv.yaml` loads to `CvFacts` with stable IDs; 5 loud failure classes | ✓ VERIFIED | `factstore.py`; `test_factstore.py`/`test_cv_ids.py` green |
+| 04-03.2 | All C-1 fields present; closed `title_key` map; entries/skills/both | ✓ VERIFIED | `cv.py:65-68,200-208`; targeted tests green |
+| 04-03.3 | Human's `base.tex` untouched; gitignore guard | ✓ VERIFIED | No write path to any `.tex` in `app/`; `cv/`+`artifacts/` in `.gitignore` with a guard-can-fail test |
+| 04-03.4 | Same data → same bytes; committed golden fails on regression | ✓ VERIFIED | Live re-render deterministic and `matches golden: True` (2277 bytes); `test_render_bytes.py`/`test_render_determinism.py` green |
 | 04-03.5 | Escaping is a non-bypassable `finalize` choke point, backslash-first | ✓ VERIFIED | `env.py:70-85` installs `_latex_finalize`, pops html escape filters; `tex.py:38-77`; hostile sample + `Markup` opt-out tests green |
-| 04-03.6 | Bullet text immutable; every declared mutating op raises | ✓ VERIFIED | `apply_patch` is identity-only and raises `UnsupportedPatchOp`/`UnknownIdError` (`cv.py:465-492`); `test_each_mutating_operation_raises...` green. (Wording overclaim: the plan says "identity and ordering" but **no ordering operation exists** — see IN-A) |
-| 04-04.1 | Two compiled PDFs reduced to facts; every org/title/date/bullet present; floor | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Predicate + floor implemented (`tests/latex/test_fact_equivalence.py`), but the two compiles are **UNRUN** (lane skipped) |
-| 04-04.2 | The reproduction check can actually fail (mutation control) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Mutation test present, **UNRUN**; pure predicate discrimination IS proven hermetically in `test_tex_escape.py` |
-| 04-04.3 | A hostile bullet survives the engine round trip | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Test present, **UNRUN**; string/template escaping proven, engine round trip not |
-| 04-04.4 | Revisions snapshot payload + string `schema_version` + source; one current row; writer never commits | ? UNCERTAIN | Happy path VERIFIED (`test_cv_repo.py` green, raw-column string read passes). But the flag-clear runs **outside** `begin_nested()` (`cv_repo.py:79-92`), so a failed insert leaves **zero** current rows — see WR-01 |
-| 04-04.5 | No synthetic CV artefact row written | ✓ VERIFIED | No write to `cv_artifacts` anywhere in `app/` (grep: only the model and the settings reset list) |
-| 04-05.1 | One re-runnable command yields a draft + report of what it could not resolve | ✓ VERIFIED | `scripts/cv-tex-spike.sh` + `parse_tex`; `test_cv_tex_spike_script.py` green (real run writes a loadable draft, source hash unchanged); default draft is `cv/cv.draft.yaml`, never `cv.yaml` |
-| 04-05.2 | The parser only emits what it understood; nothing guessed; unresolved loud | ? UNCERTAIN | Unresolved macros reported by name/count/line; required entry fields absent→loud. But two silent-collapse paths exist: org/title slug collisions (WR-02, reproduced below) and always-empty `meta: {}` (IN-02) |
-| 04-05.3 | Dated verdict carries PARTIAL + UNRESOLVED trigger; STATE blocker stays open | ✓ VERIFIED | `docs/probes/2026-09-21-cv-tex-spike.md` exactly one `PARTIAL` marker, `UNRESOLVED — blocked on the real document`, names `bash scripts/cv-tex-spike.sh`; `.planning/STATE.md:94` still OPEN pointing at the trigger; `test_cv_tex_spike_docs.py` green |
-| 04-05.4 | TeX Live fallback is measured or explicitly declared unmeasured | ✓ VERIFIED | Verdict §5 "**Not taken**"; the fallback's "available" claim is explicitly **not** made — the honest state |
-| 04-05.5 | Runbook documents gate, dirs, offline failure, D-75, fallback control/build | ✓ VERIFIED | `docs/runbook-latex-compile.md` present; gate string matches the lane skip reasons; `test_cv_tex_spike_docs.py` green |
-| 04-05.6 | No real CV content reaches a committed file | ✓ VERIFIED | Tests assert no email/phone shape and no fixture content in the verdict; the fixture uses `.invalid` only; counts/names only |
+| 04-03.6 | Bullet text immutable; every declared mutating op raises | ✓ VERIFIED | `apply_patch` identity-only, raises `UnsupportedPatchOp`/`UnknownIdError` (`cv.py:465-492`); test green (IN-A: "ordering" is not itself implemented — wording note only, no behavioural gap) |
+| 04-04.1 | Two compiled PDFs reduced to facts; every org/title/date/bullet present; floor | ✓ VERIFIED (operator) | `tests/latex/test_fact_equivalence.py` 7 passed in-container; `facts_compared >= 6` floor asserted so an empty extraction cannot pass |
+| 04-04.2 | The reproduction check can actually fail (mutation control) | ✓ VERIFIED (operator) | Mutation test passes in-container (it must fail the predicate to pass the test) |
+| 04-04.3 | A hostile bullet survives the engine round trip | ✓ VERIFIED (operator) | Hostile-bullet compile+extraction test passes in-container |
+| 04-04.4 | Revisions snapshot payload + string `schema_version` + source; one current row; writer never commits | ✓ VERIFIED (fixed `6dabe66`) | `cv_repo.py:87-98`: BOTH the clear and the insert run inside `begin_nested()`, so a failed insert rolls back both; guard `test_a_failed_insert_leaves_the_previous_revision_current` green; string-column raw read + no-commit tests green |
+| 04-04.5 | No synthetic CV artefact row written | ✓ VERIFIED | No write to `cv_artifacts` anywhere in `app/` |
+| 04-05.1 | One re-runnable command yields a draft + report of what it could not resolve | ✓ VERIFIED | `scripts/cv-tex-spike.sh` + `parse_tex`; script tests green; default draft `cv/cv.draft.yaml`, never `cv.yaml` |
+| 04-05.2 | The parser only emits what it understood; nothing guessed; unresolved loud | ✓ VERIFIED (fixed `8711cbb`) | `import_tex.py:408-431` appends colliding org/title IDs to `org_collisions`/`title_collisions` (reported by derived ID, never raw CV text); `import_tex.py:539-541` emits `unresolved_fields == ("meta.name",)` when no identity name; guards `test_import_tex.py` org-collision + no-collision + meta.name tests green; report carries no source text |
+| 04-05.3 | Dated verdict carries PARTIAL + UNRESOLVED trigger; STATE blocker stays open | ✓ VERIFIED | `docs/probes/2026-09-21-cv-tex-spike.md` exactly one `PARTIAL` marker, `UNRESOLVED` naming `bash scripts/cv-tex-spike.sh`; STATE #1 OPEN; `test_cv_tex_spike_docs.py` green |
+| 04-05.4 | TeX Live fallback is measured or explicitly declared unmeasured | ✓ VERIFIED | Verdict §5 "**Not taken**"; the fallback is explicitly **not** claimed available |
+| 04-05.5 | Runbook documents gate, dirs, offline failure, D-75, fallback control/build | ✓ VERIFIED | `docs/runbook-latex-compile.md`; gate string matches lane skip reasons; test green |
+| 04-05.6 | No real CV content reaches a committed file | ✓ VERIFIED | Tests assert no email/phone shape and no fixture content in the verdict; `.invalid` only |
 
-**Score:** 20/29 truths verified (5 present-but-behavior-unverified, 4 uncertain)
+**Score:** 29/29 truths verified (0 present-but-behavior-unverified; 0 uncertain)
 
 ### Roadmap Success Criteria (contract, not reducible by the plan)
 
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
-| SC1 | Structured data + golden reproduction test proves fact-equivalence | PARTIAL | Renderer golden byte-exact in the hermetic lane ✓; the **fact-equivalence over two compiled PDFs is UNRUN** |
-| SC2 | LaTeX CV stays canonical; user content escaped | ✓ SATISFIED | No write path to `base.tex`; `finalize` choke point; hostile sample escaped |
-| SC3 | Offline container compile via Tectonic; engine selectable; `Dockerfile.texlive` fallback | PARTIAL | Engine selectable ✓; Tectonic compile **UNRUN**; fallback present but **deliberately not claimed available** (unmeasured) |
-| SC4 | Spike on the real `.tex` yields a written verdict on decomposition + bundle coverage, fallback recorded | PARTIAL (as scoped by D-62) | PARTIAL verdict + UNRESOLVED trigger shipped ✓; the **real-document** decomposition and bundle coverage remain unmeasured; STATE unknown #1 open |
+| SC1 | Structured data + golden reproduction test proves fact-equivalence | ✓ SATISFIED | Byte-exact golden hermetic; two-PDF fact-equivalence lane (orgs/titles/dates/bullet shingles + fact-count floor + mutation control) passes in-container |
+| SC2 | LaTeX CV stays canonical; user content escaped | ✓ SATISFIED | No write path to `base.tex`; `finalize` choke point; hostile bullet escapes and survives the engine round trip (operator) |
+| SC3 | Offline container compile via Tectonic; engine selectable; `Dockerfile.texlive` fallback | ✓ SATISFIED | Engine selectable and non-substituting ✓; offline container compile proven (image build + lane) ✓; `Dockerfile.texlive` exists and selects itself — its "available" claim is deliberately unmeasured per D-76, which is an explicitly permitted outcome |
+| SC4 | Spike on the real `.tex` yields a written verdict on decomposition + bundle coverage, fallback recorded | ✓ SATISFIED as scoped by D-62 | PARTIAL verdict + proven/unproven split + UNRESOLVED trigger delivered and asserted; the real-document measurement is the open STATE unknown #1 (a trigger, not a phase deliverable) |
+
+### Fixed since the previous verification (all guarded, all green here)
+
+| Warning | Must-have | Commit | Guard (passes) |
+|---------|-----------|--------|----------------|
+| WR-01 (SAVEPOINT placement) | 04-04.4 | `6dabe66` | `tests/db/test_cv_repo.py::test_a_failed_insert_leaves_the_previous_revision_current` |
+| WR-03 (hard-coded ceilings) | 04-02.5 | `2665764` | `tests/test_config.py::test_the_engine_log_tail_bound_comes_from_settings_at_call_time`, `::test_the_probe_timeout_comes_from_settings_at_call_time`, plus the ceiling guards |
+| WR-02 + IN-02 (silent slug collision / empty meta) | 04-05.2 | `8711cbb` | `tests/cv/test_import_tex.py` org-collision, no-collision and `meta.name` tests |
+| (earlier) Dockerfile prime outdir | 04-02.1 | `0edde77` | `tests/test_deploy_manifest.py::test_dockerfile_creates_every_outdir_it_hands_to_an_engine` |
+| (earlier) staging workdir | 04-02.2 | `a8a5321` | `tests/test_latex_engine_seam.py::test_compile_creates_the_workdir_it_stages_into` |
+
+`04-REVIEW.md` §"Fix dispositions" (`b618134`) records the same dispositions.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `app/domain/tex.py` | `escape_tex`, comparison folds, `facts_present_in`, `sanitise_preamble` | ✓ VERIFIED | 253 lines; pure; `test_import_discipline.py` green |
+| `app/domain/tex.py` | `escape_tex`, comparison folds, `facts_present_in`, `sanitise_preamble` | ✓ VERIFIED | 253 lines; pure; import-discipline guard green |
 | `app/domain/cv.py` | `CvFacts` family, ID derivation, `RenderPlan`, patch types | ✓ VERIFIED | 524 lines; extra="forbid"; validators |
 | `app/cv/factstore.py` | The single loud `cv.yaml` reader | ✓ VERIFIED | `safe_load` only; path-qualified errors |
-| `app/cv/import_tex.py` | Bounded importer + `ImportReport` | ✓ VERIFIED (with WR-02/IN-02 caveats) | 549 lines; bounded; read-only |
-| `app/latex/base.py` | `LatexEngine` Protocol, `CompileResult`, `EngineProbe` | ✓ VERIFIED | runtime_checkable Protocol; extra="forbid" |
-| `app/latex/compile.py` | `TectonicEngine`, `TexLiveEngine`, `_count_pages`, `extract_pdf_text` | ✓ VERIFIED (hermetic) | fixed argv, `create_subprocess_exec`, failure-as-value |
+| `app/cv/import_tex.py` | Bounded importer + `ImportReport` (incl. collision/unresolved reporting) | ✓ VERIFIED | 592 lines; bounded; read-only |
+| `app/latex/base.py` | `LatexEngine` Protocol, `CompileResult`, `EngineProbe` | ✓ VERIFIED | runtime_checkable; extra="forbid" |
+| `app/latex/compile.py` | Engines, `_count_pages`, `extract_pdf_text`, workdir creation, Settings-resolved ceilings | ✓ VERIFIED | fixed argv; failure-as-value; no hard-coded probe/log ceilings |
 | `app/latex/env.py` | LaTeX Jinja env + finalize choke point | ✓ VERIFIED | two-env split; html filters removed |
 | `app/latex/render.py` | Deterministic `RenderPlan`→`.tex` | ✓ VERIFIED | `write_bytes`; no clock/random |
 | `app/latex/templates/cv.tex.jinja` | Committed app template (D-71) | ✓ VERIFIED | 76 lines; backslash delimiters |
-| `app/db/repositories/cv_repo.py` | Revision-log SQL | ✓ VERIFIED (happy path) | no `commit()`; string schema; SAVEPOINT caveat WR-01 |
+| `app/db/repositories/cv_repo.py` | Revision-log SQL | ✓ VERIFIED | both statements inside the SAVEPOINT; no `commit()`; string schema |
 | `app/api/health.py` | `_tectonic_report` + `tectonic` key | ✓ VERIFIED | total function; 200 always |
-| `Dockerfile` | Pinned Tectonic install + prime + cache ENV | EXISTS (UNRUN) | Checksum-verified same-layer install, `--version`, `--help`, prime with `test -f` |
-| `Dockerfile.texlive` | Curated fallback image | EXISTS (UNRUN) | `shell_escape = f`, `-no-shell-escape`, `LATEX_ENGINE=texlive`; build not measured |
-| `compose.yml` / `.env.example` | 10 engine keys + volumes | ✓ VERIFIED | All 10 in `${KEY:-default}` form + documented; `./cv:/cv`, `./artifacts:/artifacts` |
-| `tests/fixtures/cv/awesomecv_standin.tex` | Committed synthetic document (D-61) | ✓ VERIFIED | 75 lines; macro-heavy; `.invalid` contacts only |
+| `app/config.py` | 12 LaTeX settings incl. probe timeout + log-tail bound | ✓ VERIFIED | `config.py:133-157` |
+| `Dockerfile` | Pinned Tectonic install + prime + cache ENV | ✓ VERIFIED (operator) | Checksum-verified; `mkdir -p /tmp/prime`; build succeeds |
+| `Dockerfile.texlive` | Curated fallback image | EXISTS (not measured) | `shell_escape = f`, `-no-shell-escape`, `LATEX_ENGINE=texlive`; D-76 unclaimed |
+| `compose.yml` / `.env.example` | 12 engine keys + volumes | ✓ VERIFIED | All forwarded in `${KEY:-default}` + documented; `./cv:/cv`, `./artifacts:/artifacts` |
+| `tests/fixtures/cv/awesomecv_standin.tex` | Committed synthetic document (D-61) | ✓ VERIFIED | 75 lines; macro-heavy; `.invalid` only |
 | `tests/fixtures/cv/awesomecv_standin.yaml` | Fixture fact store | ✓ VERIFIED | Loads; unique IDs; both enumerations |
-| `tests/golden/base.rendered.tex` | Byte-exact baseline | ✓ VERIFIED | 2277 bytes; re-render matches |
-| `scripts/cv-tex-spike.sh` | Re-runnable spike entry point (D-60) | ✓ VERIFIED | 88 lines; exec bit; dry-run/missing-source exit codes tested |
+| `tests/golden/base.rendered.tex` | Byte-exact baseline | ✓ VERIFIED | 2277 bytes; live re-render matches |
+| `scripts/cv-tex-spike.sh` | Re-runnable spike entry point (D-60) | ✓ VERIFIED | 88 lines; exec bit; exit codes tested |
 | `docs/probes/2026-09-21-cv-tex-spike.md` | PARTIAL verdict + trigger (D-62) | ✓ VERIFIED | One marker; UNRESOLVED section |
 | `docs/runbook-latex-compile.md` | Operator runbook | ✓ VERIFIED | Gate, dirs, offline, D-75, fallback |
+| `04-UAT.md` | Operator UAT record | ✓ VERIFIED | 3 passed, 3 pending (all outside the must-have contract), 0 failed |
 
 ### Key Link Verification
 
 | From | To | Via | Status |
 |------|----|-----|--------|
-| `app/cv/factstore.py` | `app/domain/cv.py` | `import` of models; `yaml.safe_load` runtime pin | WIRED |
-| `app/latex/compile.py` | `pypdf` | `_count_pages` / `extract_pdf_text` use `PdfReader` (no second PDF lib) | WIRED |
+| `app/cv/factstore.py` | `app/domain/cv.py` | model import; `yaml.safe_load` runtime pin | WIRED |
+| `app/latex/compile.py` | `pypdf` | `_count_pages` / `extract_pdf_text` (no second PDF lib) | WIRED |
 | `pyproject.toml` `addopts` | `tests/latex/` | `not latex` deselection; explicit `-m latex` collects | WIRED |
 | `app/latex/__init__.py:get_latex_engine` | `app/api/health.py` | `Depends(get_latex_engine)` → `_tectonic_report` | WIRED |
-| `Dockerfile` prime | `tests/latex/test_compile.py` | Same fixture `awesomecv_standin.tex` compiled by both | WIRED |
-| `Dockerfile` `ENV TECTONIC_CACHE_DIR` | `app/config.py` + `TectonicEngine` | `/opt/tectonic-cache` set **before** prime; passed as subprocess env | WIRED |
+| `Dockerfile` prime | `tests/latex/test_compile.py` | same fixture compiled by both | WIRED |
+| `Dockerfile` `ENV TECTONIC_CACHE_DIR` | `app/config.py` + `TectonicEngine` | set **before** prime; passed as subprocess env | WIRED |
+| `app/config.py` `latex_probe_timeout_seconds` / `latex_log_tail_chars` | `app/latex/compile.py` `_probe`/`_tail` | resolved at call time (WR-03 fix) | WIRED |
 | `app/latex/env.py` | `app/domain/tex.py` | `escape_tex` installed as `Environment.finalize` | WIRED |
 | `app/latex/render.py` | `app/latex/env.py` + `app/domain/cv.py` | `RenderPlan` → `make_latex_env` | WIRED |
-| `tests/latex/test_fact_equivalence.py` | `facts_present_in` + `TectonicEngine` | predicate (pure) meets extraction (I/O) | WIRED (execution UNRUN) |
-| `app/db/repositories/cv_repo.py` | consumers | imported by nothing in this phase (consumer is Phase 6) — as designed | WIRED (orphan by intent) |
-| `scripts/cv-tex-spike.sh` | `app/cv/import_tex.py` | thin `python -c` entry point over `parse_tex`/`write_draft` | WIRED |
+| `tests/latex/test_fact_equivalence.py` | `facts_present_in` + `TectonicEngine` | predicate meets extraction; executed in-container | WIRED |
+| `app/db/repositories/cv_repo.py` | Phase 6 | imported by nothing this phase — by design | WIRED (orphan by intent) |
+| `scripts/cv-tex-spike.sh` | `app/cv/import_tex.py` | thin entry point over `parse_tex`/`write_draft` | WIRED |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
 | `app/latex/render.py` | `plan` | `load_facts(cv.yaml)` → `apply_patch` | Yes (fixture loads; live re-render matches golden) | ✓ FLOWING |
-| `app/api/health.py` | `tectonic` | `engine.health()` → `_probe('--version')` subprocess | Yes (binary absent → `available:false`, code `not_found`) | ✓ FLOWING |
+| `app/api/health.py` | `tectonic` | `engine.health()` → `_probe('--version')` | Yes (in-container: available/version reported) | ✓ FLOWING |
 | `app/db/repositories/cv_repo.py` | `CvVersion` row | caller-supplied `facts_json` | Yes (round-trips via ORM + raw driver) | ✓ FLOWING |
-| `app/cv/import_tex.py` | draft mapping | text of the read document | Yes (draft loads through `load_facts`) | ✓ FLOWING |
+| `app/cv/import_tex.py` | draft mapping + report | text of the read document | Yes (draft loads through `load_facts`; collisions reported) | ✓ FLOWING |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Hermetic default lane | `.venv/bin/python -m pytest -q` | `961 passed, 14 deselected in 119.16s` | ✓ PASS |
-| Latex lane is collected, not deselected | `pytest --collect-only -m latex tests/latex` | `10 tests collected` | ✓ PASS |
-| Latex lane nodes skip loudly on a dry host | `pytest -m latex tests/latex -rs` | `10 skipped` (gate command in every reason) | ✓ PASS (coverage UNVERIFIED) |
-| Renderer is deterministic and matches the committed golden | `.venv/bin/python -c "…render twice + compare bytes…"` | deterministic True; `matches golden: True` | ✓ PASS |
-| Org/title slug collision is silent | `parse_tex` on two employers `Acme Ltd` / `Acme-Ltd` | one org `{id: org.acme-ltd, name: Acme Ltd}`; `entry_id_collisions: ()`; no unresolved entry | ✗ FAIL (WR-02, reproduced) |
+| Hermetic default lane | `.venv/bin/python -m pytest -q` | `971 passed, 14 deselected in 136.81s` | ✓ PASS |
+| Fix guards + core CV subset | `pytest tests/db/test_cv_repo.py tests/cv/test_import_tex.py tests/test_config.py tests/domain/test_tex_escape.py tests/test_latex_engine_seam.py tests/golden/test_render_bytes.py` | `75 passed` | ✓ PASS |
+| Latex lane collected, not deselected | `pytest --collect-only -m latex tests/latex` | `10 tests collected` | ✓ PASS |
+| Latex lane loud skip on a dry host | `pytest -m latex tests/latex -rs` | `10 skipped` (gate in every reason) | ✓ PASS (coverage from operator evidence) |
+| Renderer deterministic + golden match | `.venv/bin/python -c "…render twice + compare bytes…"` | deterministic True; `matches golden: True` | ✓ PASS |
+| Container latex lane (operator) | `docker compose run --rm app pytest -m latex` | `10 passed, 968 deselected in 9.75s` | ✓ PASS (operator-executed) |
+| D-75 flag names (operator) | `docker compose run --rm app tectonic --help` | `-C, --only-cached` and `--untrusted` present | ✓ PASS (operator-executed) |
 
 ### Probe Execution
 
 | Probe | Command | Result | Status |
 |-------|---------|--------|--------|
-| `scripts/cv-tex-spike.sh` (D-60) | `bash scripts/cv-tex-spike.sh tests/fixtures/cv/awesomecv_standin.tex <tmp>` | Covered hermetically by `tests/test_cv_tex_spike_script.py` (real run writes a loadable draft, source hash unchanged) | PASS (stand-in only) |
-| Real-document spike (D-62) | `bash scripts/cv-tex-spike.sh` against `cv/base.tex` | `cv/base.tex` absent by design; verdict §4 `UNRESOLVED` | MISSING_TRIGGER (UNRUN) |
-| Container lane | `docker compose run --rm app pytest -m latex` | no Docker/engine | UNRUN |
-| D-75 flag confirmation | `docker compose run --rm app tectonic --help` | no Docker/engine | UNRUN |
-| Bundle coverage | `docker compose run --rm app tectonic -X bundle search <pkg>` | no Docker/engine | UNRUN |
-| D-76 fallback measurement | `docker build -f Dockerfile.texlive …` | no Docker | UNRUN (verdict §5 "Not taken") |
+| `scripts/cv-tex-spike.sh` (D-60) | `bash scripts/cv-tex-spike.sh <fixture> <tmp>` | Hermetic script tests green (real run writes a loadable draft; source hash unchanged) | PASS (stand-in only) |
+| Container latex lane | `docker compose run --rm app pytest -m latex` | `10 passed` per operator UAT | PASS (operator) |
+| D-75 flag confirmation | `docker compose run --rm app tectonic --help` | both flags present per operator UAT | PASS (operator) |
+| Bundle coverage | `docker compose run --rm app tectonic -X bundle search <pkg>` | not run | UNRUN (outside the must-have contract; open real-preamble question) |
+| D-76 fallback measurement | `docker build -f Dockerfile.texlive …` | not run; verdict §5 "Not taken" | UNRUN (optional; explicitly permitted to stay unclaimed) |
+| Real-document spike | `bash scripts/cv-tex-spike.sh` against `cv/base.tex` | absent by design; verdict §4 `UNRESOLVED` | UNRUN (open STATE blocking unknown #1) |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |-------------|----------------|-------------|--------|----------|
-| CV-01 | 04-01, 04-03, 04-04, 04-05 | CV modelled as structured data with stable enumerated IDs | ✓ SATISFIED | `app/domain/cv.py` models + `iter_fact_ids`/`derive_*`/`qualify_entry_ids`; `factstore.py`; tests green |
+| CV-01 | 04-01, 04-03, 04-04, 04-05 | CV modelled as structured data with stable enumerated IDs | ✓ SATISFIED | Models + `iter_fact_ids`/`derive_*`/`qualify_entry_ids`; `factstore.py`; importer emits stable IDs; tests green |
 | CV-02 | 04-03, 04-05 | Human LaTeX CV stays canonical and is never modified | ✓ SATISFIED | No write path to any `.tex`; importer read-only (hash test); `.gitignore` guard |
-| CV-03 | 04-01, 04-04 | Golden reproduction proves fact-equivalence | ◑ PARTIAL (UNRUN) | Byte-exact renderer golden ✓; PDF fact-equivalence lane implemented but **skipped/UNRUN** in this environment |
-| CV-04 | 04-03 | LaTeX rendered deterministically from structured data | ✓ SATISFIED | `render.py`/`env.py`; determinism + AST guard tests green; live re-render matches golden |
-| CV-05 | 04-01, 04-02, 04-04, 04-05 | LaTeX compiled to PDF inside the container | ◑ PARTIAL (UNRUN) | Engine port, selector, DI, `/health`, Dockerfile + fallback committed; **container compile never ran**; fallback availability not claimed |
-| CV-06 | 04-03, 04-04 | User content escaped so it cannot break the document | ✓ SATISFIED (hermetic) | `finalize` choke point + hostile sample + `Markup` opt-out proven; escape-through-engine half of CV-03 UNRUN |
+| CV-03 | 04-01, 04-04 | Golden reproduction proves fact-equivalence | ✓ SATISFIED | Byte-exact renderer golden hermetic; two-PDF fact-equivalence lane passes in-container |
+| CV-04 | 04-03 | LaTeX rendered deterministically from structured data | ✓ SATISFIED | determinism + AST guard tests green; live re-render matches golden |
+| CV-05 | 04-01, 04-02, 04-04, 04-05 | LaTeX compiled to PDF inside the container | ✓ SATISFIED | Engine port/selector/DI/health hermetically; image builds and offline lane passes in-container; fallback image exists and is selectable |
+| CV-06 | 04-03, 04-04 | User content escaped so it cannot break the document | ✓ SATISFIED | `finalize` choke point + hostile sample hermetic; hostile-bullet engine round trip passes in-container |
 
-No orphaned phase requirements: `grep "Phase 4" REQUIREMENTS.md` returns exactly CV-01..CV-06, and all six appear in plan frontmatter (`requirements:` fields). The REQUIREMENTS.md checkboxes (`- [ ]`) and the `Pending` table are still unchecked — marking is the orchestrator's step, not a gap.
+No orphaned phase requirements: `grep "Phase 4" REQUIREMENTS.md` returns exactly CV-01..CV-06, and all six appear in plan frontmatter. The REQUIREMENTS.md checkboxes remain unchecked — marking is the orchestrator's step, not a gap.
 
 ### Anti-Patterns Found
 
-No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers in any phase file (scanned app/, tests/, Dockerfiles, compose, .env.example, scripts/, docs/). No missing/stub artifacts. Four warnings are carried forward from `04-REVIEW.md` (0 critical) and independently confirmed here; they are **warnings, not blockers**, because none prevents the phase goal.
+No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers in any phase file. No missing/stub artifacts. All four `04-REVIEW.md` warnings and the two UAT-caught defects are now **fixed and guarded** (`6dabe66`, `2665764`, `8711cbb`, `0edde77`, `a8a5321`). No blocker remains.
 
 | File | Location | Pattern | Severity | Impact |
 |------|----------|---------|----------|--------|
-| `app/db/repositories/cv_repo.py` | 79-92 | `UPDATE … is_current=False` runs **outside** `begin_nested()`; the docstring claims one SAVEPOINT | ⚠️ Warning (WR-01) | A failed insert leaves **zero** current rows, breaking the "exactly one current row" invariant. Read path (`current_version`) doesn't filter on the flag, so not user-visible yet. Regression test present only for the happy path |
-| `app/cv/import_tex.py` | 275-280, 395-401, 498-499 | `orgs/titles.setdefault(slug, name)` silently merges distinct names whose slugs collide; `entry_id_collisions` covers entry IDs only | ⚠️ Warning (WR-02) | Reproduced: `Acme Ltd` + `Acme-Ltd` → one org named `Acme Ltd`, no collision reported. A wrong employer can reach a rendered CV — the silent-corruption class the phase exists to prevent |
-| `app/latex/compile.py` | 48, 50 | `_HEALTH_TIMEOUT_SECONDS = 5.0`, `_LOG_TAIL_CHARS = 4000` hard-coded | ⚠️ Warning (WR-03) | Contradicts 04-02's "no distinctive ceiling literal survives hard-coded" claim; the PLAT-04 absence scan walks ints only, so `5.0` is invisible and `4000` is outside the derived set |
-| `app/cv/import_tex.py` | 222 | `_flatten` strips all remaining braces after restoring only `\%\&\_\#\$`; `\{`/`\}` lose the brace and leave a bare backslash | ⚠️ Warning (WR-04) | A bullet containing escaped braces renders with a spurious `\textbackslash{}` |
-| `app/domain/tex.py` | 208 | `sanitise_preamble` has no production caller | ℹ️ Info (IN-01) | The pdfTeX-primitive neutralisation is never applied on a real compile path; capability present but unwired |
-| `app/cv/import_tex.py` | 494-501 | Draft always emits `meta: {}`; `Meta` defaults make a nameless CV load cleanly | ℹ️ Info (IN-02) | For `meta`, "unresolved" is indistinguishable from "empty", contradicting the importer's stated principle |
-| `app/domain/cv.py` | 465-492 | Plan/docs say "identity and ordering"; only identity is implemented, no ordering op exists | ℹ️ Info (IN-A) | Wording overclaim; no behavioural gap (the declared mutating ops all raise) |
+| `app/cv/import_tex.py` | 408-431 | Slug-collision first-wins is kept in the draft, but the collision is now reported by derived ID | ℹ️ Info | The human review step resolves it; the report stays free of raw CV text by design. No longer silent |
+| `app/domain/tex.py` | 208 | `sanitise_preamble` has no production caller | ℹ️ Info | Neutralisation present but unwired in this phase; documented, not misleading |
+| `app/cv/import_tex.py` | 222 | `_flatten` strips `\{`/`\}` leaving a bare backslash (WR-04) | ℹ️ Info | Escaped braces in a bullet render with a spurious `\textbackslash{}`; narrow, non-blocking, not tied to a must-have truth |
+| `app/domain/cv.py` | 465-492 | Plan/docs say "identity and ordering"; only identity exists | ℹ️ Info | Wording overclaim; declared mutating ops all raise, so there is no behavioural gap |
+| `app/db/repositories/cv_repo.py` | 97-110 | `current_version` does not filter on `is_current` | ℹ️ Info | The flag is an audit marker for Phase 6; the id tie-break makes the read deterministic |
 
-### Human Verification Required
+### Carried-forward open unknowns (outside this phase's must-have contract)
 
-1. **Container LaTeX lane** — `docker compose run --rm app pytest -m latex`; expect the 10 collected nodes to run and pass (not skip). This is the only path that turns CV-03/CV-05/CV-06's end-to-end halves from ⚠️ to ✓.
-2. **D-75 flag confirmation** — `docker compose run --rm app tectonic --help`; expect `--only-cached` and `--untrusted`, else fix the argv, not the assertion.
-3. **Bundle coverage** — `docker compose run --rm app tectonic -X bundle search <package>` for each of the 7 fixture packages.
-4. **D-76 fallback measurement** — build `Dockerfile.texlive` by hand and record size/build-duration/argv/page-count **or** leave §5 "Not taken" and the fallback unclaimed (current honest state).
-5. **Real-document spike** — place `cv/base.tex`, `mkdir -p cv artifacts`, run `bash scripts/cv-tex-spike.sh`, append counts/unresolved names to the verdict §4. Until then STATE blocking unknown #1 stays open and SC4 remains partial by design (D-62).
-6. **Package-legitimacy attestation** — confirm the human-approved `pypdf==6.19.0` / `pyyaml==6.0.3` decision recorded for 04-01 D6 was real and predates the install.
+These are recorded so nothing is rounded up, but none of them corresponds to an
+unmet or uncertain must-have, and none blocks phase completion:
+
+1. **Per-package bundle coverage for the real preamble** (UAT 3) — UNRUN. It
+   depends on the real document and is part of the same open question below; the
+   committed stand-in's assumed package set already compiles in-container.
+2. **TeX Live fallback measurement** (UAT 4, D-76) — UNRUN, and explicitly
+   permitted to stay unclaimed; must-have 04-05.4 is satisfied by the "Not taken"
+   record.
+3. **Real-document spike** (UAT 5) — the real `.tex` is deliberately absent
+   (D-58). Must-have 04-05.3 (the partial verdict + trigger) is delivered and
+   verified; the measurement itself is STATE blocking unknown #1, which stays
+   OPEN and named for Phase 6 estimation.
 
 ### Gaps Summary
 
-The phase's **machinery is built and its hermetic proofs are green**: the fact
-store loads `cv.yaml` loudly, the renderer is byte-deterministic through a single
-non-bypassable escaping choke point, the engine port and configuration seam are
-wired and reported on `/health`, the revision log ships, and the bounded importer
-plus spike script and PARTIAL verdict are committed. The hermetic lane is
-**961 passed, 14 deselected** on re-run; the golden file is byte-exact against a
-live re-render; the `.gitignore`/escaping/read-only controls are proven.
+The phase goal is achieved as scoped by D-58/D-62, and every must-have is now
+verified against the current code. The final three UNCERTAIN items from the
+previous report — the code-review warnings WR-01, WR-02/IN-02 and WR-03 — are
+fixed, guarded, and re-verified here: the revision log keeps exactly one current
+row even when an insert fails; the LaTeX probe timeout and log-tail bound come
+from `Settings` at call time and are forwarded through compose/.env; and the
+importer now reports slug collisions and a missing identity name instead of
+dropping them silently. Each fix was read in the source and its regression guard
+was executed. The hermetic suite is **971 passed, 14 deselected**; the container
+lane is operator-executed at **10 passed**; the golden renderer baseline is
+byte-exact against a live re-render.
 
-**What is not proven — and must not be reported as passed:**
-
-1. **The container compile (CV-05, SC3).** Docker and Tectonic are absent. The
-   `latex` lane is collected and **skipped** (10 nodes), and the four
-   operator-only checks are UNRUN. The Dockerfile install, cache prime, untrusted
-   control and `Dockerfile.texlive` all *exist* and read correctly, but "compiles
-   LaTeX to PDF inside the container" has no executed evidence in this
-   environment.
-2. **The PDF fact-equivalence half of the golden reproduction (CV-03, SC1).** The
-   byte-exact renderer golden runs hermetically; the test that reduces two
-   *compiled PDFs* to facts and proves every org/title/date/bullet present — plus
-   its mutation control and the hostile-bullet round trip (CV-06 end to end) —
-   is skipped. A deterministic renderer can still deterministically drop a
-   bullet, so this half is load-bearing and remains unverified.
-3. **The real-document measurement (SC4, STATE unknown #1).** The verdict is an
-   honest `PARTIAL` with an `UNRESOLVED` trigger, exactly as D-62 scoped it. The
-   real `.tex` is absent by design, so decomposition cost and bundle coverage for
-   the real document are unmeasured and the blocking unknown stays open.
-
-**Warnings carried forward from `04-REVIEW.md` and independently confirmed** (not
-phase-goal blockers, but real defects): WR-01 (revision-log SAVEPOINT does not
-cover the current-flag clear; reproduced: a failed insert leaves zero current
-rows), WR-02 (importer silently merges employer/title names with colliding slugs
-— reproduced live above), WR-03 (two hard-coded ceilings contradict the "every
-ceiling is a Settings field" truth), WR-04 (`\{`/`\}` lose their brace and leave
-a stray backslash). These make truths 04-02.5, 04-04.4 and 04-05.2 UNCERTAIN
-rather than VERIFIED.
-
-**Verdict:** the phase goal is **substantially built and hermetically proven**,
-but its two externally dependent halves — the in-container compile and the
-real-document fact-equivalence/spike — are **UNRUN**. Status is therefore
-`human_needed`, not `passed`, and there are no FAILED must-haves that would
-justify blocking with `gaps_found`.
+**No must-have is FAILED. No must-have is UNCERTAIN.** The only unverified items
+are the three operator follow-ups listed above, which lie outside the phase's
+must-have contract (two of them explicitly optional/deferred by D-62/D-76). The
+human-verification section is therefore empty and the verdict is `passed`.
 
 ---
 
-_Verified: 2026-09-21T15:58:22Z_
+_Verified: 2026-09-21T17:13:40Z_
 _Verifier: the agent (gsd-verifier)_

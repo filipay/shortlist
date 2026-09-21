@@ -58,12 +58,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### CV Pipeline (CV)
 
-- [ ] **CV-01**: The CV is modelled as structured data with stable, enumerated IDs
-- [ ] **CV-02**: The human-authored LaTeX CV stays canonical and is never modified by the tool
-- [ ] **CV-03**: A golden reproduction test proves the structured CV renders back to a fact-equivalent base CV
-- [ ] **CV-04**: The system renders LaTeX deterministically from structured data
-- [ ] **CV-05**: The system compiles LaTeX to PDF inside the container
-- [ ] **CV-06**: User content is escaped so it cannot break or corrupt the LaTeX document
+- [x] **CV-01**: The CV is modelled as structured data with stable, enumerated IDs
+- [x] **CV-02**: The human-authored LaTeX CV stays canonical and is never modified by the tool
+- [x] **CV-03**: A golden reproduction test proves the structured CV renders back to a fact-equivalent base CV
+- [x] **CV-04**: The system renders LaTeX deterministically from structured data
+- [x] **CV-05**: The system compiles LaTeX to PDF inside the container
+- [x] **CV-06**: User content is escaped so it cannot break or corrupt the LaTeX document
 
 ### Tailoring (TAIL)
 
@@ -207,12 +207,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RANK-06 | Phase 5 | Pending |
 | RANK-07 | Phase 5 | Pending |
 | RANK-08 | Phase 5 | Pending |
-| CV-01 | Phase 4 | Pending |
-| CV-02 | Phase 4 | Pending |
-| CV-03 | Phase 4 | Pending |
-| CV-04 | Phase 4 | Pending |
-| CV-05 | Phase 4 | Pending |
-| CV-06 | Phase 4 | Pending |
+| CV-01 | Phase 4 | Complete |
+| CV-02 | Phase 4 | Complete |
+| CV-03 | Phase 4 | Complete |
+| CV-04 | Phase 4 | Complete |
+| CV-05 | Phase 4 | Complete |
+| CV-06 | Phase 4 | Complete |
 | TAIL-01 | Phase 6 | Pending |
 | TAIL-02 | Phase 6 | Pending |
 | TAIL-03 | Phase 6 | Pending |
