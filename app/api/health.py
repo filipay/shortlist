@@ -24,6 +24,8 @@ from app.api.deps import current_user
 from app.db.repositories.source_repo import get_source_health
 from app.db.session import get_session, get_session_factory
 from app.domain.models import User
+from app.latex import get_latex_engine
+from app.latex.base import LatexEngine
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
 from app.probe.probe import probe_all
@@ -50,12 +52,30 @@ async def _opencode_report(backend: LLMBackend) -> dict[str, Any]:
     }
 
 
+async def _tectonic_report(engine: LatexEngine) -> dict[str, Any]:
+    """`{available, version, error}`. An engine bug must not break `/health`.
+
+    Mirrors `_opencode_report` exactly (O5): the probe is the cheap binary-version
+    check, never a compile.
+    """
+    try:
+        probe = await engine.health()
+    except Exception as exc:  # noqa: BLE001 — health is a total function
+        return {"available": False, "version": None, "error": type(exc).__name__}
+    return {
+        "available": bool(probe.available),
+        "version": probe.version,
+        "error": probe.error,
+    }
+
+
 @router.get("/health")
 async def health(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     backend: LLMBackend = Depends(get_llm_backend),
+    engine: LatexEngine = Depends(get_latex_engine),
 ) -> dict[str, Any]:
     """Always answers with 200. Degraded state is data, never an exception."""
     database = "ok"
@@ -65,6 +85,7 @@ async def health(
         database = "unreachable"
 
     opencode = await _opencode_report(backend)
+    tectonic = await _tectonic_report(engine)
 
     try:
         probes = await probe_all(session_factory=session_factory)
@@ -105,9 +126,12 @@ async def health(
 
     return {
         # The LLM backend being down does NOT degrade the app's own health (D-08).
+        # The same rule applies to the LaTeX engine: a missing binary is REPORTED
+        # here, never raised, and never changes "status".
         "status": "ok" if database == "ok" else "degraded",
         "db": database,
         "opencode": opencode,
+        "tectonic": tectonic,
         "sources": sources,
     }
 

@@ -9,7 +9,7 @@ by reading the class can be satisfied by a class nobody uses:
    pipeline's budget/query builders reflect a patched `Settings`; this is what
    makes the ban-risk envelope auditable instead of aspirational.
 3. **Absence** — no distinctive threshold literal is left hard-coded in
-   `app/probe` or `app/pipeline`.
+   `app/probe`, `app/pipeline`, `app/latex` or `app/cv`.
 """
 
 from __future__ import annotations
@@ -55,6 +55,19 @@ REQUIRED_SETTINGS_FIELDS = (
     # A pre-existing LIMIT_FIELDS entry the surface guard had omitted; covered here
     # so "every LIMIT_FIELDS name is a required field" actually holds.
     "probe_cache_ttl_seconds",
+    # Phase 4 (PLAT-04): the LaTeX engine, its storage roots and the importer
+    # bounds. `tex_import_max_depth` is deliberately listed here as a required
+    # setting but NOT in LIMIT_FIELDS (see the asymmetry note on LIMIT_FIELDS).
+    "latex_engine",
+    "tectonic_binary",
+    "tectonic_cache_dir",
+    "tectonic_timeout_seconds",
+    "tectonic_offline",
+    "latex_xelatex_binary",
+    "cv_dir",
+    "artifacts_dir",
+    "tex_import_max_lines",
+    "tex_import_max_depth",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -77,6 +90,31 @@ LIMIT_FIELDS = (
     # `opencode_timeout_seconds` (Pitfall P4) — do not merge them.
     "opencode_max_retries",
     "opencode_structured_retry_count",
+    # Phase 4: the compile ceiling (60, above DISTINCTIVE_THRESHOLD_FLOOR, so it
+    # genuinely contributes to the literal scan) and the importer line cap.
+    #
+    # ASYMMETRY, deliberately: `tex_import_max_depth` is a required Settings field
+    # but is NOT listed here. Its small structural default (12) would collide with
+    # ordinary integer literals in the parser and make the absence scan noisy
+    # rather than discriminating — the ceiling is still configuration, it is just
+    # not what the literal scan exists to catch.
+    "tectonic_timeout_seconds",
+    "tex_import_max_lines",
+)
+
+#: The Phase-4 ceilings (PLAT-04 applied to the LaTeX lane), listed explicitly so a
+#: future edit that drops one from either guard below fails loudly rather than
+#: silently un-covering it.
+PHASE_FOUR_CEILINGS = (
+    "tectonic_timeout_seconds",
+    "tex_import_max_lines",
+    "tex_import_max_depth",
+)
+
+#: The Phase-4 ceilings that are DISTINCTIVE integers (the literal scan's set).
+PHASE_FOUR_DISTINCTIVE_CEILINGS = (
+    "tectonic_timeout_seconds",
+    "tex_import_max_lines",
 )
 
 #: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
@@ -103,8 +141,10 @@ PHASE_THREE_INTEGER_CEILINGS = (
 #: attribute to a hard-coded threshold; the distinctive ceilings are still caught.
 DISTINCTIVE_THRESHOLD_FLOOR = 3
 
-#: Directories the absence check scans. `app/probe` arrives in plan 01-06.
-SCANNED_DIRS = ("app/probe", "app/pipeline")
+#: Directories the absence check scans. `app/probe` arrives in plan 01-06;
+#: `app/latex` and `app/cv` arrive in plan 04-02/04-03 (PLAT-04 widened to the
+#: LaTeX lane, so a hard-coded engine ceiling there is caught too).
+SCANNED_DIRS = ("app/probe", "app/pipeline", "app/latex", "app/cv")
 
 
 # --- 1. surface ---------------------------------------------------------------
@@ -134,6 +174,25 @@ def test_the_phase_three_ceilings_are_guarded() -> None:
         assert field in LIMIT_FIELDS, (
             f"{field} is a numeric ceiling but LIMIT_FIELDS does not cover it"
         )
+
+
+def test_the_phase_four_ceilings_are_guarded() -> None:
+    """Every Phase-4 ceiling must be asserted by the surface guard (PLAT-04)."""
+    for field in PHASE_FOUR_CEILINGS:
+        assert field in REQUIRED_SETTINGS_FIELDS, (
+            f"{field} is a Phase-4 ceiling but REQUIRED_SETTINGS_FIELDS omits it"
+        )
+    for field in PHASE_FOUR_DISTINCTIVE_CEILINGS:
+        assert field in LIMIT_FIELDS, (
+            f"{field} is a distinctive numeric ceiling but LIMIT_FIELDS does not "
+            "cover it"
+        )
+    # The written-down asymmetry: a small structural default stays a Settings field
+    # without joining the literal scan, so the scan stays discriminating.
+    assert "tex_import_max_depth" not in LIMIT_FIELDS, (
+        "tex_import_max_depth joined LIMIT_FIELDS — its small default would make "
+        "the absence scan noisy; either justify the change or leave the scan alone"
+    )
 
 
 def test_every_limit_field_is_a_required_numeric_ceiling() -> None:

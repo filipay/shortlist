@@ -31,6 +31,8 @@ from app.api import health as health_module
 from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.db.session import get_session, get_session_factory
+from app.latex import get_latex_engine
+from app.latex.base import EngineProbe
 from app.llm import get_llm_backend
 from app.llm.base import DiscoveryResult, ProbeOutcome
 from app.main import create_app
@@ -391,9 +393,79 @@ async def test_the_health_body_carries_no_raw_upstream_payload(
 
     body = (await health_env.client.get("/health")).json()
 
-    assert set(body) == {"status", "db", "opencode", "sources"}
+    assert set(body) == {"status", "db", "opencode", "tectonic", "sources"}
     assert set(_all_keys(body)) & FORBIDDEN_BODY_KEYS == set()
     assert SENTINEL not in json.dumps(body)
+
+
+# --- the LaTeX engine is reported, never raised (CV-05 / T-04-05) -------------
+
+
+class _ProbeEngine:
+    """A LatexEngine-shaped stub whose probe outcome is fixed."""
+
+    def __init__(self, probe: EngineProbe) -> None:
+        self._probe = probe
+
+    async def health(self) -> EngineProbe:
+        return self._probe
+
+    async def compile(self, **kwargs: Any) -> Any:  # pragma: no cover - never called
+        return None
+
+
+class _ExplodingEngine:
+    """A LatexEngine stub that raises: `/health` must still answer 200."""
+
+    async def health(self) -> EngineProbe:
+        raise RuntimeError("engine exploded")
+
+    async def compile(self, **kwargs: Any) -> Any:  # pragma: no cover - never called
+        return None
+
+
+async def test_health_always_reports_a_tectonic_object(
+    health_env: HealthEnv,
+) -> None:
+    response = await health_env.client.get("/health")
+
+    assert response.status_code == 200
+    tectonic = response.json()["tectonic"]
+    assert set(tectonic) == {"available", "version", "error"}
+    assert isinstance(tectonic["available"], bool)
+
+
+async def test_health_reports_a_missing_engine_at_200_without_degrading_status(
+    health_env: HealthEnv,
+) -> None:
+    health_env.app.dependency_overrides[get_latex_engine] = lambda: _ProbeEngine(
+        EngineProbe(available=False, error="not_found")
+    )
+
+    response = await health_env.client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok", "a missing engine must not degrade the app"
+    assert body["tectonic"] == {
+        "available": False,
+        "version": None,
+        "error": "not_found",
+    }
+
+
+async def test_health_reports_a_raising_engine_instead_of_propagating(
+    health_env: HealthEnv,
+) -> None:
+    health_env.app.dependency_overrides[get_latex_engine] = lambda: _ExplodingEngine()
+
+    response = await health_env.client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tectonic"]["available"] is False
+    assert body["tectonic"]["error"] == "RuntimeError"
+    assert body["status"] == "ok"
 
 
 # --- the visible health strip (D-13) ------------------------------------------

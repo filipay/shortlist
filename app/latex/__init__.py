@@ -6,7 +6,7 @@ with its concrete implementations.
 
 from app.config import settings
 from app.latex.base import CompileResult, EngineProbe, LatexEngine
-from app.latex.compile import TectonicEngine
+from app.latex.compile import TectonicEngine, TexLiveEngine
 
 
 def get_latex_engine() -> LatexEngine:
@@ -20,6 +20,10 @@ def get_latex_engine() -> LatexEngine:
     D-75 is enforced here in code: the selector picks exactly ONE engine and the
     factory **never** falls back to the other. A silent fallback would make
     `LATEX_ENGINE` stop describing what actually ran.
+
+    The fallback shares `tectonic_timeout_seconds`: it is the single compile
+    ceiling for BOTH engines (a hung engine must not pin the single worker). Do not
+    "fix" the shared ceiling into two fields.
     """
     if settings.latex_engine == "tectonic":
         return TectonicEngine(
@@ -28,10 +32,9 @@ def get_latex_engine() -> LatexEngine:
             offline=settings.tectonic_offline,
             timeout=settings.tectonic_timeout_seconds,
         )
-    # The `texlive` branch is completed by plan 04-02 Task 3 alongside the
-    # Dockerfile.texlive fallback image.
-    raise NotImplementedError(
-        f"no engine wired for LATEX_ENGINE={settings.latex_engine!r}"
+    return TexLiveEngine(
+        binary=settings.latex_xelatex_binary,
+        timeout=settings.tectonic_timeout_seconds,
     )
 
 
@@ -40,5 +43,6 @@ __all__ = [
     "EngineProbe",
     "LatexEngine",
     "TectonicEngine",
+    "TexLiveEngine",
     "get_latex_engine",
 ]
