@@ -211,10 +211,27 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans**: TBD
+**Plans:** 4 plans
 **UI hint**: yes
 
-**Research flag:** the per-listing vs per-K-listings batching decision is unresolved and material; resolve it *in the plan*, together with the budget-cap semantics (enforce before the call, count in-flight calls). Also settle where requirement extraction happens (once per listing, cached) here, not in Phase 6.
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Tracer: pure rubric, top-level-scalar ranking schema, weights store (migration 0004), the `scores` writer, and one listing ranked end-to-end onto the queue row
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md — Spend caps enforced before the call (two `Settings` ceilings, rolling-24h ledger read, reserve-then-call) and the detached single-flight ranking lifecycle
+
+**Wave 3** *(blocked on Wave 1 completion)*
+
+- [ ] 05-03-PLAN.md — Job detail page: score, per-factor breakdown with weights, grounded rationale, requirement-by-requirement fit list with named gaps
+
+**Wave 4** *(blocked on Waves 1–3 completion)*
+
+- [ ] 05-04-PLAN.md — Weighted queue ordering (read-time total, unscored last), the minimum-score view filter, the weights editor, and the ranked-X-of-Y strip
+
+**Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
 ### Phase 6: Tailoring + Verification
 
