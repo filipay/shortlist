@@ -59,6 +59,9 @@ EXPECTED_JSON_COLUMNS: dict[str, frozenset[str]] = {
     "scores": frozenset(
         {"factor_scores_json", "weights_json", "strengths_json", "gaps_json"}
     ),
+    # 0004 adds the single-row global weights document. It carries six floats and
+    # nothing else — no listing text, no model prose, no identifier.
+    "ranking_config": frozenset({"weights_json"}),
     "cv_versions": frozenset({"facts_json"}),
     "cv_artifacts": frozenset(
         {"patch_json", "change_log_json", "verification_json", "ats_checks_json"}

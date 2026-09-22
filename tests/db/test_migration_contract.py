@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0003"], "expected exactly one recorded revision: 0003"
+    assert versions == ["0004"], "expected exactly one recorded revision: 0004"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0003"), head_lines[0]
+    assert head_lines[0].startswith("0004"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -502,6 +502,39 @@ def test_llm_calls_server_version_column_is_nullable(migrated_db: Path) -> None:
         connection.close()
 
 
+# --- Item 15 (0004) — ranking_config, the single-row weights document ----------
+def test_ranking_config_table_and_singleton_check(migrated_db: Path) -> None:
+    """D-99/D-100: the global weights document is one row keyed id = 1."""
+    connection = _connect(migrated_db)
+    try:
+        assert _exists(connection, "table", "ranking_config")
+
+        columns = _table_info(connection, "ranking_config")
+        assert {"id", "weights_json", "updated_at"} <= set(columns)
+        assert columns["weights_json"]["notnull"] == 1
+        assert columns["updated_at"]["notnull"] == 1
+
+        # The named singleton CHECK must be in the migrated DDL and enforced.
+        table_sql = _master(connection, "table", "ranking_config")["sql"]
+        assert "ck_ranking_config_singleton" in table_sql
+
+        connection.execute(
+            "INSERT INTO ranking_config (id, weights_json, updated_at) "
+            "VALUES (1, '{}', ?)",
+            ("2026-09-22 00:00:00",),
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO ranking_config (id, weights_json, updated_at) "
+                "VALUES (2, '{}', ?)",
+                ("2026-09-22 00:00:00",),
+            )
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -525,7 +558,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0003"], f"expected exactly 0003, saw {versions}"
+        assert versions == ["0004"], f"expected exactly 0004, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

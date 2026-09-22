@@ -35,6 +35,8 @@ EXPECTED_TABLES = (
     "filter_rules",
     "queue_state",
     "listing_fts",
+    # Migration 0004 (Phase 5): the single-row global ranking weights document.
+    "ranking_config",
 )
 
 
@@ -71,7 +73,7 @@ def test_migration_creates_every_table_at_latest_revision(migrated_db: Path) -> 
         version = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        assert version == [("0003",)]
+        assert version == [("0004",)]
     finally:
         connection.close()
 

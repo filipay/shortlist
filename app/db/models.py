@@ -108,6 +108,35 @@ class QueueState(Base):
     updated_at = Column(DateTime, nullable=False)
 
 
+class RankingConfig(Base):
+    """The single-row global ranking weights document (D-99 / D-100).
+
+    Factor weights are **global** ranking configuration — one set of six numbers —
+    not per-search. This is a single-purpose table rather than a generic key-value
+    store because nothing else needs one yet.
+
+    ``id`` is pinned to 1 by the explicitly named ``ck_ranking_config_singleton``,
+    so a second row cannot be inserted and a read can always address the one
+    document by id. ``weights_json`` is a JSON column (allow-listed in
+    ``tests/db/test_no_pii_columns.py``): it carries six floats and nothing else.
+
+    There is deliberately no foreign key to ``runs`` or ``listings`` — the weights
+    are a global setting, not an observation about a run, and the per-score
+    ``scores.weights_json`` is the separate audit snapshot of what was in force
+    when a score was written (D-100).
+    """
+
+    __tablename__ = "ranking_config"
+
+    id = Column(Integer, primary_key=True)
+    weights_json = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_ranking_config_singleton"),
+    )
+
+
 class Listing(Base):
     """The canonical, deduped job."""
 
