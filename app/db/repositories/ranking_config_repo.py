@@ -24,7 +24,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,8 +90,7 @@ async def write_weights(
         value = _as_float(weights[factor])
         if value is None or value < 0.0:
             raise ValueError(
-                f"weight for {factor!r} must be a finite float >= 0.0, "
-                f"got {weights[factor]!r}"
+                f"weight for {factor!r} must be a finite float >= 0.0, got {weights[factor]!r}"
             )
         document[factor] = value
 

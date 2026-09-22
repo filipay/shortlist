@@ -167,9 +167,7 @@ def _factor_payload(sub_scores: Mapping[str, float]) -> dict[str, float]:
 
 def _weights_payload(weights: Mapping[str, float]) -> dict[str, float]:
     return {
-        factor: (
-            float(value) if (value := _as_float(weights.get(factor))) is not None else 0.0
-        )
+        factor: (float(value) if (value := _as_float(weights.get(factor))) is not None else 0.0)
         for factor in rubric.FACTORS
     }
 
@@ -225,7 +223,10 @@ async def upsert_score(
         "weights_json": _weights_payload(weights),
         "confidence_tier": confidence_tier,
         "rationale": rationale,
-        "strengths_json": [dict(entry) if isinstance(entry, Mapping) else entry for entry in (strengths or ())] or None,
+        "strengths_json": (
+            [dict(entry) if isinstance(entry, Mapping) else entry for entry in (strengths or ())]
+            or None
+        ),
         "gaps_json": [dict(entry) for entry in requirements],
         "created_at": moment,
     }
@@ -294,9 +295,7 @@ async def latest_for_listings(
     return newest
 
 
-async def read_score_for_listing(
-    session: AsyncSession, listing_id: int
-) -> ScoreRecord | None:
+async def read_score_for_listing(session: AsyncSession, listing_id: int) -> ScoreRecord | None:
     """The newest score row for one listing, or `None` when it has never been scored.
 
     The same newest-row rule as `latest_for_listings`. Never commits, never raises.

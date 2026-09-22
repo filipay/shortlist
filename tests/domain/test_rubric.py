@@ -33,9 +33,7 @@ EXPECTED_FACTORS = (
     "compensation",
 )
 
-FORBIDDEN_IMPORTS = frozenset(
-    {"httpx", "sqlalchemy", "jobspy", "jinja2", "subprocess", "fastapi"}
-)
+FORBIDDEN_IMPORTS = frozenset({"httpx", "sqlalchemy", "jobspy", "jinja2", "subprocess", "fastapi"})
 
 
 def test_the_factor_set_is_exactly_the_six_in_order() -> None:
@@ -68,9 +66,7 @@ def test_the_module_imports_no_io_module_and_not_settings() -> None:
 
 
 def test_weighted_total_renormalises_over_present_factors() -> None:
-    total = weighted_total(
-        {"skills": 1.0, "domain": 0.0}, {"skills": 1.0, "domain": 1.0}
-    )
+    total = weighted_total({"skills": 1.0, "domain": 0.0}, {"skills": 1.0, "domain": 1.0})
 
     assert total == 0.5
 

@@ -176,7 +176,9 @@ async def test_a_second_upsert_for_the_same_triple_updates_in_place(
 # --- criteria_version is mandatory and non-NULL (Pitfall 5) --------------------
 
 
-async def test_criteria_version_none_is_rejected(session_factory: async_sessionmaker[AsyncSession]) -> None:
+async def test_criteria_version_none_is_rejected(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     run_id, listing_id = await _seed_run_and_listing(session_factory)
 
     async with session_factory() as session:
@@ -285,15 +287,27 @@ async def test_read_weights_falls_back_to_the_rubric_defaults(
     async with session_factory() as session:
         weights = await ranking_config_repo.read_weights(session)
 
-    assert weights == {"skills": 1.0, "seniority": 1.0, "domain": 1.0,
-                       "location": 1.0, "evidence": 1.0, "compensation": 1.0}
+    assert weights == {
+        "skills": 1.0,
+        "seniority": 1.0,
+        "domain": 1.0,
+        "location": 1.0,
+        "evidence": 1.0,
+        "compensation": 1.0,
+    }
 
 
 async def test_write_weights_upserts_the_single_row_and_round_trips(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    weights = {"skills": 2.0, "seniority": 1.5, "domain": 1.0,
-               "location": 0.5, "evidence": 3.0, "compensation": 0.0}
+    weights = {
+        "skills": 2.0,
+        "seniority": 1.5,
+        "domain": 1.0,
+        "location": 0.5,
+        "evidence": 3.0,
+        "compensation": 0.0,
+    }
 
     async with session_factory() as session:
         await ranking_config_repo.write_weights(session, weights, now=NOW)
@@ -341,10 +355,6 @@ async def test_write_weights_rejects_an_unknown_key_and_a_negative_value(
 ) -> None:
     async with session_factory() as session:
         with pytest.raises(ValueError):
-            await ranking_config_repo.write_weights(
-                session, {"skills": 1.0, "nonsense": 1.0}
-            )
+            await ranking_config_repo.write_weights(session, {"skills": 1.0, "nonsense": 1.0})
         with pytest.raises(ValueError):
-            await ranking_config_repo.write_weights(
-                session, {"skills": -1.0}
-            )
+            await ranking_config_repo.write_weights(session, {"skills": -1.0})

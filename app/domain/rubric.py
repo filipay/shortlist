@@ -122,16 +122,10 @@ def present_factors(sub_scores: Mapping[str, float]) -> tuple[str, ...]:
     is kept. A sub-score of ``0.0`` is therefore never conflated with an absent
     factor (RANK-02 boundary).
     """
-    return tuple(
-        factor
-        for factor in FACTORS
-        if float(sub_scores.get(factor, -1.0)) >= 0.0
-    )
+    return tuple(factor for factor in FACTORS if float(sub_scores.get(factor, -1.0)) >= 0.0)
 
 
-def weighted_total(
-    sub_scores: Mapping[str, float], weights: Mapping[str, float]
-) -> float | None:
+def weighted_total(sub_scores: Mapping[str, float], weights: Mapping[str, float]) -> float | None:
     """The normalised weighted mean over the present factors (D-79).
 
     ``total = Σ(sub_i × w_i) / Σ(w_i over present factors)`` — a value in the
