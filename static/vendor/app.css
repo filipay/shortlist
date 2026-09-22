@@ -4,3 +4,18 @@
 .badge-score-tier-high{background-color:var(--color-success-bg);color:var(--color-success)}
 .badge-score-tier-medium{background-color:var(--color-warning-bg);color:var(--color-warning)}
 .badge-score-tier-low{background-color:var(--color-surface-2);color:var(--color-muted)}
+.listing-detail-link{margin-left:.5rem;color:var(--color-accent);white-space:nowrap;font-size:.8rem;text-decoration:none}
+.listing-detail-link:hover{text-decoration:underline}
+.detail-rationale{max-width:65ch}
+.detail-not-ranked{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);padding:1rem}
+.detail-empty{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);text-align:center;padding:2rem}
+.factor-table{border:1px solid var(--color-border);border-radius:var(--radius-lg);max-width:44rem;box-shadow:var(--shadow-sm);background-color:var(--color-paper);display:block;overflow-x:auto}
+.factor-table th{text-transform:uppercase;letter-spacing:.025em;color:var(--color-muted);white-space:nowrap;padding:.75rem 1rem;font-size:.8rem;font-weight:600}
+.factor-table td{border-bottom:1px solid var(--color-border);padding:.625rem 1rem}
+.factor-table tbody tr:last-child td{border-bottom:none}
+.factor-absent{color:var(--color-muted);font-style:italic}
+.requirement-list{margin:0 0 1rem;padding-left:1.25rem;list-style:disc}
+.requirement-list li{margin:.375rem 0}
+.req-met{color:var(--color-success)}
+.req-partial{color:var(--color-warning)}
+.req-gap{color:var(--color-danger)}

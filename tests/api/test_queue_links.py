@@ -98,7 +98,14 @@ async def test_a_listing_without_a_url_renders_a_plain_title(
 
     response = await client.get("/")
 
-    assert '<td class="listing-title">Backend Engineer</td>' in response.text
+    # The title stays PLAIN (no external `listing-title-link` anchor) and now carries
+    # the internal Details link to the job detail page (UI-02).
+    assert 'class="listing-title-link"' not in response.text
+    assert re.search(
+        r'<td class="listing-title">Backend Engineer\s*'
+        r'<a class="listing-detail-link" href="/listings/\d+">Details</a></td>',
+        response.text,
+    ), response.text
 
 
 async def test_an_indeed_row_offers_the_board_and_the_employer_link(

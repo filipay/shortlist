@@ -17,9 +17,9 @@
    the template branches on the value, never on the source name.
 
    The `listing-title` cell class is unchanged because a Phase-1 determinism test reads
-   it back (`<td class="listing-title">`); only its contents gained the optional anchor.
-   Badges and controls still live in their own cells rather than quietly breaking that
-   pinned assertion.
+   it back (`<td class="listing-title">`); only its contents gained the optional anchor
+   and the internal `Details` link to the job detail page (UI-02). Badges and controls
+   still live in their own cells rather than quietly breaking that pinned assertion.
 
    Save and Hide are two separately-labelled controls (D-41). Neither guesses which the
    user meant, and the button text flips to the inverse action so an already-hidden listing
@@ -34,7 +34,7 @@
     data-merged-from="{{ row.merged_from }}"
     data-saved="{{ 1 if row.saved else 0 }}"
     data-hidden="{{ 1 if row.hidden else 0 }}">
-  <td class="listing-title">{% if row.url %}<a class="listing-title-link" href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}</td>
+  <td class="listing-title">{% if row.url %}<a class="listing-title-link" href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %} <a class="listing-detail-link" href="/listings/{{ row.id }}">Details</a></td>
   <td class="listing-badges">
     {% if row.saved %}<span class="badge badge-saved" id="listing-saved-{{ row.id }}">&#9733; saved</span>{% endif %}
     {% if row.hidden %}<span class="badge badge-hidden" id="listing-hidden-{{ row.id }}">hidden</span>{% endif %}

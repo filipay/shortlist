@@ -6,7 +6,12 @@
 
    Every flag arrives PRECOMPUTED on the row (D-96 reuses the queue read model), so no
    date arithmetic, settings read or lookup happens in this template. External anchors
-   carry `rel="noopener noreferrer"` and only render when their URL is truthy. #}
+   carry `rel="noopener noreferrer"` and only render when their URL is truthy.
+
+   The total is NOT recomputed here: `row.total_score` was derived at read time from the
+   stored sub-scores under the weights currently in force (D-100). A dropped factor
+   renders "no data", never a zero, and an unscored listing renders the not-yet-ranked
+   state rather than a numeric total. #}
 
 {% block title %}{{ row.title }} — Job Search Copilot{% endblock %}
 
@@ -29,6 +34,33 @@
     {% if row.confidence_tier %}<span class="badge badge-score-tier-{{ row.confidence_tier }}">{{ row.confidence_tier }}</span>{% endif %}
   </p>
 </section>
+
+{% set sub_scores = dict(row.factor_scores) %}
+<section>
+  <h3>Factor breakdown</h3>
+  <table class="factor-table">
+    <thead>
+      <tr>
+        <th>Factor</th>
+        <th>Sub-score</th>
+        <th>Weight</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for key, label in factors %}
+      <tr>
+        <td>{{ label }}</td>
+        {% if key in sub_scores %}
+        <td>{{ "%.2f" | format(sub_scores[key]) }}</td>
+        {% else %}
+        <td class="factor-absent">no data</td>
+        {% endif %}
+        <td>{{ "%.2f" | format(weights.get(key, 0.0)) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 {% else %}
 <p class="detail-not-ranked">
   Not yet ranked. This listing has no score yet — ranking may still be running, or the
@@ -41,5 +73,47 @@
   <h3>Why</h3>
   <p class="detail-rationale">{{ score.rationale }}</p>
 </section>
+
+<section>
+  <h3>Requirement fit</h3>
+  <ul class="requirement-list">
+    {% for entry in score.requirements %}
+    <li class="{% if entry.verdict == 'met' %}req-met{% elif entry.verdict == 'partial' %}req-partial{% else %}req-gap{% endif %}">
+      <strong>{{ entry.verdict }}</strong> — {{ entry.text }}{% if entry.evidence_id %} <code>{{ entry.evidence_id }}</code>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
 {% endif %}
+
+<section id="detail-actions">
+  <h3>Track this job</h3>
+  {# The exact two-form block the queue row uses, so both surfaces post the same event
+     types to the same append-only endpoint (T-05-16). The htmx swap target is the queue
+     row's id, which lives on the queue page; here the POST still appends the event and
+     the page reflects the new state on reload (Phase 5's documented posture, D-88). #}
+  {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
+  <form class="listing-action listing-action-save"
+        hx-post="{{ action_url }}"
+        hx-target="#listing-row-{{ row.id }}"
+        hx-swap="outerHTML">
+    <input type="hidden" name="event_type" value="{{ 'unsave' if row.saved else 'save' }}">
+    <button type="submit"
+            id="listing-save-{{ row.id }}"
+            class="listing-save-button{% if row.saved %} is-on{% endif %}">
+      {% if row.saved %}Unsave{% else %}Save{% endif %}
+    </button>
+  </form>
+  <form class="listing-action listing-action-hide"
+        hx-post="{{ action_url }}"
+        hx-target="#listing-row-{{ row.id }}"
+        hx-swap="outerHTML">
+    <input type="hidden" name="event_type" value="{{ 'unhide' if row.hidden else 'hide' }}">
+    <button type="submit"
+            id="listing-hide-{{ row.id }}"
+            class="listing-hide-button{% if row.hidden %} is-on{% endif %}">
+      {% if row.hidden %}Unhide{% else %}Hide{% endif %}
+    </button>
+  </form>
+</section>
 {% endblock %}
