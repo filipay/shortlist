@@ -105,6 +105,23 @@ async def _seed_score(
 # --- the default order (D-97) --------------------------------------------------
 
 
+async def test_unranked_row_renders_the_badge(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """UI-01 adjacency: the unscored row carries a distinct, non-numeric badge."""
+    await _register_sources(session_factory, "linkedin")
+    scored = await _seed_listing(session_factory, index=1, title="Scored")
+    unscored = await _seed_listing(session_factory, index=2, title="Unranked")
+    run_id = await _seed_run(session_factory)
+    await _seed_score(session_factory, listing_id=scored, run_id=run_id, value=0.7)
+
+    body = (await client.get("/queue/list")).text
+
+    assert f'id="listing-unranked-{unscored}"' in body
+    assert "badge-unranked" in body
+    assert "not ranked" in body
+
+
 async def test_default_order_is_score_desc_unranked_last(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

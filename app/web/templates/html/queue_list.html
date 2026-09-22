@@ -42,7 +42,7 @@
 </button>
 
 {% if is_empty %}
-{% if page.query.q or page.query.excluded or page.query.hidden or page.query.saved or page.query.scope_search_id %}
+{% if page.query.q or page.query.excluded or page.query.hidden or page.query.saved or page.query.scope_search_id or (page.query.min_score is not none) %}
 <p class="empty-state filtered-empty-state" id="queue-empty-filtered">
   No listings match these filters.
   <a href="/" id="queue-clear-filters">Clear filters</a>

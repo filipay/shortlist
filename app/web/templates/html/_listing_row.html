@@ -43,7 +43,9 @@
     {% if row.merged_from %}<a class="badge badge-merged" href="/merges">merged from {{ row.merged_from }} sources</a>{% endif %}
     {% if row.instruction_like %}<span class="badge badge-flagged" id="listing-flagged-{{ row.id }}">flagged</span>{% endif %}
     {# The read-time total and its confidence tier (D-97 / D-100). An unscored listing
-       (total_score is None) renders NOTHING here: a real zero must never be implied. #}
+       (total_score is None) renders an explicit unranked badge and NOTHING numeric:
+       a real zero must never be implied. #}
+    {% if row.total_score is none %}<span class="badge badge-unranked" id="listing-unranked-{{ row.id }}">not ranked</span>{% endif %}
     {% if row.total_score is not none %}<span class="badge badge-score" id="listing-score-{{ row.id }}">{{ "%.2f" | format(row.total_score) }}</span>{% endif %}
     {% if row.confidence_tier %}<span class="badge badge-score-tier-{{ row.confidence_tier }}">{{ row.confidence_tier }}</span>{% endif %}
   </td>

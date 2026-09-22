@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.runs import render_run_fragment
 from app.config import settings
-from app.db.repositories import event_repo, run_repo, state_repo
+from app.db.repositories import event_repo, llm_call_repo, run_repo, state_repo
 from app.db.repositories.queue_repo import QueuePage, QueueQuery, read_queue
 from app.db.repositories.run_repo import RunSummary
 from app.db.repositories.source_repo import SourceHealth, get_source_health
@@ -273,6 +273,33 @@ async def _last_run_strip(
     return latest, fragment
 
 
+async def _ranking_strip(
+    session: AsyncSession, page: QueuePage, latest_run: RunSummary | None
+) -> dict[str, Any]:
+    """`{ranked, candidates, cap_reason}` for the queue's ranking strip — never raises.
+
+    A decorative strip must not 500 the product page (the `_last_run_strip` and
+    `_health_strip` convention), so any failure yields `{}` and the queue renders
+    without the strip. `ranked` is the latest run's `ranked_count` (D-89) and is `None`
+    until the detached ranking task has written it; `candidates` is the page's own
+    total; `cap_reason` is non-None only when the ranking pass was refused by a spend
+    ceiling (D-93). Refresh-only: no polling, no SSE, no new poll target (D-88).
+    """
+    if latest_run is None:
+        return {}
+    try:
+        return {
+            "ranked": latest_run.ranked_count,
+            "candidates": int(page.total),
+            "cap_reason": await llm_call_repo.rank_cap_reason_for_run(
+                session, run_id=latest_run.id
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the queue
+        log.warning("queue.ranking_strip_failed", error=type(exc).__name__)
+        return {}
+
+
 @router.get("/", response_class=HTMLResponse)
 async def queue(
     request: Request,
@@ -298,6 +325,7 @@ async def queue(
     await session.commit()
 
     last_run, last_run_fragment = await _last_run_strip(request, session)
+    ranking_strip = await _ranking_strip(session, page, last_run)
     source_health, reachable, version, error = await _health_strip(session, backend)
 
     return templates.TemplateResponse(
@@ -308,6 +336,7 @@ async def queue(
             "user": user,
             "last_run": last_run,
             "last_run_fragment": last_run_fragment,
+            "ranking_strip": ranking_strip,
             "source_health": source_health,
             "opencode_reachable": reachable,
             "opencode_version": version,

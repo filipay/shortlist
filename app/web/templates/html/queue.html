@@ -95,7 +95,46 @@
              hx-include="closest form">
       Saved
     </label>
+
+    {# The ordering and the view-only score threshold (D-97 / D-98). Both ride the same
+       hx-include form as the toggles, so they carry every other predicate and reset the
+       page index exactly like a toggle does. The threshold keeps unscored listings
+       visible by construction (see queue_repo's threshold predicate). #}
+    <label class="queue-sort" for="queue-sort">Sort
+      <select id="queue-sort"
+              name="sort"
+              hx-get="/queue/list"
+              hx-target="#queue-list"
+              hx-swap="innerHTML"
+              hx-include="closest form">
+        <option value="score" {% if page.query.sort == 'score' %}selected{% endif %}>Best fit (current weights)</option>
+        <option value="recent" {% if page.query.sort == 'recent' %}selected{% endif %}>Most recent</option>
+      </select>
+    </label>
+
+    <label class="queue-threshold" for="queue-min-score">Min score
+      <input type="number"
+             id="queue-min-score"
+             name="min_score"
+             step="0.05"
+             min="0"
+             max="1"
+             value="{{ page.query.min_score if page.query.min_score is not none else '' }}"
+             hx-get="/queue/list"
+             hx-target="#queue-list"
+             hx-swap="innerHTML"
+             hx-include="closest form">
+    </label>
   </form>
+
+  {# The ranking strip (D-89 / D-93): refresh-only, no polling or SSE (D-88). It is
+     rendered only once the ranking task has written `runs.ranked_count`, so a fresh
+     run shows nothing rather than a misleading "Ranked 0 of N". #}
+  {% if ranking_strip.get('ranked') is not none %}
+  <p id="ranking-strip" class="ranking-strip">
+    Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
+  </p>
+  {% endif %}
 
   <div id="queue-list" aria-live="polite">
     {% include "html/queue_list.html" %}

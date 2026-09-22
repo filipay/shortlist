@@ -134,6 +134,10 @@ class RunSummary:
     fetched_count: int
     deduped_count: int
     filtered_count: int
+    #: D-89 / plan 05-02: how many listings actually had a score row when the ranking
+    #: task last wrote the run. `None` means the ranking pass never completed (or was
+    #: skipped), which is the honest "not yet ranked" signal the queue strip reads.
+    ranked_count: int | None
     sources: Mapping[str, Any]
     #: The first `STAGE_LOG_ERROR_LIMIT` errors, so no row can render unbounded.
     errors: tuple[Mapping[str, Any], ...]
@@ -213,6 +217,7 @@ def _summary(row: Run) -> RunSummary:
         fetched_count=_int(row.fetched_count),
         deduped_count=_int(row.deduped_count),
         filtered_count=_int(row.filtered_count),
+        ranked_count=None if row.ranked_count is None else int(row.ranked_count),
         sources=_mapping(row.source_counts_json),
         errors=all_errors[:STAGE_LOG_ERROR_LIMIT],
         error_count=len(all_errors),

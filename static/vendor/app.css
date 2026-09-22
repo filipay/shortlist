@@ -19,3 +19,7 @@
 .req-met{color:var(--color-success)}
 .req-partial{color:var(--color-warning)}
 .req-gap{color:var(--color-danger)}
+.queue-sort,.queue-threshold{color:var(--color-muted);flex-direction:column;gap:.25rem;font-size:.85rem;display:inline-flex}
+.queue-sort select,.queue-threshold input{width:auto;padding:.35rem .5rem}
+.badge-unranked{background-color:var(--color-surface-2);color:var(--color-muted);border:1px dashed var(--color-border)}
+.ranking-strip{color:var(--color-muted);margin-bottom:.75rem;font-size:.95rem}
