@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-09-22T17:05:36.467Z"
+stopped_at: Completed 05-07-PLAN.md
+last_updated: "2026-09-22T17:25:51.817Z"
 last_activity: 2026-09-22
-last_activity_desc: Phase 05 gap-closure plan 05-06 complete (unreadable fact-store skip)
-state_head: 8f82b5bcdaa8ee4926e38740b0c28ccaaf3fd734
+last_activity_desc: Phase 05 execution started
+state_head: 236c0864a99d6d35c0f6697a972a7633e746f27c
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 40
-  completed_plans: 38
+  completed_plans: 40
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 
 ## Current Position
 
-Phase: 05 (Ranking — CORE VALUE) — READY TO EXECUTE
-Plan: 6 of 6
+Phase: 05 (Ranking — CORE VALUE) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-22 — Completed 05-06-PLAN.md (unreadable fact-store skip)
+Last activity: 2026-09-22 — Phase 05 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P04 | 26 min | 3 tasks | 12 files |
 | Phase 05 P05 | 8 min | 2 tasks | 5 files |
 | Phase 05 P06 | 6 min | 2 tasks | 4 files |
+| Phase 05 P07 | 9min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,7 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: `_optional_int` is a separate helper from `_int` — for a value a surface divides BY, an absent/non-numeric value stays `None` rather than coercing to a fabricated `0`
 - [Phase 05]: Phase 05: `load_facts` catches `(OSError, UnicodeError)` and re-raises a path-qualified `CvFactStoreError`, so a non-decodable `cv.yaml` is one typed failure at the shared reader — the fix belongs there, not in `rank.py`'s guard, and Phase 6 tailoring inherits it
 - [Phase 05]: Phase 05: the unreadable fact store reuses D-94's existing `fact_store_absent` skip reason (same operator-visible situation), now pinned by an asserted `pipeline.rank_skipped` event rather than inferred from the absence of rows
+- [Phase 05]: 05-07: a non-positive candidate count is not a denominator — excluded at the run read boundary (run_repo._optional_int), with a truthiness gate at the render site
 
 ### Pending Todos
 
@@ -134,6 +136,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T15:48:42Z
-Stopped at: Completed 05-06-PLAN.md
+Last session: 2026-09-22T17:25:51.708Z
+Stopped at: Completed 05-07-PLAN.md
 Resume file: None

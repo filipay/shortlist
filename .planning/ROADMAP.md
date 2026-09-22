@@ -211,10 +211,13 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 4/4 plans executed
+**Plans:** 7/7 plans executed
 **UI hint**: yes
 
 Plans:
+
+- [x] 05-07-PLAN.md
+
 **Wave 1**
 
 - [x] 05-01-PLAN.md — Tracer: pure rubric, top-level-scalar ranking schema, weights store (migration 0004), the `scores` writer, and one listing ranked end-to-end onto the queue row
@@ -233,8 +236,8 @@ Plans:
 
 **Gap closure** *(planned 2026-09-22; wave 1 — all prerequisites above are executed)*
 
-- [ ] 05-05-PLAN.md — The ranking strip reports one run's population: `RunSummary.candidate_count` (the run's own `reason_counts_json['survivors']`) replaces the request-derived page total, so the strip can no longer read "Ranked 30 of 5"
-- [ ] 05-06-PLAN.md — An unreadable (non-UTF-8) CV fact store takes the documented D-94 skip: one path-qualified `CvFactStoreError` at the read boundary, so the detached ranking task returns cleanly instead of leaking `UnicodeDecodeError`
+- [x] 05-05-PLAN.md — The ranking strip reports one run's population: `RunSummary.candidate_count` (the run's own `reason_counts_json['survivors']`) replaces the request-derived page total, so the strip can no longer read "Ranked 30 of 5"
+- [x] 05-06-PLAN.md — An unreadable (non-UTF-8) CV fact store takes the documented D-94 skip: one path-qualified `CvFactStoreError` at the read boundary, so the detached ranking task returns cleanly instead of leaking `UnicodeDecodeError`
 
 **Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
@@ -302,7 +305,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
-| 5. Ranking — CORE VALUE | 4/4 | In Progress|  |
+| 5. Ranking — CORE VALUE | 7/7 | In Progress|  |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
