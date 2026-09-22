@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-09-22T12:38:36.604Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-09-22T12:52:18.212Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 05 execution started
-state_head: 22948ac6f3ce7911f12368318d21891f08326e13
+state_head: 2e6a293c42538fca171a07b98edebbd6402fdf85
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 37
-  completed_plans: 35
+  completed_plans: 36
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 05 execution started
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P10 | 13 min | 3 tasks | 12 files |
 | Phase 05 P01 | 28 min | 3 tasks | 17 files |
 | Phase 05 P02 | 20 min | 3 tasks | 12 files |
+| Phase 05 P03 | 10 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: both ranking spend ceilings are measured from the single llm_calls ledger; a refusal writes one budget_exceeded row because the table has no error_kind column
 - [Phase 05]: Phase 05: the rolling-24h ranking cap reads llm_calls.created_at with an accepted full scan; no index migration
 - [Phase 05]: Phase 05: ranking is optional via Settings.ranking_enabled plus the fact-store absent/unreadable state; start-or-skip single-flight, no persistent job queue
+- [Phase 05]: Phase 05: the detail page reuses queue_repo.read_row so it cannot drift from the queue row, and never recomputes the total in the route
+- [Phase 05]: Phase 05: an unscored listing renders a not-yet-ranked state with no score region; a dropped factor renders 'no data', never zero
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T12:38:35.434Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-09-22T12:52:17.437Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None

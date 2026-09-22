@@ -211,7 +211,7 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 **UI hint**: yes
 
 Plans:
@@ -225,7 +225,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1 completion)*
 
-- [ ] 05-03-PLAN.md — Job detail page: score, per-factor breakdown with weights, grounded rationale, requirement-by-requirement fit list with named gaps
+- [x] 05-03-PLAN.md — Job detail page: score, per-factor breakdown with weights, grounded rationale, requirement-by-requirement fit list with named gaps
 
 **Wave 4** *(blocked on Waves 1–3 completion)*
 
@@ -297,7 +297,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
-| 5. Ranking — CORE VALUE | 2/4 | In Progress|  |
+| 5. Ranking — CORE VALUE | 3/4 | In Progress|  |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |

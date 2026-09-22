@@ -98,7 +98,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Web UI (UI)
 
 - [ ] **UI-01**: User can browse ranked jobs in a list
-- [ ] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
+- [x] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
 - [ ] **UI-03**: User can edit search criteria and ranking weights
 - [ ] **UI-04**: User can view and manage the application tracker
 - [ ] **UI-05**: User can preview and download the tailored CV PDF
@@ -235,7 +235,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUN-06 | Phase 8 | Pending |
 | RUN-07 | Phase 8 | Pending |
 | UI-01 | Phase 5 | Pending |
-| UI-02 | Phase 5 | Pending |
+| UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Pending |
 | UI-04 | Phase 7 | Pending |
 | UI-05 | Phase 6 | Pending |
