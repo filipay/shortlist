@@ -157,7 +157,7 @@ Each task was committed atomically:
 3. **Task 3: One listing ranked end-to-end, wired into run_pipeline and visible on the queue row** - `443eddd` (feat)
 4. **Formatting normalisation of the phase-5 modules** - `c7b8b9c` (style)
 
-**Plan metadata:** `PENDING` (docs: complete plan)
+**Plan metadata:** `d94e92e` (docs: complete tracer ranking slice plan)
 
 ## Files Created/Modified
 
