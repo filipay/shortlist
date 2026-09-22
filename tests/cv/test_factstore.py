@@ -103,6 +103,25 @@ def test_a_missing_file_raises_with_the_resolved_path(tmp_path: Path) -> None:
     assert str(missing.resolve()) in str(excinfo.value)
 
 
+def test_non_utf8_bytes_raise_the_path_qualified_fact_store_error(
+    tmp_path: Path,
+) -> None:
+    """A file that exists but cannot be decoded is one typed, path-qualified error.
+
+    The decode failure is preserved as the cause rather than escaping ``load_facts``
+    raw, so every caller routes through the one fact-store boundary failure.
+    """
+    path = tmp_path / "cv.yaml"
+    path.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+
+    with pytest.raises(CvFactStoreError) as excinfo:
+        load_facts(path)
+
+    assert str(path.resolve()) in str(excinfo.value)
+    assert "unreadable" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, UnicodeError)
+
+
 # --- Test 6: duplicate IDs ----------------------------------------------------
 
 

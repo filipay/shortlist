@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -118,6 +119,32 @@ async def test_unreadable_fact_store_writes_nothing_and_the_run_is_done(
     await drain_ranking_tasks()
 
     await _assert_skipped(session_factory, run_id)
+
+
+async def test_non_utf8_fact_store_writes_nothing_and_the_run_is_done(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The other half of the documented "absent or unreadable" condition: the file
+    # exists but cannot be decoded as UTF-8. It must reach the same clean skip, not
+    # escape the detached task as a raw UnicodeDecodeError.
+    (tmp_path / rank_module.CV_FILENAME).write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    # Wrap the run as well as the drain: run_pipeline starts the detached ranking
+    # task BEFORE _finish and keeps awaiting, so the skip log can be emitted before
+    # _run_with_one_listing returns — capturing only the drain would be racy.
+    with structlog.testing.capture_logs() as events:
+        run_id = await _run_with_one_listing(session_factory)
+        await drain_ranking_tasks()
+
+    await _assert_skipped(session_factory, run_id)
+    assert any(
+        entry.get("event") == "pipeline.rank_skipped"
+        and entry.get("reason") == "fact_store_absent"
+        for entry in events
+    )
 
 
 # --- the single-flight lifecycle -----------------------------------------------
