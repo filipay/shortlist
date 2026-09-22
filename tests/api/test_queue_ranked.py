@@ -73,6 +73,31 @@ async def _seed_run(session_factory: async_sessionmaker[AsyncSession]) -> int:
         return int(run.id)
 
 
+async def _seed_run_with_coverage(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    ranked_count: int,
+    survivors: int,
+) -> int:
+    """A finished run whose OWN candidate population is independent of the queue page.
+
+    `survivors` goes into `reason_counts_json` exactly as `app.pipeline.run._finish`
+    writes it, so this seeds the run-side denominator and not the request-side total.
+    """
+    async with session_factory() as session:
+        run = Run(
+            trigger="manual",
+            status="done",
+            started_at=DAY,
+            finished_at=DAY,
+            ranked_count=ranked_count,
+            reason_counts_json={"survivors": survivors},
+        )
+        session.add(run)
+        await session.commit()
+        return int(run.id)
+
+
 async def _seed_score(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -284,3 +309,51 @@ async def test_empty_queue_renders_the_empty_state(
     assert response.status_code == 200
     assert "No listings yet" in response.text
     assert _ids(response.text) == []
+
+
+# --- the ranking strip's denominator (CR-01, plan 05-05) ------------------------
+
+
+async def test_ranking_strip_reports_the_runs_own_candidate_count(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """RANK-08 / UI-01: both strip numbers come from ONE run's population.
+
+    The run scored 5 of its own 30 candidates while this queue page matches only 2
+    listings, so a request-derived denominator would render the nonsense ratio
+    `Ranked 5 of 2` — exactly the population mismatch `05-VERIFICATION.md` reproduced.
+    """
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="One")
+    await _seed_listing(session_factory, index=2, title="Two")
+    await _seed_run_with_coverage(session_factory, ranked_count=5, survivors=30)
+
+    body = (await client.get("/")).text
+
+    assert "Ranked 5 of 30" in body, "the denominator is the run's own candidate population"
+    assert "Ranked 5 of 2" not in body, "the page total is a different population"
+
+
+async def test_ranking_strip_without_candidate_count_renders_no_ratio(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """UI-01 empty: no persisted candidate count means no ratio, not a fabricated one."""
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    async with session_factory() as session:
+        session.add(
+            Run(
+                trigger="manual",
+                status="done",
+                started_at=DAY,
+                finished_at=DAY,
+                ranked_count=5,
+                reason_counts_json=None,
+            )
+        )
+        await session.commit()
+
+    body = (await client.get("/")).text
+
+    assert "Ranked 5" in body, "the numerator still renders without a denominator"
+    assert re.search(r"Ranked 5 of", body) is None, "no ratio against an absent population"
