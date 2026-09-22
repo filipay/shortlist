@@ -457,25 +457,30 @@ Requires a **non-NULL** `criteria_version` (Pitfall 5).
 | A7 | Weights persistence = a new tiny DB table + migration | Open Question 1 | **High** — decides whether a migration is needed at all |
 | A8 | Score `criteria_version` value under the union scope | Open Question 2 | Medium — affects idempotency (Pitfall 5) |
 
-## Open Questions
+## Open Questions — RESOLVED (2026-09-22)
+
+> Every question below is closed. The resolutions are recorded inline so a reader of
+> this artifact alone learns the answer; the authoritative implementations live in the
+> Phase 5 plans (`05-01`…`05-04`).
 
 1. **Where do the *current* weights live? (blocking — decides whether a migration exists)**
    - What we know: D-99 puts one global set of six weights on `/settings`; D-100 computes totals on read "under the current weights"; `scores.weights_json` is explicitly an audit snapshot, not the live value. The only tables that exist are `sources, companies, filter_rules, queue_state, listings, listing_sources, listing_dupes, listing_events, listing_exclusions, searches, runs, scores, cv_versions, cv_artifacts, applications, application_events, llm_calls, source_request_log` (`app/db/models.py`, all `__tablename__` lines).
    - What's unclear: **no table can hold a single editable weights document.** `searches.criteria_json` is per-search (D-99 rejects per-search weights). `queue_state` holds one watermark column.
-   - Recommendation: add one minimal `app_settings(key TEXT PRIMARY KEY, value_json JSON)` (or `ranking_weights(id, weights_json, updated_at)`) table in **migration 0004**, seed defaults from `rubric.py`, and update `tests/db/test_migration_contract.py` (Pitfall 10). A `Settings`-only approach cannot satisfy SC-3 past a restart. This is the phase's single highest-risk unstated item — resolve it in the plan before anything else.
+   - **RESOLVED.** Migration **0004** (`alembic/versions/0004_ranking_config.py`) creates a **single-purpose** table `ranking_config(id INTEGER PRIMARY KEY, weights_json JSON NOT NULL, updated_at DATETIME NOT NULL)` with a named `ck_ranking_config_singleton` CHECK (`id = 1`) — chosen over a generic `app_settings` key/value store because nothing else needs one (YAGNI), and over a `Settings`-only approach because that cannot satisfy SC-3 past a restart. The migration creates the table **empty** and does not import `app.domain.rubric` (a migration must not depend on application code): `app/db/repositories/ranking_config_repo.read_weights` falls back to `rubric.DEFAULT_WEIGHTS` when row id 1 is absent, and `write_weights` upserts it. The head-pinning guards move in lockstep: `tests/db/test_migration_contract.py` (three assertions), `tests/db/test_skeleton_boot.py` (`[("0004",)]` plus `EXPECTED_TABLES`), and `tests/db/test_no_pii_columns.py` (`EXPECTED_JSON_COLUMNS`). Implemented by plan **05-01**, Task 2.
 
 2. **What `criteria_version` does a score row carry under the union scope?**
    - What we know: the filter stage records a per-search version per exclusion (`filter_stage.py:119-131`); there is deliberately **no listing→search link** (A4 union scope, `queue_repo.py:32-38`).
    - What's unclear: a run under multiple enabled searches has no single version, but a NULL breaks the unique constraint (Pitfall 5).
-   - Recommendation: define one rule and test it — either the run's single enabled search's version when exactly one is enabled, else a documented sentinel (e.g. `0`) meaning "union"; or store the max enabled version. Do not leave it NULL.
+   - **RESOLVED.** `app/pipeline/rank.criteria_version_for_run(session, *, search_id)` returns the single enabled search's `version` when exactly one search is enabled (or when the run was scoped to one `search_id`), else the documented sentinel **`0`** meaning "union scope". It is **never None**, and `score_repo.upsert_score` additionally raises `ValueError` when handed None so the invariant is a check inside the function rather than a claim about the signature. Implemented by plan **05-01**, Task 3.
 
 3. **Overlap policy when a new run starts while a ranking task is in flight.**
-   - Recommendation: **start-or-skip** (single-flight) — the new run's ranking is skipped and the in-flight task continues; the next run re-ranks anything stale. Cheapest and honest. Alternative (cancel + restart) adds cancellation-safety complexity for no measured gain.
+   - **RESOLVED: start-or-skip** (single-flight). A module-level `_RANKING_TASK: asyncio.Task | None` guard makes `start_ranking_task` return without starting anything when one is live; the in-flight task continues and the next run re-ranks anything stale. Cancel-and-restart was rejected as cancellation-safety complexity for no measured gain. Implemented by plan **05-02**, Task 3.
 
 4. **Startup recovery for an interrupted ranking task.**
-   - Recommendation: none beyond "the next run supersedes". Do not build a persistent job queue for a single-user app (YAGNI). Surface `N unscored` on the queue so the state is legible.
+   - **RESOLVED: none beyond "the next run supersedes".** No persistent job queue is built (YAGNI for a single-user app). An interrupted task leaves a NULL `runs.ranked_count` and some unscored listings; those render as "not ranked" on the queue and on the detail page, which is the legibility the recommendation asked for. Implemented by plan **05-02**, Task 3 (and rendered by plans **05-03**/**05-04**).
 
-5. **Does `/runs` show `ranked_count`?** The column exists (`models.py:294`) and `RunSummary`/`run_detail` are the natural renderers (`app/db/repositories/run_repo.py`). Low-risk; decide with the "ranked X of Y" surface (A5).
+5. **Does `/runs` show `ranked_count`?**
+   - **RESOLVED: no.** The column is written by the ranking task but is deliberately **not** rendered on `/runs`; `run_repo` and `runs.html` are untouched by this phase. The "ranked X of Y — cap reached" surface lives on the **queue page** as a `#ranking-strip` paragraph, computed from the latest run's `ranked_count`, the queue's own total, and `llm_call_repo.rank_cap_reason_for_run` — which is also why only that second read backs the surface while `rank_calls_since` exists for enforcement. Implemented by plan **05-04**, Task 2.
 
 ## Environment Availability
 
