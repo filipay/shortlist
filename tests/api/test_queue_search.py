@@ -159,13 +159,16 @@ async def test_identical_search_requests_return_an_identical_row_order(
     assert _ids(one.text) == [third, second, first], "the unique tie-break is id DESC"
 
 
-async def test_no_query_keeps_the_phase_one_order(
+async def test_sort_recent_keeps_the_phase_one_order(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """`first_seen_at DESC, id DESC` — NOT id order.
 
-    The second listing is seeded with an EARLIER `first_seen_at` than the first, so
-    an implementation that fell back to `id DESC` alone would fail this.
+    The Phase-1 ordering is no longer the queue's default (plan 05-04 installs the
+    read-time score order); it remains SELECTABLE via `?sort=recent`, and this test
+    proves that path still orders by `first_seen_at`, not by id. The second listing is
+    seeded with an EARLIER `first_seen_at` than the first, so an implementation that
+    fell back to `id DESC` alone would fail this.
     """
     await _register_sources(session_factory, "linkedin")
     newer = await _seed(
@@ -185,7 +188,7 @@ async def test_no_query_keeps_the_phase_one_order(
         first_seen=DAY,
     )
 
-    response = await client.get("/queue/list")
+    response = await client.get("/queue/list", params={"sort": "recent"})
 
     assert response.status_code == 200
     assert _ids(response.text) == [newer, older]

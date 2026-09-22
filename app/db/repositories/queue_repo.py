@@ -23,6 +23,20 @@ set; `has_more` is `offset + len(rows) < total`. Keyset paging on `(score, id)` 
 `(first_seen_at, id)` is the documented upgrade path, not needed for one person's
 queue. Any predicate change resets `offset` to 0 (see `QueueQuery.query_string`).
 
+**The score ordering is a Python-side sort over a bounded scan** (D-97 / D-100).
+The default `sort="score"` selects every matching id ordered `first_seen_at DESC, id
+DESC`, bounded by `SCORE_SORT_SCAN_LIMIT`, enriches them, computes each row's
+read-time total with `rubric.weighted_total` under the weights CURRENTLY in force,
+applies the `min_score` threshold, sorts by total descending with unscored rows last
+and a deterministic `(confidence tier, id DESC)` tie-break, and slices the page. On
+this path `total` is the count of rows that SURVIVE THE THRESHOLD (unscored rows are
+always kept and always counted, D-98), not a SQL `COUNT(*)`. The `sort="recent"` path
+is today's SQL `LIMIT`/`OFFSET` code, unchanged, so the previous ordering is one query
+parameter away. The MATCH predicate is a FILTER and the sort is an ORDERING: with a
+query set, `sort="score"` still selects through the bound `:match_expression` and then
+orders the matched set by the read-time total, so the score ordering wins over `bm25`
+without removing it from the FTS branch.
+
 **Semantics of an exclusion.** `listing_exclusions` is a per-run observation (D-36).
 A listing excluded by an *older* run but not by the latest is **not** excluded: the
 default view shows it again, and the `Show excluded` toggle shows the latest run's
@@ -85,6 +99,24 @@ from app.domain.search_query import build_match_expression
 #: `Settings.queue_page_size`, so this is a defensive default, never the live knob.
 PAGE_LIMIT_DEFAULT = 25
 
+#: The score path's bounded scan (T-05-20). The read-time total cannot be sorted in
+#: SQL: the denominator is dynamic (absent factors re-normalise, D-85) and the total
+#: is derived in Python from the stored sub-scores under the weights in force (D-100),
+#: so the ordering is a Python-side sort. To keep that bounded, the score path scans
+#: at most this many matching ids before sorting.
+#:
+#: ponytail: a personal-scale ceiling. If a queue ever approaches it, materialise the
+#: read-time total (a column or a SQL expression over a fixed denominator) and sort in
+#: SQL — do NOT raise this number and keep scanning.
+SCORE_SORT_SCAN_LIMIT = 5000
+
+#: Ordering rank for the score sort's confidence-tier tie-break: a higher tier sorts
+#: first among equal totals (D-85 makes the tier the "how much evidence" signal). A
+#: row with no tier (unscored) ranks last within its group, but the group itself is
+#: already last.
+_TIER_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
+_TIER_RANK_UNKNOWN = 3
+
 #: BM25 per-column weights, in the FTS column order `(title, company_norm,
 #: description)`: a title hit outranks a company hit which outranks a description
 #: hit, so the top of the queue is where the *name* matched. These are ranking
@@ -128,6 +160,13 @@ class QueueQuery:
     scope_search_id: int | None = None
     offset: int = 0
     limit: int = PAGE_LIMIT_DEFAULT
+    #: The ordering: `"score"` (D-97's default — the read-time total descending with
+    #: unscored listings last) or `"recent"` (the retained `first_seen_at DESC, id
+    #: DESC` Phase-1 order). Any other value is treated as `"score"` by the route.
+    sort: str = "score"
+    #: The view-only minimum-score threshold (D-98). `None` means no threshold; an
+    #: unscored listing is ALWAYS kept because its total is `None`, never 0.0.
+    min_score: float | None = None
 
     def query_string(self, *, offset: int | None = None) -> str:
         """The predicate set as a URL query string, optionally with an `offset`.
@@ -135,6 +174,9 @@ class QueueQuery:
         A predicate change is emitted with no `offset`, which is the reset: page N
         of a *different* filtered set is meaningless, so the toggle links restart at
         the first page and only the Load-more control passes the current offset on.
+        The default sort is omitted from the URL so the common case stays short; a
+        non-default sort or a threshold rides along so a swap or a Load-more keeps
+        the ordering and the filter the user is looking at.
         """
         params: dict[str, str] = {}
         if self.q:
@@ -147,6 +189,10 @@ class QueueQuery:
             params["saved"] = "1"
         if self.scope_search_id is not None:
             params["scope"] = str(self.scope_search_id)
+        if self.sort and self.sort != "score":
+            params["sort"] = self.sort
+        if self.min_score is not None:
+            params["min_score"] = f"{float(self.min_score):g}"
         if offset:
             params["offset"] = str(int(offset))
         return urlencode(params)
@@ -321,37 +367,29 @@ def _row_flags(
 # --- the read ------------------------------------------------------------------
 
 
-async def read_queue(
+def _score_sort_key(row: QueueRow) -> tuple[int, float, int, int]:
+    """The score path's ordering key: total DESC, unscored last, deterministic.
+
+    Unscored rows sort after every scored row (the leading `0`/`1` flag) and are never
+    given a synthetic 0.0 (UI-01). Within a group the keys are `-total` (descending),
+    the confidence-tier rank (a higher tier first) and finally `-id` (id DESC), so two
+    identical requests return the same page.
+    """
+    tier = _TIER_RANK.get(row.confidence_tier or "", _TIER_RANK_UNKNOWN)
+    if row.total_score is None:
+        return (1, 0.0, tier, -row.id)
+    return (0, -float(row.total_score), tier, -row.id)
+
+
+async def _sql_page_ids(
     session: AsyncSession,
     *,
-    query: QueueQuery,
-    now: datetime,
-    stale_after_days: int,
-    watermark: datetime | None,
-) -> QueuePage:
-    """One page of the queue, fully enriched. Never commits (the caller owns it)."""
-    offset = max(0, int(query.offset))
-    limit = max(1, int(query.limit or PAGE_LIMIT_DEFAULT))
-    expression = build_match_expression(query.q)
-
-    predicates: list[ColumnElement[bool]] = [_not_absorbed_twin()]
-    # The save/hide predicates come from `event_repo`, which owns the projection: their
-    # rules are `save`/`unsave` and `hide`/`unhide` restricted to the LATEST event of
-    # the pair, so a `view` after a `save` cannot make the listing look unsaved. Building
-    # them here from a bare "latest event type" was plan 02-07's placeholder and was
-    # wrong for exactly that reason.
-    #
-    # A hide composes with `_not_absorbed_twin` above rather than replacing it: an
-    # absorbed twin is out of the queue whether or not anyone also hid it.
-    if not query.hidden:
-        predicates.append(~event_repo.hidden_predicate())
-    if query.saved:
-        predicates.append(event_repo.saved_predicate())
-    if query.scope_search_id is not None:
-        predicates.append(_in_scope(int(query.scope_search_id)))
-    if not query.excluded:
-        predicates.append(~_excluded_by_latest_run())
-
+    expression: str | None,
+    predicates: Sequence[ColumnElement[bool]],
+    limit: int,
+    offset: int,
+) -> tuple[list[int], int]:
+    """The `recent` path: today's SQL `LIMIT`/`OFFSET` id selection, unchanged."""
     params: dict[str, object] = {}
     if expression is not None:
         # The FTS branch. `select_from` is the virtual table joined to `listings`
@@ -380,24 +418,138 @@ async def read_queue(
 
     ids = [int(value) for value in (await session.execute(id_stmt, params)).scalars().all()]
     total = int(await session.scalar(count_stmt, params) or 0)
+    return ids, total
 
-    rows = await _enrich(
+
+async def _score_candidate_ids(
+    session: AsyncSession,
+    *,
+    expression: str | None,
+    predicates: Sequence[ColumnElement[bool]],
+) -> list[int]:
+    """Every matching id for the score path, newest-first, bounded by the scan limit.
+
+    The MATCH predicate is applied here exactly as the `recent` path applies it: the
+    ordering is what differs. `first_seen_at DESC, id DESC` is the pre-sort scan order
+    (stable and deterministic); `_score_sort_key` re-sorts the enriched rows.
+    """
+    params: dict[str, object] = {}
+    if expression is not None:
+        source = _LISTING_FTS.join(Listing, Listing.id == _LISTING_FTS.c.rowid)
+        stmt = (
+            select(Listing.id)
+            .select_from(source)
+            .where(_MATCH, *predicates)
+            .order_by(Listing.first_seen_at.desc(), Listing.id.desc())
+            .limit(SCORE_SORT_SCAN_LIMIT)
+        )
+        params["match_expression"] = expression
+    else:
+        stmt = (
+            select(Listing.id)
+            .where(*predicates)
+            .order_by(Listing.first_seen_at.desc(), Listing.id.desc())
+            .limit(SCORE_SORT_SCAN_LIMIT)
+        )
+    return [int(value) for value in (await session.execute(stmt, params)).scalars().all()]
+
+
+async def read_queue(
+    session: AsyncSession,
+    *,
+    query: QueueQuery,
+    now: datetime,
+    stale_after_days: int,
+    watermark: datetime | None,
+) -> QueuePage:
+    """One page of the queue, fully enriched. Never commits (the caller owns it).
+
+    `sort="score"` (the default) orders by the read-time total with unscored rows
+    last; `sort="recent"` is the retained SQL `first_seen_at DESC, id DESC` path.
+    """
+    offset = max(0, int(query.offset))
+    limit = max(1, int(query.limit or PAGE_LIMIT_DEFAULT))
+    expression = build_match_expression(query.q)
+
+    predicates: list[ColumnElement[bool]] = [_not_absorbed_twin()]
+    # The save/hide predicates come from `event_repo`, which owns the projection: their
+    # rules are `save`/`unsave` and `hide`/`unhide` restricted to the LATEST event of
+    # the pair, so a `view` after a `save` cannot make the listing look unsaved. Building
+    # them here from a bare "latest event type" was plan 02-07's placeholder and was
+    # wrong for exactly that reason.
+    #
+    # A hide composes with `_not_absorbed_twin` above rather than replacing it: an
+    # absorbed twin is out of the queue whether or not anyone also hid it.
+    if not query.hidden:
+        predicates.append(~event_repo.hidden_predicate())
+    if query.saved:
+        predicates.append(event_repo.saved_predicate())
+    if query.scope_search_id is not None:
+        predicates.append(_in_scope(int(query.scope_search_id)))
+    if not query.excluded:
+        predicates.append(~_excluded_by_latest_run())
+
+    rule_counts = await _page_rule_counts(session, query=query)
+
+    if query.sort == "recent":
+        ids, total = await _sql_page_ids(
+            session,
+            expression=expression,
+            predicates=predicates,
+            limit=limit,
+            offset=offset,
+        )
+        rows = await _enrich(
+            session,
+            ids,
+            query=query,
+            now=now,
+            stale_after_days=stale_after_days,
+            watermark=watermark,
+        )
+        return QueuePage(
+            rows=tuple(rows),
+            total=total,
+            offset=offset,
+            limit=limit,
+            has_more=(offset + len(rows)) < total,
+            query=query,
+            rule_counts=rule_counts,
+        )
+
+    # The score path (D-97/D-100): the total is computed in Python, so the ordering is
+    # a Python-side sort over a bounded scan.
+    candidate_ids = await _score_candidate_ids(
+        session, expression=expression, predicates=predicates
+    )
+    enriched = await _enrich(
         session,
-        ids,
+        candidate_ids,
         query=query,
         now=now,
         stale_after_days=stale_after_days,
         watermark=watermark,
     )
-
+    if query.min_score is not None:
+        # D-98: a view-only threshold. An unscored row (total None) is ALWAYS kept —
+        # a listing with no score is not a listing with a low score.
+        threshold = float(query.min_score)
+        enriched = [
+            row
+            for row in enriched
+            if row.total_score is None or row.total_score >= threshold
+        ]
+    enriched.sort(key=_score_sort_key)
+    total = len(enriched)
+    page_rows = enriched[offset : offset + limit]
     return QueuePage(
-        rows=tuple(rows),
+        rows=tuple(page_rows),
         total=total,
         offset=offset,
         limit=limit,
-        has_more=(offset + len(rows)) < total,
+        has_more=(offset + len(page_rows)) < total,
         query=query,
-        rule_counts=await _page_rule_counts(session, query=query),
+        rule_counts=rule_counts,
     )
 
 
@@ -640,6 +792,7 @@ __all__ = [
     "BM25_DESCRIPTION_WEIGHT",
     "BM25_TITLE_WEIGHT",
     "PAGE_LIMIT_DEFAULT",
+    "SCORE_SORT_SCAN_LIMIT",
     "QueuePage",
     "QueueQuery",
     "QueueRow",

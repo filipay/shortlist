@@ -102,13 +102,32 @@ def _int_or_none(value: str | None) -> int | None:
         return None
 
 
+#: The queue's allowed orderings. Anything else degrades to the default score order.
+QUEUE_SORTS = ("score", "recent")
+
+
+def _float_or_none(value: str | None) -> float | None:
+    """A tolerant float parse for `min_score`: junk degrades to `None`, never a 500."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_queue_query(params: Mapping[str, str]) -> QueueQuery:
     """The query string as a `QueueQuery`.
 
     `limit` comes from `Settings.queue_page_size` and **never** from the request: a
     client-supplied page size is a self-inflicted deep scan (T-02-28). `offset` is
     clamped at zero, so a negative or junk value lands on the first page.
+
+    `sort` is restricted to the allow-list (`score`/`recent`) and `min_score` is parsed
+    tolerantly — an unrecognised sort falls back to the score order and a non-numeric
+    threshold degrades to `None`, so neither can produce a 500 (T-05-19).
     """
+    sort = (params.get("sort") or "").strip()
     return QueueQuery(
         q=(params.get("q") or "").strip() or None,
         excluded=_flag(params.get("excluded")),
@@ -117,6 +136,8 @@ def parse_queue_query(params: Mapping[str, str]) -> QueueQuery:
         scope_search_id=_int_or_none(params.get("scope")),
         offset=max(0, _int_or_none(params.get("offset")) or 0),
         limit=settings.queue_page_size,
+        sort=sort if sort in QUEUE_SORTS else "score",
+        min_score=_float_or_none(params.get("min_score")),
     )
 
 
