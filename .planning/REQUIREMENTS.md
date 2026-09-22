@@ -47,14 +47,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Ranking (RANK)
 
-- [x] **RANK-01**: User gets each surviving listing scored against their CV using named, inspectable factors
-- [x] **RANK-02**: Every score stores its per-factor sub-scores, not just a single total
-- [x] **RANK-03**: The total score is computed in code from stored sub-scores and weights
-- [x] **RANK-04**: User can adjust factor weights and see rankings re-derive
-- [x] **RANK-05**: Each ranked listing shows a rationale grounded in stored evidence
-- [x] **RANK-06**: User sees a requirement-by-requirement fit breakdown with named gaps on the job detail view
-- [x] **RANK-07**: Scoring is absolute per listing and stable across repeated runs (never relative ranking of a batch)
-- [x] **RANK-08**: LLM spend is capped per run and per day, enforced before the call is made
+- [ ] **RANK-01**: User gets each surviving listing scored against their CV using named, inspectable factors
+- [ ] **RANK-02**: Every score stores its per-factor sub-scores, not just a single total
+- [ ] **RANK-03**: The total score is computed in code from stored sub-scores and weights
+- [ ] **RANK-04**: User can adjust factor weights and see rankings re-derive
+- [ ] **RANK-05**: Each ranked listing shows a rationale grounded in stored evidence
+- [ ] **RANK-06**: User sees a requirement-by-requirement fit breakdown with named gaps on the job detail view
+- [ ] **RANK-07**: Scoring is absolute per listing and stable across repeated runs (never relative ranking of a batch)
+- [ ] **RANK-08**: LLM spend is capped per run and per day, enforced before the call is made
 
 ### CV Pipeline (CV)
 
@@ -97,9 +97,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Web UI (UI)
 
-- [x] **UI-01**: User can browse ranked jobs in a list
-- [x] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
-- [x] **UI-03**: User can edit search criteria and ranking weights
+- [ ] **UI-01**: User can browse ranked jobs in a list
+- [ ] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
+- [ ] **UI-03**: User can edit search criteria and ranking weights
 - [ ] **UI-04**: User can view and manage the application tracker
 - [ ] **UI-05**: User can preview and download the tailored CV PDF
 - [ ] **UI-06**: The UI is usable from both a laptop and a phone browser
@@ -199,14 +199,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FILT-02 | Phase 2 | Complete |
 | FILT-03 | Phase 2 | Complete |
 | FILT-04 | Phase 2 | Complete |
-| RANK-01 | Phase 5 | Complete |
-| RANK-02 | Phase 5 | Complete |
-| RANK-03 | Phase 5 | Complete |
-| RANK-04 | Phase 5 | Complete |
-| RANK-05 | Phase 5 | Complete |
-| RANK-06 | Phase 5 | Complete |
-| RANK-07 | Phase 5 | Complete |
-| RANK-08 | Phase 5 | Complete |
+| RANK-01 | Phase 5 | Gaps Found |
+| RANK-02 | Phase 5 | Gaps Found |
+| RANK-03 | Phase 5 | Gaps Found |
+| RANK-04 | Phase 5 | Gaps Found |
+| RANK-05 | Phase 5 | Gaps Found |
+| RANK-06 | Phase 5 | Gaps Found |
+| RANK-07 | Phase 5 | Gaps Found |
+| RANK-08 | Phase 5 | Gaps Found |
 | CV-01 | Phase 4 | Complete |
 | CV-02 | Phase 4 | Complete |
 | CV-03 | Phase 4 | Complete |
@@ -234,9 +234,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUN-05 | Phase 8 | Pending |
 | RUN-06 | Phase 8 | Pending |
 | RUN-07 | Phase 8 | Pending |
-| UI-01 | Phase 5 | Complete |
-| UI-02 | Phase 5 | Complete |
-| UI-03 | Phase 5 | Complete |
+| UI-01 | Phase 5 | Gaps Found |
+| UI-02 | Phase 5 | Gaps Found |
+| UI-03 | Phase 5 | Gaps Found |
 | UI-04 | Phase 7 | Pending |
 | UI-05 | Phase 6 | Pending |
 | UI-06 | Phase 8 | Pending |
