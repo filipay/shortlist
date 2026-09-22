@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
-status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-09-22T12:52:18.212Z"
+status: verifying
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-09-22T13:25:56.912Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 05 execution started
-state_head: 2e6a293c42538fca171a07b98edebbd6402fdf85
+state_head: e5140834ddd3487f5a002eda4c31ff9867a0661e
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 37
-  completed_plans: 36
+  completed_plans: 37
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-22 — Phase 05 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P01 | 28 min | 3 tasks | 17 files |
 | Phase 05 P02 | 20 min | 3 tasks | 12 files |
 | Phase 05 P03 | 10 min | 3 tasks | 8 files |
+| Phase 05 P04 | 26 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,10 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: ranking is optional via Settings.ranking_enabled plus the fact-store absent/unreadable state; start-or-skip single-flight, no persistent job queue
 - [Phase 05]: Phase 05: the detail page reuses queue_repo.read_row so it cannot drift from the queue row, and never recomputes the total in the route
 - [Phase 05]: Phase 05: an unscored listing renders a not-yet-ranked state with no score region; a dropped factor renders 'no data', never zero
+- [Phase 05]: Phase 05: the queue's default order is the read-time total descending with unscored last; sort=recent retains the phase-one order; the score sort wins over bm25 when q is set
+- [Phase 05]: Phase 05: ?min_score= is a view-only threshold that stores nothing and always keeps an unscored listing visible (D-98)
+- [Phase 05]: Phase 05: the weights editor writes one ranking_config document and re-derives the queue with zero llm_calls rows (success criterion 3)
+- [Phase 05]: Phase 05: the score ordering is a Python-side sort over a bounded scan; the upgrade path is a materialised total column
 
 ### Pending Todos
 
@@ -123,6 +128,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T12:52:17.437Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-09-22T13:25:55.628Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None

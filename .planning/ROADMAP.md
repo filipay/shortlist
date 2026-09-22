@@ -211,7 +211,7 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans executed
 **UI hint**: yes
 
 Plans:
@@ -229,7 +229,7 @@ Plans:
 
 **Wave 4** *(blocked on Waves 1–3 completion)*
 
-- [ ] 05-04-PLAN.md — Weighted queue ordering (read-time total, unscored last), the minimum-score view filter, the weights editor, and the ranked-X-of-Y strip
+- [x] 05-04-PLAN.md — Weighted queue ordering (read-time total, unscored last), the minimum-score view filter, the weights editor, and the ranked-X-of-Y strip
 
 **Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
@@ -297,7 +297,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
-| 5. Ranking — CORE VALUE | 3/4 | In Progress|  |
+| 5. Ranking — CORE VALUE | 4/4 | In Progress|  |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
