@@ -169,7 +169,7 @@ Each task was committed atomically:
 2. **Task 2: The queue controls, the unranked badge, and the ranked X of Y strip** - `278c41c` (feat)
 3. **Task 3: The weights editor — save six numbers, re-derive with zero LLM calls** - `e514083` (feat)
 
-**Plan metadata:** `PENDING` (docs: complete plan)
+**Plan metadata:** `ceae086` (docs: complete weighted queue and weights editor plan)
 
 ## Files Created/Modified
 
