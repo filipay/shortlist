@@ -161,7 +161,7 @@ Each task was committed atomically:
 2. **Task 2: The rolling-24h ledger read, the cap-reason read, and reserve-then-call** - `bad11c9` (feat)
 3. **Task 3: The optional posture, the single-flight lifecycle, and the D-102 guard rewrites** - `22948ac` (feat)
 
-**Plan metadata:** `PENDING` (docs: complete plan)
+**Plan metadata:** `aca492d` (docs: complete spend caps and detached ranking lifecycle plan)
 
 ## Files Created/Modified
 
