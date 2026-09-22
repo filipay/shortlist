@@ -193,6 +193,10 @@ async def test_a_stored_rule_rejects_a_listing_and_the_run_records_why(
     assert len(exclusions) == 1, "the salary_floor rule must not fire on an unknown salary"
 
     # --- the run reports the exclusion, and made no model call ----------------
+    # D-102: this zero is the D-94 optional-ranking posture (no fact store in the
+    # hermetic lane), NOT "the pipeline wires no LLM caller". A full run reaches the
+    # detached ranking task; ranking is optional and skips, so it writes zero
+    # `llm_calls` rows. Do not restore D-49's wording here.
     assert run.filtered_count == 1
     assert await _count(session_factory, LlmCall) == 0
 

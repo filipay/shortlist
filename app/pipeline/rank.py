@@ -25,10 +25,14 @@ constant with no interpolation; listing text and CV prose travel only in ``parts
 ``permission`` ruleset.
 
 **Optional, never a gate** (D-94 / D-88): the ranking task returns immediately,
-writing nothing, when the configured fact store is absent or unreadable. It is
-started detached so the run completes normally first and the queue stays browseable
-while scores land. No retry loop of its own — bounded retries stay inside
-``app/llm`` via ``format.retryCount`` (D-95).
+writing nothing, when ranking is disabled in ``Settings``, when the configured fact
+store is absent, or when the fact store cannot be loaded. It is started detached so
+the run completes normally first and the queue stays browseable while scores land.
+At most one ranking task runs at a time (start-or-skip, §T-05-11); **startup
+recovery is deliberately absent** — an interrupted ranking task leaves a NULL
+``runs.ranked_count`` and some unscored listings, and the next run supersedes it, so
+no persistent job queue is built. No retry loop of its own — bounded retries stay
+inside ``app/llm`` via ``format.retryCount`` (D-95).
 
 The market-salary data source for the ``compensation`` factor is a v2 / RANK-11
 item (D-90): the factor is scored ONLY from the listing's own ingested salary
@@ -44,10 +48,12 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
+from app.db.models import Run, Score
 from app.db.repositories import llm_call_repo, ranking_config_repo, score_repo
 from app.db.repositories.exclusion_repo import rule_counts_for_listings
 from app.db.repositories.search_repo import (
@@ -362,6 +368,12 @@ async def run_ranking(
     """
     moment = now or datetime.now(UTC)
 
+    # D-94's first skip condition and the cheapest: the operator off switch is
+    # checked BEFORE the filesystem or the backend is touched, so it costs nothing.
+    if not settings.ranking_enabled:
+        log.info("pipeline.rank_skipped", run_id=run_id, reason="ranking_disabled")
+        return
+
     if facts is None:
         try:
             facts = load_facts(Path(settings.cv_dir) / CV_FILENAME)
@@ -457,11 +469,39 @@ async def run_ranking(
         refused=refused,
     )
 
+    # The ranking task owns the run's LLM accounting (D-89). `ranked_count` is
+    # progress-of-a-detached-task, NOT a scheduled total: it reports how many
+    # listings actually have a score row at the moment it is written, and a later
+    # run supersedes it. `_finish` deliberately never touches `ranked_count`.
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        if run is None:  # pragma: no cover — the run row was created by the caller
+            return
+        scored = int(
+            await session.scalar(
+                select(func.count()).select_from(Score).where(Score.run_id == run_id)
+            )
+            or 0
+        )
+        calls, tokens = await llm_call_repo.llm_totals_for_run(session, run_id=run_id)
+        run.ranked_count = scored
+        run.llm_calls = calls
+        run.llm_tokens = tokens
+        await session.commit()
+
 
 
 #: Strong references to in-flight ranking tasks, so the event loop cannot garbage
 #: collect a fire-and-forget task before it finishes (mirrors `app/api/runs.py`).
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+#: The single in-flight ranking task (single-flight, T-05-11). A run whose ranking
+#: would overlap an in-flight task is SKIPPED, not queued — the in-flight task
+#: continues and the later run supersedes it on the next pass.
+#:
+#: ponytail: start-or-skip. If overlapping ranking proves real, upgrade to a queue of
+#: pending run ids; no persistent job store until then.
+_RANKING_TASK: asyncio.Task | None = None
 
 
 def start_ranking_task(
@@ -473,16 +513,23 @@ def start_ranking_task(
 ) -> None:
     """Schedule the ranking pass detached from the run (D-88).
 
-    The backend is threaded explicitly: without it a caller's override (the default
-    test lane's offline stub) would never reach the task and it would construct a
-    real backend against the configured host. `run_pipeline` reaches this inside
-    its best-effort shape, so a failure to start is recorded and the run still
-    finishes.
+    Start-or-skip: while a ranking task is live a new run's ranking is skipped and
+    the in-flight task continues. The backend is threaded explicitly — without it a
+    caller's override (the default test lane's offline stub) would never reach the
+    task and it would construct a real backend against the configured host.
+    `run_pipeline` reaches this inside its best-effort shape, so a failure to start
+    is recorded and the run still finishes.
     """
+    global _RANKING_TASK
+    if _RANKING_TASK is not None and not _RANKING_TASK.done():
+        log.info("pipeline.rank_skipped", run_id=run_id, reason="ranking_in_flight")
+        return
+
     backend = llm if llm is not None else get_llm_backend()
     task = asyncio.create_task(
         run_ranking(session_factory, run_id=run_id, llm=backend, search_id=search_id)
     )
+    _RANKING_TASK = task
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
 

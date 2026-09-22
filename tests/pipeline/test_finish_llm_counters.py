@@ -1,9 +1,15 @@
-"""D-49 / Phase-5 seam — `_finish` can record the LLM counters, with no caller.
+"""`_finish`'s LLM-counter seam, and the D-94 optional-ranking posture.
 
-`runs.llm_calls` and `runs.llm_tokens` exist and nothing writes them. Phase 3 must
-NOT make the pipeline call an LLM (D-49), so the honest deliverable is the WRITER
-SEAM plus a direct unit test: Phase 5's ranking caller will pass the totals
-`llm_call_repo.llm_totals_for_run` returns.
+`runs.llm_calls` and `runs.llm_tokens` exist, `_finish` can record them, and the
+ranking task (plan 05-02) is the caller that supplies the totals
+`llm_call_repo.llm_totals_for_run` returns. `ranked_count` is owned by the ranking
+task (D-89), never by `_finish`.
+
+**D-102 supersedes D-49.** D-49's "no automatic per-run LLM stage" was scoped to
+Phase 3 and named Phase 5 as ranking's owner, so a full `run_pipeline` now reaches
+the detached ranking task. The zero-`llm_calls` result in the hermetic lane is the
+D-94 SKIP POSTURE (ranking is optional — no fact store here), not the absence of a
+caller. The guard below says so explicitly.
 
 Two properties matter and are both pinned here:
 
@@ -15,15 +21,18 @@ Two properties matter and are both pinned here:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import settings
 from app.db.models import LlmCall, Run, Search, Source
 from app.pipeline.run import _finish, run_pipeline
 from tests.pipeline.test_filter_stage import OneListingAdapter
 from tests.pipeline.test_injection_finding import _raw
+from tests.pipeline.test_rank_optional import drain_ranking_tasks
 
 NOW = datetime(2026, 9, 1, tzinfo=UTC)
 
@@ -129,13 +138,36 @@ async def test_the_preservation_claim_can_actually_fail(
     assert run.llm_calls is None
 
 
-# --- D-49 still holds ----------------------------------------------------------
+# --- the D-94 optional posture (D-102 rewrite) ---------------------------------
 
 
 async def test_a_pipeline_run_writes_zero_llm_calls(
     session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The same guard as tests/pipeline/test_filter_stage.py:197, through this harness."""
+    """The zero count is the D-94 posture, not "no LLM caller is wired".
+
+    The run reaches the ranking task; the task finds no fact store and returns
+    early; the result is zero `llm_calls` rows with no `purpose="rank"` row.
+    Asserting the task entry point was REACHED is what distinguishes this from the
+    retired D-49 wording — a future reader must not restore "the pipeline makes no
+    model call" as the reason.
+    """
+    from app.pipeline import rank as rank_module
+
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))  # no cv.yaml here
+    monkeypatch.setattr(rank_module, "_RANKING_TASK", None)
+
+    reached: list[int] = []
+    real_run_ranking = rank_module.run_ranking
+
+    async def _spy(*args: object, **kwargs: object) -> None:
+        reached.append(1)
+        await real_run_ranking(*args, **kwargs)
+
+    monkeypatch.setattr(rank_module, "run_ranking", _spy)
+
     async with session_factory() as session:
         session.add(Source(name="linkedin", display_name="Linkedin"))
         session.add(
@@ -154,12 +186,23 @@ async def test_a_pipeline_run_writes_zero_llm_calls(
     adapter = OneListingAdapter("linkedin", _raw(description="Build the thing."))
 
     await run_pipeline("manual", None, session_factory, adapters=[adapter])
+    await drain_ranking_tasks()
 
     async with session_factory() as session:
         calls = int(
             await session.scalar(select(func.count()).select_from(LlmCall)) or 0
         )
-    assert calls == 0, "Phase 3 must not wire an LLM caller into the pipeline (D-49)"
+        rank_rows = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(LlmCall)
+                .where(LlmCall.purpose == "rank")
+            )
+            or 0
+        )
+    assert calls == 0
+    assert rank_rows == 0, "the D-94 skip held: the task reached and returned early"
+    assert reached, "the ranking task entry point was reached"
 
 
 if __name__ == "__main__":  # pragma: no cover

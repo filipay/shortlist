@@ -23,6 +23,7 @@ from app.db.models import (
     ListingExclusion,
     LlmCall,
     QueueState,
+    RankingConfig,
     Run,
     Score,
     Search,
@@ -119,6 +120,11 @@ async def _seed_corpus(
     async with session_factory() as session:
         session.add(CvVersion(label="Base", created_at=NOW))
         session.add(QueueState(updated_at=NOW))
+        # The global ranking weights document is a KEPT table (D-99): a corpus reset
+        # must not discard the user's own configuration, so it gets a row here too.
+        session.add(
+            RankingConfig(id=1, weights_json={"evidence": 1.0}, updated_at=NOW)
+        )
         session.add(
             Score(listing_id=first, run_id=run_id, criteria_version=1, created_at=NOW)
         )

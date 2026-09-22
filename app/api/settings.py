@@ -99,8 +99,15 @@ RESET_DELETE_ORDER: tuple[str, ...] = (
     "companies",
 )
 
-#: Shown on the page as kept.
-RESET_KEPT_TABLES: tuple[str, ...] = ("searches", "filter_rules", "sources")
+#: Shown on the page as kept. `ranking_config` is the global ranking-weights
+#: document (D-99) — the user's own configuration, like `searches` and `filter_rules`,
+#: so a corpus reset must not discard the weights.
+RESET_KEPT_TABLES: tuple[str, ...] = (
+    "searches",
+    "filter_rules",
+    "sources",
+    "ranking_config",
+)
 
 #: Tables that reference `listings` and are NOT deleted: a reset refuses while any of
 #: them holds a row, so a later phase fails loudly instead of corrupting tracked work.
