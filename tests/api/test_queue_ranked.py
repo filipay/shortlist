@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Run, Source
-from app.db.repositories import score_repo
+from app.db.repositories import run_repo, score_repo
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
@@ -357,3 +357,40 @@ async def test_ranking_strip_without_candidate_count_renders_no_ratio(
 
     assert "Ranked 5" in body, "the numerator still renders without a denominator"
     assert re.search(r"Ranked 5 of", body) is None, "no ratio against an absent population"
+
+
+async def test_ranking_strip_with_zero_candidate_count_renders_no_ratio(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """UI-01 empty: a persisted zero population is not a denominator.
+
+    This is the exact state `05-VERIFICATION.md` reproduced: a run with
+    `ranked_count=5` paired with `reason_counts_json['survivors'] == 0` must render
+    the numerator alone, never the false ratio `Ranked 5 of 0`.
+    """
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_coverage(session_factory, ranked_count=5, survivors=0)
+
+    body = (await client.get("/")).text
+
+    assert "Ranked 5" in body, "the numerator still renders"
+    assert "Ranked 5 of 0" not in body, "zero is not a denominator"
+    assert re.search(r"Ranked 5 of", body) is None, "no ratio against a zero population"
+
+
+async def test_run_summary_has_no_candidate_count_for_a_non_positive_survivors(
+    session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The read boundary treats a non-positive persisted survivor count as unusable.
+
+    Pinned independently of the template so every producer of a zero/negative count
+    (fabricated failure path, hand-edited row, older build) degrades to no ratio.
+    """
+    await _seed_run_with_coverage(session_factory, ranked_count=5, survivors=0)
+    await _seed_run_with_coverage(session_factory, ranked_count=5, survivors=-1)
+
+    async with session_factory() as session:
+        summaries = await run_repo.list_runs(session)
+
+    assert summaries and all(summary.candidate_count is None for summary in summaries)
