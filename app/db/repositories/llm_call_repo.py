@@ -27,10 +27,10 @@ default instead of raising, because a page must still render.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import LlmCall
@@ -42,6 +42,14 @@ PURPOSES: frozenset[str] = frozenset({"rank", "narrate", "tailor", "extract", "p
 
 #: Mirrors `ck_llm_calls_status` (migration 0001).
 STATUSES: frozenset[str] = frozenset({"ok", "invalid", "timeout", "error"})
+
+#: The marker every cap-refusal row's `error` text begins with (D-93). `llm_calls`
+#: has no `error_kind` column, so the cap name is encoded in the text instead —
+#: one vocabulary, minted here.
+BUDGET_EXCEEDED_MARKER = "budget_exceeded"
+
+#: The rolling window the per-day ranking cap is measured over (D-91's "per day").
+RANK_CALL_WINDOW = timedelta(hours=24)
 
 
 @dataclass(frozen=True)
@@ -205,11 +213,70 @@ async def llm_totals_for_run(session: AsyncSession, *, run_id: int) -> tuple[int
     return len(rows), total
 
 
+def _naive(value: datetime) -> datetime:
+    """A tz-naive copy — SQLite stores and returns naive datetimes."""
+    return value.replace(tzinfo=None) if value.tzinfo else value
+
+
+async def rank_calls_since(session: AsyncSession, *, now: datetime | None = None) -> int:
+    """The number of `purpose="rank"` calls in the trailing 24 hours (D-91).
+
+    One aggregate read over the `llm_calls` ledger: the count of `rank` rows whose
+    `created_at` is at or after `now - 24h`. The cutoff is built **naive** because
+    SQLite stores naive datetimes — a tz-aware cutoff compared against a naive
+    column would silently match nothing.
+
+    `llm_calls.created_at` is NOT indexed, so this is a full table scan. That is
+    accepted deliberately at this row count (T-05-08): do **not** add an index
+    migration for it, and do not build a second aggregate elsewhere — this is the
+    per-day cap's single source. Never commits, never raises.
+    """
+    moment = now if now is not None else datetime.now(UTC)
+    cutoff = _naive(moment) - RANK_CALL_WINDOW
+    count = await session.scalar(
+        select(func.count())
+        .select_from(LlmCall)
+        .where(LlmCall.purpose == "rank", LlmCall.created_at >= cutoff)
+    )
+    return int(count or 0)
+
+
+async def rank_cap_reason_for_run(session: AsyncSession, *, run_id: int) -> str | None:
+    """The cap name that refused this run's ranking, or `None` when none did.
+
+    A refusal row is a `purpose="rank"` row for this run with `status="error"` whose
+    `error` text begins with `BUDGET_EXCEEDED_MARKER`; the cap name is the text after
+    the marker (`per_run` / `per_day`). Ordered `(created_at, id)` descending so the
+    newest refusal wins. This is the read the "ranked X of Y — cap reached" surface
+    (plan 05-04) renders from. Never commits, never raises.
+    """
+    prefix = f"{BUDGET_EXCEEDED_MARKER}: "
+    row = await session.scalar(
+        select(LlmCall)
+        .where(
+            LlmCall.purpose == "rank",
+            LlmCall.run_id == run_id,
+            LlmCall.status == "error",
+            LlmCall.error.startswith(prefix),
+        )
+        .order_by(LlmCall.created_at.desc(), LlmCall.id.desc())
+        .limit(1)
+    )
+    if row is None or not row.error:
+        return None
+    name = row.error[len(prefix) :].strip()
+    return name or None
+
+
 __all__ = [
+    "BUDGET_EXCEEDED_MARKER",
     "PURPOSES",
+    "RANK_CALL_WINDOW",
     "STATUSES",
     "LlmCallRecord",
     "latest_probe",
     "llm_totals_for_run",
+    "rank_calls_since",
+    "rank_cap_reason_for_run",
     "record_llm_call",
 ]

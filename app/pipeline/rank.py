@@ -16,8 +16,8 @@ requirement, it does not cost the listing its score.
 **Cost and audit** (D-12 / T-05-03): every call writes exactly one ``llm_calls``
 row with ``purpose="rank"``, carrying the per-call provider/model/agent identity
 and the D-52 failure cause. The failure cause lives inside the ``error`` text
-because ``llm_calls`` has no ``error_kind`` column, so passing ``error_kind=`` to
-``record_llm_call`` would be a ``TypeError``.
+because ``llm_calls`` has no ``error_kind`` column — there is no such keyword to
+pass to ``record_llm_call``.
 
 **Trust boundary** (§6.3 / m5 / T-05-01): ``RANK_SYSTEM_PROMPT`` is a frozen module
 constant with no interpolation; listing text and CV prose travel only in ``parts``.
@@ -48,9 +48,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
-from app.db.repositories import ranking_config_repo, score_repo
+from app.db.repositories import llm_call_repo, ranking_config_repo, score_repo
 from app.db.repositories.exclusion_repo import rule_counts_for_listings
-from app.db.repositories.llm_call_repo import record_llm_call
 from app.db.repositories.search_repo import (
     active_listings,
     enabled_searches,
@@ -231,8 +230,8 @@ async def rank_listing(
     )
 
     # D-12 / T-05-03: exactly one audit row per call, success or failure. The caps
-    # (plan 05-02) count these rows, so a missing row would make a ceiling invisible.
-    await record_llm_call(
+    # count these rows, so a missing row would make a ceiling invisible.
+    await llm_call_repo.record_llm_call(
         session,
         purpose="rank",
         status=result.status,
@@ -289,6 +288,54 @@ async def rank_listing(
     )
 
 
+# --- reserve-then-call spend accounting (D-92 / T-05-09) ----------------------
+#
+# The ranking task is a SINGLE sequential task, so the in-flight window is tiny and
+# this counter is exact without a database transaction; the lock only serialises the
+# read-modify-write of `_in_flight`.
+#
+# ponytail: single-process state. If the app ever runs more than one uvicorn worker
+# this counter is per-process and each worker gets its own ceiling — upgrade to a
+# database advisory lock (or move the reservation into the ledger) at that point.
+_reserve_lock = asyncio.Lock()
+_in_flight = 0
+
+
+def _cap_hit(day_total: int, run_total: int, *, cap_day: int, cap_run: int) -> str | None:
+    """Which ceiling the next call would reach, or `None` when it is allowed.
+
+    Per-run is checked first, so when both would be reached the run ceiling is the
+    one named. Reads `_in_flight` so a reservation already taken by this task is
+    counted against the ceiling.
+    """
+    if run_total + _in_flight >= cap_run:
+        return "per_run"
+    if day_total + _in_flight >= cap_day:
+        return "per_day"
+    return None
+
+
+async def _reserve(day_total: int, run_total: int, *, cap_day: int, cap_run: int) -> bool:
+    """Reserve one call slot, or return `False` when a ceiling would be reached.
+
+    Called BEFORE the request is issued, so a refusal costs nothing (RANK-08). On
+    `True` the caller MUST call `_release()` in a `finally`.
+    """
+    global _in_flight
+    async with _reserve_lock:
+        if _cap_hit(day_total, run_total, cap_day=cap_day, cap_run=cap_run) is not None:
+            return False
+        _in_flight += 1
+        return True
+
+
+async def _release() -> None:
+    """Release one reserved slot, with a floor of zero so a double release is safe."""
+    global _in_flight
+    async with _reserve_lock:
+        _in_flight = max(0, _in_flight - 1)
+
+
 async def run_ranking(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -305,6 +352,11 @@ async def run_ranking(
     The CV is read exactly once here, never per listing, and never default-filled
     on failure. Every other failure is isolated per listing (D-95) so one bad
     response cannot stop the pass.
+
+    The spend ceilings are enforced **before** each call (D-92): the per-run total is
+    read from the `llm_calls` ledger and the rolling-24h total from one aggregate
+    read; a refusal ends the pass gracefully (D-93) and writes one refusal row rather
+    than raising or marking the run failed.
 
     `facts` is an injection seam for tests; production always loads it here.
     """
@@ -327,12 +379,50 @@ async def run_ranking(
         survivors = await active_listings(session, run_id=run_id)
         excluded_ids = await rule_counts_for_listings(session, run_id=run_id)
 
+    cap_day = int(settings.ranking_max_calls_per_day)
+    cap_run = int(settings.ranking_max_calls_per_run)
+    ranked = 0
+    failed = 0
+    refused = 0
+
     for listing in survivors:
         if listing.id in excluded_ids:
             continue
         async with session_factory() as session:
+            run_total = (
+                await llm_call_repo.llm_totals_for_run(session, run_id=run_id)
+            )[0]
+            day_total = await llm_call_repo.rank_calls_since(session, now=moment)
+
+            if not await _reserve(day_total, run_total, cap_day=cap_day, cap_run=cap_run):
+                # Graceful stop (D-93): no exception, the run is NOT marked failed,
+                # and one refusal row records which cap fired. `llm_calls` has no
+                # `error_kind` column, so the cap name lives in the error text.
+                reason = (
+                    _cap_hit(day_total, run_total, cap_day=cap_day, cap_run=cap_run)
+                    or "per_day"
+                )
+                await llm_call_repo.record_llm_call(
+                    session,
+                    purpose="rank",
+                    status="error",
+                    error=f"{llm_call_repo.BUDGET_EXCEEDED_MARKER}: {reason}",
+                    run_id=run_id,
+                    now=moment,
+                )
+                await session.commit()
+                refused += 1
+                log.info(
+                    "pipeline.rank_cap_reached",
+                    run_id=run_id,
+                    cap=reason,
+                    ranked=ranked,
+                    failed=failed,
+                )
+                break
+
             try:
-                await rank_listing(
+                record = await rank_listing(
                     llm,
                     session,
                     listing=listing,
@@ -344,12 +434,29 @@ async def run_ranking(
                 await session.commit()
             except Exception as exc:  # noqa: BLE001 — one listing must not stop the pass
                 await session.rollback()
+                failed += 1
                 log.warning(
                     "pipeline.rank_listing_failed",
                     run_id=run_id,
                     listing_id=listing.id,
                     error=type(exc).__name__,
                 )
+            else:
+                if record is not None:
+                    ranked += 1
+                else:
+                    failed += 1
+            finally:
+                await _release()
+
+    log.info(
+        "pipeline.rank_finished",
+        run_id=run_id,
+        ranked=ranked,
+        failed=failed,
+        refused=refused,
+    )
+
 
 
 #: Strong references to in-flight ranking tasks, so the event loop cannot garbage
