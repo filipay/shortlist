@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-09-22T11:31:38.465Z"
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-09-22T12:11:10.990Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 05 execution started
-state_head: c2537d765f7098138e607961a412baf29dc605a7
+state_head: 443eddd7c823148f800d0afd3c0172090524b2d0
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 37
-  completed_plans: 33
+  completed_plans: 34
   percent: 0
 ---
 
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 05
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-09-22 — Phase 05 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P08 | 5 min | 3 tasks | 5 files |
 | Phase 03 P09 | 13 min | 3 tasks | 6 files |
 | Phase 03 P10 | 13 min | 3 tasks | 12 files |
+| Phase 05 P01 | 28 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Tectonic is the LaTeX engine, pinned by version **and** SHA256 with the package cache primed at image build; the container's offline compile of the committed fixture passed 10/10 and the installed binary's own `--help` confirmed the argv flags (D-75).
 - [Phase 04]: the `latex` pytest lane is collected-but-skipped in the hermetic pass by design (D-69) — a skipped lane is **not** a pass, so engine-dependent claims stay recorded as UNRUN rather than rounded up.
 - [Phase 04]: engine ceilings are Settings fields (`latex_probe_timeout_seconds`, `latex_log_tail_chars`), not module constants, so the container and `.env` can tune them.
+- [Phase 05]: Phase 05: the ranking call writes exactly one llm_calls row per call (success and failure) — D-12 audit plus the rows plan 05-02's spend caps count
+- [Phase 05]: Phase 05: factor_scores_json stores only sub-scores >= 0.0; a negative value is the absent convention, so an all-sentinel response stores {}
+- [Phase 05]: Phase 05: the queue's displayed total is computed on read under the CURRENT weights; scores.total_score stays an audit snapshot (D-100)
 
 ### Pending Todos
 
@@ -112,6 +116,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T10:07:16.201Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-ranking-core-value/05-CONTEXT.md
+Last session: 2026-09-22T12:10:54.685Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

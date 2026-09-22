@@ -47,13 +47,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Ranking (RANK)
 
-- [ ] **RANK-01**: User gets each surviving listing scored against their CV using named, inspectable factors
-- [ ] **RANK-02**: Every score stores its per-factor sub-scores, not just a single total
-- [ ] **RANK-03**: The total score is computed in code from stored sub-scores and weights
+- [x] **RANK-01**: User gets each surviving listing scored against their CV using named, inspectable factors
+- [x] **RANK-02**: Every score stores its per-factor sub-scores, not just a single total
+- [x] **RANK-03**: The total score is computed in code from stored sub-scores and weights
 - [ ] **RANK-04**: User can adjust factor weights and see rankings re-derive
-- [ ] **RANK-05**: Each ranked listing shows a rationale grounded in stored evidence
-- [ ] **RANK-06**: User sees a requirement-by-requirement fit breakdown with named gaps on the job detail view
-- [ ] **RANK-07**: Scoring is absolute per listing and stable across repeated runs (never relative ranking of a batch)
+- [x] **RANK-05**: Each ranked listing shows a rationale grounded in stored evidence
+- [x] **RANK-06**: User sees a requirement-by-requirement fit breakdown with named gaps on the job detail view
+- [x] **RANK-07**: Scoring is absolute per listing and stable across repeated runs (never relative ranking of a batch)
 - [ ] **RANK-08**: LLM spend is capped per run and per day, enforced before the call is made
 
 ### CV Pipeline (CV)
@@ -199,13 +199,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FILT-02 | Phase 2 | Complete |
 | FILT-03 | Phase 2 | Complete |
 | FILT-04 | Phase 2 | Complete |
-| RANK-01 | Phase 5 | Pending |
-| RANK-02 | Phase 5 | Pending |
-| RANK-03 | Phase 5 | Pending |
+| RANK-01 | Phase 5 | Complete |
+| RANK-02 | Phase 5 | Complete |
+| RANK-03 | Phase 5 | Complete |
 | RANK-04 | Phase 5 | Pending |
-| RANK-05 | Phase 5 | Pending |
-| RANK-06 | Phase 5 | Pending |
-| RANK-07 | Phase 5 | Pending |
+| RANK-05 | Phase 5 | Complete |
+| RANK-06 | Phase 5 | Complete |
+| RANK-07 | Phase 5 | Complete |
 | RANK-08 | Phase 5 | Pending |
 | CV-01 | Phase 4 | Complete |
 | CV-02 | Phase 4 | Complete |
