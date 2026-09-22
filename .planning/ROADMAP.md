@@ -231,6 +231,11 @@ Plans:
 
 - [x] 05-04-PLAN.md — Weighted queue ordering (read-time total, unscored last), the minimum-score view filter, the weights editor, and the ranked-X-of-Y strip
 
+**Gap closure** *(planned 2026-09-22; wave 1 — all prerequisites above are executed)*
+
+- [ ] 05-05-PLAN.md — The ranking strip reports one run's population: `RunSummary.candidate_count` (the run's own `reason_counts_json['survivors']`) replaces the request-derived page total, so the strip can no longer read "Ranked 30 of 5"
+- [ ] 05-06-PLAN.md — An unreadable (non-UTF-8) CV fact store takes the documented D-94 skip: one path-qualified `CvFactStoreError` at the read boundary, so the detached ranking task returns cleanly instead of leaking `UnicodeDecodeError`
+
 **Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
 ### Phase 6: Tailoring + Verification
