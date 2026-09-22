@@ -55,4 +55,12 @@ services:
       - ARTIFACTS_DIR=${ARTIFACTS_DIR:-/artifacts}
       - TEX_IMPORT_MAX_LINES=${TEX_IMPORT_MAX_LINES:-20000}
       - TEX_IMPORT_MAX_DEPTH=${TEX_IMPORT_MAX_DEPTH:-12}
+      # Phase-5 ranking spend caps (RANK-08), forwarded for the same reason as the
+      # knobs above. Every default matches app/config.py exactly. A ranking call is
+      # refused when EITHER ceiling would be reached; neither is a token budget.
+      - RANKING_MAX_CALLS_PER_RUN=${RANKING_MAX_CALLS_PER_RUN:-40}
+      - RANKING_MAX_CALLS_PER_DAY=${RANKING_MAX_CALLS_PER_DAY:-400}
+      # D-94's operator off switch: false makes a run ingest exactly as it does
+      # today, with zero model calls.
+      - RANKING_ENABLED=${RANKING_ENABLED:-true}
     command: ["./entrypoint.sh"]

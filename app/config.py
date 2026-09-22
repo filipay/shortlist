@@ -169,5 +169,26 @@ class Settings(BaseSettings):
     # two sources for one limit. This block is the PLAT-04 surface for the engine,
     # not for the page budget.
 
+    # --- Phase 5 ranking spend caps (RANK-08 / D-91 / D-92) --------------------
+    # Two INDEPENDENT ceilings, both checked immediately BEFORE each ranking call
+    # (reserve-then-call, D-92): a per-run ceiling and a rolling-24h ceiling. A
+    # call is refused when EITHER would be reached. Token-based caps were rejected
+    # (D-91) because a call's token cost is unknowable before the call, so "refuse
+    # before the call" would degrade into a projection. Both are integers and both
+    # are ceilings an operator may need to tune, so both are listed in
+    # `tests/test_config.py` LIMIT_FIELDS and covered by the distinctive-literal
+    # scan; their defaults (40, 400) collide with no value that scan already
+    # derives from the other knobs.
+    ranking_max_calls_per_run: int = 40
+    ranking_max_calls_per_day: int = 400
+    #: D-94's operator off switch. `False` makes `run_pipeline` ingest exactly as
+    #: it does today — zero model calls, zero `llm_calls` rows, zero `scores` rows.
+    #: It is the third D-94 skip condition; the other two (no fact store, an
+    #: unreachable backend) are STATE rather than configuration. Deliberately NOT
+    #: in LIMIT_FIELDS: that tuple requires a numeric default and a boolean would
+    #: fail `test_every_limit_field_is_a_required_numeric_ceiling`, so the switch
+    #: is guarded by the surface tier only.
+    ranking_enabled: bool = True
+
 
 settings = Settings()

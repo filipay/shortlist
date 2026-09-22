@@ -73,6 +73,12 @@ REQUIRED_SETTINGS_FIELDS = (
     # fields now (PLAT-04). Kept at the same defaults so behaviour is unchanged.
     "latex_probe_timeout_seconds",
     "latex_log_tail_chars",
+    # Phase 5 (RANK-08 / D-91): the two ranking spend ceilings and D-94's operator
+    # off switch. The numeric pair is also covered by LIMIT_FIELDS; the switch is
+    # guarded by the surface tier only (see LIMIT_FIELDS).
+    "ranking_max_calls_per_run",
+    "ranking_max_calls_per_day",
+    "ranking_enabled",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -108,6 +114,13 @@ LIMIT_FIELDS = (
     # Phase 4 (WR-03): the bounded engine-log tail (4000, above
     # DISTINCTIVE_THRESHOLD_FLOOR, so it genuinely contributes to the scan).
     "latex_log_tail_chars",
+    # Phase 5 (RANK-08 / D-91): both ranking spend ceilings. Distinctive integers
+    # above the floor, so listing them here is what makes the absence scan cover
+    # them. `ranking_enabled` is deliberately absent — it is a boolean, and
+    # `test_every_limit_field_is_a_required_numeric_ceiling` requires a numeric
+    # default for every field in this tuple.
+    "ranking_max_calls_per_run",
+    "ranking_max_calls_per_day",
 )
 
 #: The Phase-4 ceilings (PLAT-04 applied to the LaTeX lane), listed explicitly so a
@@ -130,6 +143,15 @@ PHASE_FOUR_DISTINCTIVE_CEILINGS = (
     # WR-03: the bounded engine-log tail (4000) joins the scan; the probe
     # timeout is a float and is therefore not scannable (see LIMIT_FIELDS).
     "latex_log_tail_chars",
+)
+
+#: The Phase-5 ceilings (RANK-08 / PLAT-04 applied to ranking spend). Both are
+#: integers and both are ceilings an operator may need to tune, so both appear in
+#: both the surface guard and LIMIT_FIELDS. `ranking_enabled` is deliberately NOT
+#: one of them: it is a switch, not a ceiling.
+PHASE_FIVE_CEILINGS = (
+    "ranking_max_calls_per_run",
+    "ranking_max_calls_per_day",
 )
 
 #: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
@@ -208,6 +230,51 @@ def test_the_phase_four_ceilings_are_guarded() -> None:
         "tex_import_max_depth joined LIMIT_FIELDS — its small default would make "
         "the absence scan noisy; either justify the change or leave the scan alone"
     )
+
+
+def test_the_phase_five_ceilings_are_guarded() -> None:
+    """Every Phase-5 ceiling must be asserted by BOTH guards (PLAT-04 / RANK-08)."""
+    for field in PHASE_FIVE_CEILINGS:
+        assert field in REQUIRED_SETTINGS_FIELDS, (
+            f"{field} is a Phase-5 ceiling but REQUIRED_SETTINGS_FIELDS omits it"
+        )
+        assert field in LIMIT_FIELDS, (
+            f"{field} is a distinctive numeric ceiling but LIMIT_FIELDS does not "
+            "cover it"
+        )
+    # The written-down asymmetry: D-94's off switch is not a ceiling, so it must
+    # stay out of LIMIT_FIELDS (which requires a numeric default).
+    assert "ranking_enabled" not in LIMIT_FIELDS, (
+        "ranking_enabled joined LIMIT_FIELDS — its boolean default would fail "
+        "test_every_limit_field_is_a_required_numeric_ceiling"
+    )
+
+
+def test_the_phase_five_ceilings_are_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config field no test can override is only half a config field."""
+    assert Settings.model_fields["ranking_max_calls_per_run"].default == 40
+    assert Settings.model_fields["ranking_max_calls_per_day"].default == 400
+
+    monkeypatch.setenv("RANKING_MAX_CALLS_PER_RUN", "7")
+    monkeypatch.setenv("RANKING_MAX_CALLS_PER_DAY", "70")
+
+    refreshed = Settings()
+
+    assert refreshed.ranking_max_calls_per_run == 7
+    assert refreshed.ranking_max_calls_per_day == 70
+
+
+def test_ranking_enabled_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-94's off switch is configuration, not a code change or a call-site edit."""
+    assert Settings.model_fields["ranking_enabled"].default is True
+
+    monkeypatch.setenv("RANKING_ENABLED", "false")
+
+    assert Settings().ranking_enabled is False
 
 
 def test_every_limit_field_is_a_required_numeric_ceiling() -> None:
