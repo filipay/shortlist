@@ -34,6 +34,9 @@ EXPECTED_SEAM_ROUTES = frozenset(
         "/runs",
         "/runs/{run_id}/status",
         "/health",
+        # Phase 5's job detail page (UI-02): a full page, so it goes through the
+        # identity seam like every other server-rendered surface.
+        "/listings/{listing_id}",
         # Phase 3's on-demand LLM backend selftest (D-48): it spends tokens, so it
         # must go through the identity seam like every other route.
         "/settings/llm-test",

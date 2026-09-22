@@ -1,0 +1,45 @@
+{% extends "html/base.html" %}
+
+{# The job detail page (UI-02 / D-96). Jinja autoescape is the ONLY escaping in play:
+   the title, company, location and the model's stored rationale all derive from
+   untrusted listing text, and no value here is ever marked as safe for the browser.
+
+   Every flag arrives PRECOMPUTED on the row (D-96 reuses the queue read model), so no
+   date arithmetic, settings read or lookup happens in this template. External anchors
+   carry `rel="noopener noreferrer"` and only render when their URL is truthy. #}
+
+{% block title %}{{ row.title }} — Job Search Copilot{% endblock %}
+
+{% block content %}
+<h2>{{ row.title }}</h2>
+
+<p>
+  {{ row.company }}{% if row.location %} — {{ row.location }}{% endif %}{% if row.merged_from %} — merged from {{ row.merged_from }} sources{% endif %}
+</p>
+
+<p>
+  {% for link in row.source_links %}{% if link.url %}<a class="source-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.source }}</a>{% else %}{{ link.source }}{% endif %}{% if link.employer_url %} <a class="source-apply" href="{{ link.employer_url }}" target="_blank" rel="noopener noreferrer">Apply</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+
+{% if row.total_score is not none %}
+<section>
+  <h3>Fit score</h3>
+  <p>
+    <strong>{{ "%.2f" | format(row.total_score) }}</strong>
+    {% if row.confidence_tier %}<span class="badge badge-score-tier-{{ row.confidence_tier }}">{{ row.confidence_tier }}</span>{% endif %}
+  </p>
+</section>
+{% else %}
+<p class="detail-not-ranked">
+  Not yet ranked. This listing has no score yet — ranking may still be running, or the
+  pass was skipped. Refresh once it finishes.
+</p>
+{% endif %}
+
+{% if score %}
+<section>
+  <h3>Why</h3>
+  <p class="detail-rationale">{{ score.rationale }}</p>
+</section>
+{% endif %}
+{% endblock %}

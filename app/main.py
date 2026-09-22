@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import events as event_routes
 from app.api import health as health_routes
+from app.api import listings as listing_routes
 from app.api import runs as run_routes
 from app.api import searches as search_routes
 from app.api import settings as settings_routes
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(search_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(event_routes.router)
+    app.include_router(listing_routes.router)
     app.include_router(health_routes.router)
     return app
 
