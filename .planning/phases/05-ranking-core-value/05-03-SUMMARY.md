@@ -138,7 +138,7 @@ Each task was committed atomically:
 2. **Task 2: The full breakdown — factors with weights, requirement fits with named gaps, and the row link** - `58580ae` (feat)
 3. **Task 3: The detail page's assertions, including escaping and the unscored state** - `2e6a293` (test)
 
-**Plan metadata:** `PENDING` (docs: complete plan)
+**Plan metadata:** `13bb6cb` (docs: complete job detail page plan)
 
 ## Files Created/Modified
 
