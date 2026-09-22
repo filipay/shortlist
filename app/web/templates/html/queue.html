@@ -133,11 +133,12 @@
 
      The denominator is the RUN's own candidate population, never this request's page
      total — the two are disjoint sets, so pairing them would print a ratio of nothing.
-     When the run persisted no candidate count the ratio is dropped and only the
-     numerator renders, rather than inventing a denominator. #}
+     When the run persisted no candidate count — or a non-positive one, which is not a
+     usable denominator — the ratio is dropped and only the numerator renders, rather
+     than inventing a denominator. #}
   {% if ranking_strip.get('ranked') is not none %}
   <p id="ranking-strip" class="ranking-strip">
-    {% if ranking_strip.get('candidates') is not none %}Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% else %}Ranked {{ ranking_strip.get('ranked') }}{% endif %}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
+    {% if ranking_strip.get('candidates') %}Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% else %}Ranked {{ ranking_strip.get('ranked') }}{% endif %}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
   </p>
   {% endif %}
 

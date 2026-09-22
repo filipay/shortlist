@@ -71,19 +71,22 @@ def _int(value: Any) -> int:
 
 
 def _optional_int(value: Any) -> int | None:
-    """An integer, or `None` for anything unusable — never a fabricated `0`.
+    """A positive integer, or `None` for anything unusable — never a fabricated `0`.
 
     Deliberately NOT `_int`: that helper's whole contract is to coerce a half-written
     row to `0`, which is right for a count that must always render. This one serves a
     value the UI divides BY, where a coerced `0` would be exactly the false ratio the
-    ranking strip must not print. An absent or non-numeric value stays absent.
+    ranking strip must not print. An absent or non-numeric value stays absent, and a
+    zero or negative parsed count is treated as unusable too: a denominator must be
+    positive, so `0` and `-1` are as unusable as a missing value.
     """
     if value is None:
         return None
     try:
-        return int(value)
+        parsed = int(value)
     except (TypeError, ValueError):
         return None
+    return parsed if parsed > 0 else None
 
 
 def _duration(started_at: datetime | None, finished_at: datetime | None) -> float | None:
