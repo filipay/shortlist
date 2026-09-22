@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-09-22T12:11:10.990Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-09-22T12:38:36.604Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 05 execution started
-state_head: 443eddd7c823148f800d0afd3c0172090524b2d0
+state_head: 22948ac6f3ce7911f12368318d21891f08326e13
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 37
-  completed_plans: 34
+  completed_plans: 35
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 05 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P09 | 13 min | 3 tasks | 6 files |
 | Phase 03 P10 | 13 min | 3 tasks | 12 files |
 | Phase 05 P01 | 28 min | 3 tasks | 17 files |
+| Phase 05 P02 | 20 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: the ranking call writes exactly one llm_calls row per call (success and failure) — D-12 audit plus the rows plan 05-02's spend caps count
 - [Phase 05]: Phase 05: factor_scores_json stores only sub-scores >= 0.0; a negative value is the absent convention, so an all-sentinel response stores {}
 - [Phase 05]: Phase 05: the queue's displayed total is computed on read under the CURRENT weights; scores.total_score stays an audit snapshot (D-100)
+- [Phase 05]: Phase 05: both ranking spend ceilings are measured from the single llm_calls ledger; a refusal writes one budget_exceeded row because the table has no error_kind column
+- [Phase 05]: Phase 05: the rolling-24h ranking cap reads llm_calls.created_at with an accepted full scan; no index migration
+- [Phase 05]: Phase 05: ranking is optional via Settings.ranking_enabled plus the fact-store absent/unreadable state; start-or-skip single-flight, no persistent job queue
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T12:10:54.685Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-09-22T12:38:35.434Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None

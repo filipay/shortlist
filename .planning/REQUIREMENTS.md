@@ -54,7 +54,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RANK-05**: Each ranked listing shows a rationale grounded in stored evidence
 - [x] **RANK-06**: User sees a requirement-by-requirement fit breakdown with named gaps on the job detail view
 - [x] **RANK-07**: Scoring is absolute per listing and stable across repeated runs (never relative ranking of a batch)
-- [ ] **RANK-08**: LLM spend is capped per run and per day, enforced before the call is made
+- [x] **RANK-08**: LLM spend is capped per run and per day, enforced before the call is made
 
 ### CV Pipeline (CV)
 
@@ -206,7 +206,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RANK-05 | Phase 5 | Complete |
 | RANK-06 | Phase 5 | Complete |
 | RANK-07 | Phase 5 | Complete |
-| RANK-08 | Phase 5 | Pending |
+| RANK-08 | Phase 5 | Complete |
 | CV-01 | Phase 4 | Complete |
 | CV-02 | Phase 4 | Complete |
 | CV-03 | Phase 4 | Complete |
