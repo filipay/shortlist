@@ -35,8 +35,11 @@ from app.db.repositories.search_repo import (
 from app.domain.criteria import search_query_from
 from app.domain.run_reason import RunCounts, compute_empty_reason
 from app.ingest.sanitize import sanitize_listing
+from app.llm import get_llm_backend
+from app.llm.base import LLMBackend
 from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
 from app.pipeline.filter_stage import FILTER_STAGE, run_filter_stage
+from app.pipeline.rank import RANK_STAGE, start_ranking_task
 from app.pipeline.stages import normalise_listing
 from app.probe.survival import (
     compute_fill_rates,
@@ -695,6 +698,7 @@ async def run_pipeline(
     adapters: Sequence[JobSource] | None = None,
     query: SearchQuery | None = None,
     run_id: int | None = None,
+    llm: LLMBackend | None = None,
 ) -> int:
     """Run one pipeline pass and return its `runs.id`.
 
@@ -705,7 +709,12 @@ async def run_pipeline(
 
     `adapters` is an explicit injection seam for tests and for callers that
     already resolved the enabled sources. Never awaited inside a request handler.
+
+    `llm` is the backend the detached ranking task will use, defaulting to
+    `get_llm_backend()`. It is threaded explicitly so a caller's override (the
+    default test lane's offline stub) actually reaches the task (Pitfall 7).
     """
+    backend = llm if llm is not None else get_llm_backend()
     if run_id is None:
         async with session_factory() as session:
             run = Run(
@@ -879,6 +888,29 @@ async def run_pipeline(
         except Exception as exc:  # noqa: BLE001 — the filter must not sink a saved run
             log.exception("pipeline.filter_failed", run_id=resolved_run_id, error=str(exc))
             errors.append({"source": FILTER_STAGE, "status": "failed", "error": str(exc)})
+
+        # Ranking (D-87 / D-88): after the hard filter and before `_finish`. The
+        # stage is DETACHED — the run completes normally first (D-88) and the task
+        # scores survivors one at a time, so it is never kept open. Best-effort like
+        # dedup and filter: a failure to start is recorded and the run still
+        # finishes. The survivors are resolved to decide whether starting is worth
+        # it at all; `run_ranking` resolves its own list once it runs.
+        try:
+            async with session_factory() as session:
+                candidates = await active_listings(session, run_id=resolved_run_id)
+                excluded_ids = await rule_counts_for_listings(
+                    session, run_id=resolved_run_id
+                )
+            if any(record.id not in excluded_ids for record in candidates):
+                start_ranking_task(
+                    resolved_run_id,
+                    session_factory,
+                    llm=backend,
+                    search_id=search_id,
+                )
+        except Exception as exc:  # noqa: BLE001 — a ranking-start failure must not sink the run
+            log.exception("pipeline.rank_start_failed", run_id=resolved_run_id, error=str(exc))
+            errors.append({"source": RANK_STAGE, "status": "failed", "error": str(exc)})
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})

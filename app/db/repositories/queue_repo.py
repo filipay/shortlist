@@ -71,12 +71,13 @@ from app.db.models import (
     ListingSource,
     Run,
 )
-from app.db.repositories import event_repo
+from app.db.repositories import event_repo, ranking_config_repo, score_repo
 from app.db.repositories.dupe_repo import merge_summary_for_listings
 from app.db.repositories.exclusion_repo import (
     excluded_counts_for_run,
     rule_counts_for_listings,
 )
+from app.domain import rubric
 from app.domain.listing import canonical_url
 from app.domain.search_query import build_match_expression
 
@@ -202,6 +203,14 @@ class QueueRow:
     #: finding (§6.3). Read through a tolerant accessor, so a NULL, non-mapping or
     #: malformed value degrades to False rather than breaking the page.
     instruction_like: bool = False
+    #: The read-time total under the weights CURRENTLY in force (D-100), or `None`
+    #: when the listing has never been scored. `None` and a real `0.0` are distinct:
+    #: an unscored listing must never read as a genuine zero score.
+    total_score: float | None = None
+    #: The D-85 confidence tier of the newest score row, or `None` when unscored.
+    confidence_tier: str | None = None
+    #: The newest score row's per-factor sub-scores, in `rubric.FACTORS` order.
+    factor_scores: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -490,6 +499,13 @@ async def _enrich(
     # recomputes them.
     states = await event_repo.state_for_listings(session, listing_ids=list(ids))
 
+    # The read-time total (D-100): the NEWEST score row per listing combined with the
+    # weights CURRENTLY in force — the stored `scores.total_score` is an audit
+    # snapshot, never the sort source. The weights document is read ONCE per page,
+    # never once per row.
+    newest_scores = await score_repo.latest_for_listings(session, list(ids))
+    weights = await ranking_config_repo.read_weights(session)
+
     firing: dict[int, list[str]] = {}
     kinds: dict[str, str] = {}
     latest_run_id = await _latest_run_id_value(session)
@@ -519,6 +535,13 @@ async def _enrich(
         state = states.get(listing_id, event_repo.NO_STATE)
         company = companies.get(listing_id)
         links = tuple(grouped.get(listing_id, ()))
+        score = newest_scores.get(listing_id)
+        factor_scores = score.factor_scores if score is not None else ()
+        total_score = (
+            rubric.weighted_total(dict(factor_scores), weights)
+            if score is not None
+            else None
+        )
         rows.append(
             QueueRow(
                 id=listing_id,
@@ -539,6 +562,9 @@ async def _enrich(
                 url=_http_url(listing.canonical_url) or None,
                 source_links=links,
                 instruction_like=_instruction_like(listing.quality_signals_json),
+                total_score=total_score,
+                confidence_tier=score.confidence_tier if score is not None else None,
+                factor_scores=factor_scores,
             )
         )
     return rows
