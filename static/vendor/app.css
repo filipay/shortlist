@@ -23,3 +23,8 @@
 .queue-sort select,.queue-threshold input{width:auto;padding:.35rem .5rem}
 .badge-unranked{background-color:var(--color-surface-2);color:var(--color-muted);border:1px dashed var(--color-border)}
 .ranking-strip{color:var(--color-muted);margin-bottom:.75rem;font-size:.95rem}
+.weights-form{max-width:52rem}
+.weight-grid{grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.75rem 1rem;margin-bottom:1rem;display:grid}
+.weight-field{flex-direction:column;gap:.25rem;display:flex}
+.weight-field input{margin:0}
+.weights-note{margin-bottom:1rem}

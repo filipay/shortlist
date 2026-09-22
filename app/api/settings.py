@@ -18,7 +18,9 @@ cookie present, this route becomes a genuine CSRF hole unless a CSRF token is ad
 from __future__ import annotations
 
 import asyncio
+import math
 import sqlite3
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,8 +35,9 @@ from app.api.deps import current_user
 from app.api.searches import read_form
 from app.config import settings
 from app.db.models import Base, Run
-from app.db.repositories import llm_call_repo
+from app.db.repositories import llm_call_repo, ranking_config_repo
 from app.db.session import get_session
+from app.domain import rubric
 from app.domain.models import User
 from app.domain.schemas.probe import ProbeResult
 from app.llm import get_llm_backend
@@ -55,6 +58,10 @@ SETTINGS_TEMPLATE = "html/settings.html"
 #: D-48: the live schema-constrained call is an on-demand action, reachable from
 #: this route through the `current_user` seam — never from `run_pipeline()`.
 LLM_TEST_PATH = "/settings/llm-test"
+
+#: The weights editor (D-99 / RANK-04). A plain full-page POST, like the reset card:
+#: no htmx swap is involved and the route makes ZERO model calls.
+WEIGHTS_PATH = "/settings/weights"
 
 #: The system prompt is a **module-level constant** with no f-string, no `%`, no
 #: `.format` and no concatenation of any request-derived value. This IS the trust
@@ -151,6 +158,10 @@ async def _settings_context(
         "kept_tables": RESET_KEPT_TABLES,
         "backup_dir": str(database_path.parent / "reset-backups"),
         "confirm_token": RESET_CONFIRM_TOKEN,
+        # The weights editor (D-99). One read backs both the initial render and the
+        # re-render after a save, so the pre-filled values and the note cannot disagree.
+        "weights": await ranking_config_repo.read_weights(session),
+        "factors": tuple((key, rubric.FACTOR_LABELS[key]) for key in rubric.FACTORS),
         # The selftest surface (D-48/D-52). `probe_error_kind` and the observation
         # are only available on the immediate render — `llm_calls` has no column for
         # either, so a reload shows D-52's PERSISTED detail only.
@@ -167,6 +178,42 @@ async def _settings_context(
     }
 
 
+def _parse_weights(
+    form: Mapping[str, str], current: Mapping[str, float]
+) -> tuple[dict[str, float], list[str]]:
+    """`(weights, errors)` for a submitted weights form — validation at the boundary.
+
+    A **missing** field keeps the stored value (so a partial form is a valid edit). A
+    non-numeric, non-finite or negative value is an error and nothing is written
+    (T-05-17). An all-zero submitted set is refused because a zero denominator makes
+    every read-time total `None` and would silently blank the ranked queue (T-05-18).
+    """
+    weights: dict[str, float] = {}
+    errors: list[str] = []
+    for factor in rubric.FACTORS:
+        raw = form.get(factor)
+        if raw is None or str(raw).strip() == "":
+            weights[factor] = float(current.get(factor, rubric.DEFAULT_WEIGHTS[factor]))
+            continue
+        label = rubric.FACTOR_LABELS.get(factor, factor)
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            errors.append(f"{label} weight must be a number.")
+            continue
+        if not math.isfinite(value):
+            errors.append(f"{label} weight must be a finite number.")
+            continue
+        if value < 0.0:
+            errors.append(f"{label} weight must not be negative.")
+            continue
+        weights[factor] = value
+
+    if not errors and all(value <= 0.0 for value in weights.values()):
+        errors.append("At least one weight must be greater than zero.")
+    return weights, errors
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(
     request: Request,
@@ -176,6 +223,47 @@ async def settings_page(
     """State exactly what a reset deletes, what it keeps, and how to recover."""
     return templates.TemplateResponse(
         request, SETTINGS_TEMPLATE, await _settings_context(session)
+    )
+
+
+@router.post(WEIGHTS_PATH, response_class=HTMLResponse)
+async def save_weights(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Persist the six ranking weights and re-render the settings page.
+
+    **This route makes ZERO model calls.** It writes the `ranking_config` document
+    only; the queue recomputes every total on read from the stored sub-scores under
+    the weights now in force (D-100). That is the mechanism that makes "change the
+    weights and the order re-derives" true without spending a token (success
+    criterion 3).
+
+    An invalid submission (non-numeric, non-finite, negative, or an all-zero set)
+    writes nothing and re-renders the page with the inline error and a non-200 status,
+    following the app's refused-action convention.
+    """
+    form = await read_form(request)
+    current = await ranking_config_repo.read_weights(session)
+    weights, errors = _parse_weights(form, current)
+
+    if errors:
+        log.info("settings.weights_rejected", errors=len(errors))
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(session, banner=" ".join(errors), error=True),
+            status_code=400,
+        )
+
+    await ranking_config_repo.write_weights(session, weights, now=datetime.now(UTC))
+    await session.commit()
+    log.info("settings.weights_saved")
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(session, banner="Weights saved."),
     )
 
 

@@ -82,6 +82,33 @@
   </p>
 </section>
 
+<section class="settings-card" id="ranking-weights">
+  <h3>Ranking weights</h3>
+  <p class="settings-note weights-note">
+    Each factor's weight in the queue's ranking. Saving re-derives the queue order from
+    the stored sub-scores with <strong>no new model call</strong> — the totals are
+    recomputed on read under the weights in force, so a weight change is free.
+  </p>
+  <form class="weights-form" method="post" action="/settings/weights">
+    <div class="weight-grid">
+      {% for key, label in factors %}
+      <div class="weight-field">
+        <label for="weight-{{ key }}">{{ label }}</label>
+        <input type="number"
+               id="weight-{{ key }}"
+               name="{{ key }}"
+               step="0.05"
+               min="0"
+               value="{{ '%.2f' | format(weights.get(key, 1.0)) }}">
+      </div>
+      {% endfor %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="weights-submit">Save weights</button>
+    </div>
+  </form>
+</section>
+
 <section class="danger-card" id="danger-zone">
   <h3>Danger zone</h3>
   <p class="settings-note">
