@@ -70,6 +70,22 @@ def _int(value: Any) -> int:
         return 0
 
 
+def _optional_int(value: Any) -> int | None:
+    """An integer, or `None` for anything unusable — never a fabricated `0`.
+
+    Deliberately NOT `_int`: that helper's whole contract is to coerce a half-written
+    row to `0`, which is right for a count that must always render. This one serves a
+    value the UI divides BY, where a coerced `0` would be exactly the false ratio the
+    ranking strip must not print. An absent or non-numeric value stays absent.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _duration(started_at: datetime | None, finished_at: datetime | None) -> float | None:
     """Seconds between the two stamps, or `None` when the run has not finished.
 
@@ -138,6 +154,12 @@ class RunSummary:
     #: task last wrote the run. `None` means the ranking pass never completed (or was
     #: skipped), which is the honest "not yet ranked" signal the queue strip reads.
     ranked_count: int | None
+    #: The number of listings this run submitted to ranking — `candidate_count` is the
+    #: run's OWN `reason_counts_json['survivors']` (the survivors the hard filter handed
+    #: to ranking, written by `app.pipeline.run`'s `_finish`), or `None` when the run
+    #: persisted no such count. It is the only honest denominator for `ranked_count`: a
+    #: request-derived total is a different population and must never be paired with it.
+    candidate_count: int | None
     sources: Mapping[str, Any]
     #: The first `STAGE_LOG_ERROR_LIMIT` errors, so no row can render unbounded.
     errors: tuple[Mapping[str, Any], ...]
@@ -218,6 +240,7 @@ def _summary(row: Run) -> RunSummary:
         deduped_count=_int(row.deduped_count),
         filtered_count=_int(row.filtered_count),
         ranked_count=None if row.ranked_count is None else int(row.ranked_count),
+        candidate_count=_optional_int(_mapping(row.reason_counts_json).get("survivors")),
         sources=_mapping(row.source_counts_json),
         errors=all_errors[:STAGE_LOG_ERROR_LIMIT],
         error_count=len(all_errors),

@@ -129,10 +129,15 @@
 
   {# The ranking strip (D-89 / D-93): refresh-only, no polling or SSE (D-88). It is
      rendered only once the ranking task has written `runs.ranked_count`, so a fresh
-     run shows nothing rather than a misleading "Ranked 0 of N". #}
+     run shows nothing rather than a misleading "Ranked 0 of N".
+
+     The denominator is the RUN's own candidate population, never this request's page
+     total — the two are disjoint sets, so pairing them would print a ratio of nothing.
+     When the run persisted no candidate count the ratio is dropped and only the
+     numerator renders, rather than inventing a denominator. #}
   {% if ranking_strip.get('ranked') is not none %}
   <p id="ranking-strip" class="ranking-strip">
-    Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
+    {% if ranking_strip.get('candidates') is not none %}Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% else %}Ranked {{ ranking_strip.get('ranked') }}{% endif %}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
   </p>
   {% endif %}
 
