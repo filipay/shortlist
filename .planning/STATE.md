@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-05-PLAN.md
-last_updated: "2026-09-22T15:39:00.000Z"
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-09-22T15:48:42.000Z"
 last_activity: 2026-09-22
-last_activity_desc: Phase 05 gap-closure plan 05-05 complete (ranking strip denominator)
-state_head: f894b4c06e30d6fcd6aa1598b774cd7f82708716
+last_activity_desc: Phase 05 gap-closure plan 05-06 complete (unreadable fact-store skip)
+state_head: 60e7f1994ad7f69c2d5b40a7d5f64bcc6b21a94d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 39
-  completed_plans: 37
+  completed_plans: 38
   percent: 0
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 5 of 6
-Status: Executing Phase 05 — gap-closure plan 05-05 complete; phase NOT complete (orchestrator owns phase close-out)
-Last activity: 2026-09-22 — Completed 05-05-PLAN.md (ranking strip denominator)
+Plan: 6 of 6
+Status: Executing Phase 05 — gap-closure plan 05-06 complete; phase NOT complete (orchestrator owns phase close-out)
+Last activity: 2026-09-22 — Completed 05-06-PLAN.md (unreadable fact-store skip)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P03 | 10 min | 3 tasks | 8 files |
 | Phase 05 P04 | 26 min | 3 tasks | 12 files |
 | Phase 05 P05 | 8 min | 2 tasks | 5 files |
+| Phase 05 P06 | 6 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: the score ordering is a Python-side sort over a bounded scan; the upgrade path is a materialised total column
 - [Phase 05]: Phase 05: the ranking strip's two numbers come from ONE run — `ranked_count` over that run's own `reason_counts_json['survivors']` (`RunSummary.candidate_count`) — never this request's page total; an absent count degrades to the numerator alone
 - [Phase 05]: Phase 05: `_optional_int` is a separate helper from `_int` — for a value a surface divides BY, an absent/non-numeric value stays `None` rather than coercing to a fabricated `0`
+- [Phase 05]: Phase 05: `load_facts` catches `(OSError, UnicodeError)` and re-raises a path-qualified `CvFactStoreError`, so a non-decodable `cv.yaml` is one typed failure at the shared reader — the fix belongs there, not in `rank.py`'s guard, and Phase 6 tailoring inherits it
+- [Phase 05]: Phase 05: the unreadable fact store reuses D-94's existing `fact_store_absent` skip reason (same operator-visible situation), now pinned by an asserted `pipeline.rank_skipped` event rather than inferred from the absence of rows
 
 ### Pending Todos
 
@@ -131,6 +134,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T15:38:22Z
-Stopped at: Completed 05-05-PLAN.md
+Last session: 2026-09-22T15:48:42Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None
