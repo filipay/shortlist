@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-09-PLAN.md
-last_updated: "2026-09-23T10:35:22.205Z"
+stopped_at: Completed 05-10-PLAN.md
+last_updated: "2026-09-23T11:00:05.948Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 05 execution started
-state_head: 0cf46b9d02d82d7c01d3f6fc9fab5d535524a032
+state_head: 7df8af47b07f137cfcb0b2688d02d58bbaf874c7
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 43
-  completed_plans: 42
+  completed_plans: 43
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Ready to execute
 Last activity: 2026-09-23 — Phase 05 execution started
 
@@ -77,6 +77,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P07 | 9min | 2 tasks | 3 files |
 | Phase 05 P08 | 13min | 3 tasks | 7 files |
 | Phase 05 P09 | 7min | 2 tasks | 3 files |
+| Phase 05 P10 | 20 | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: a ranking pass's outcome is persisted as reason_counts_json['ranking'] by _finish (the sole writer), while the live 'running' state is derived at render time from the in-process task and never persisted
 - [Phase 05]: Phase 05: the four ranking skip reasons (ranking_disabled/fact_store_absent/ranking_in_flight/rank_start_failed) have exactly one definition in app/pipeline/rank.py (RANK_SKIP_* + RANK_SKIP_LABELS), read by the guard, the precheck and the render layer
 - [Phase 05]: Phase 05: the job detail page names the last run's ranking state (reusing RunSummary.ranking_state) and, on the fact-store skip, discloses the exact loader path (Settings.cv_dir + rank.CV_FILENAME) with a /settings pointer
+- [Phase 05]: 05-10: one total fact_store_report(path) probe (available/path/error, class name only) is shared by the Settings CV card, the queue status line and /health, so the three cannot disagree about the path or the load outcome
+- [Phase 05]: 05-10: the /health cv object carries path, not version (a fact store is a data document); a missing store is reported and never degrades status, mirroring the tectonic rule
+- [Phase 05]: 05-10: every disclosed path is str(Path(settings.cv_dir) / rank.CV_FILENAME) — the expression the loader uses — and the copy says 'no readable CV fact store', never 'missing file' (D-94 covers absent/unreadable/non-decodable)
 
 ### Pending Todos
 
@@ -141,6 +145,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T10:35:22.077Z
-Stopped at: Completed 05-09-PLAN.md
+Last session: 2026-09-23T11:00:05.823Z
+Stopped at: Completed 05-10-PLAN.md
 Resume file: None
