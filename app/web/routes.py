@@ -160,13 +160,20 @@ def _queue_context(page: QueuePage) -> dict[str, Any]:
     `listings`/`count`/`is_empty` are kept because the Phase-1 queue page pinned
     them (`tests/api/test_run_trigger.py` asserts the rendered `"0 listings"` and
     `"No listings yet"`); `page` carries everything the fragment needs to rebuild
-    its own Load-more URL.
+    its own pager URLs.
+
+    `is_empty` keys on the QUEUE being empty (`page.total == 0`), not on this slice
+    having no rows (WR-01). An out-of-range offset — reachable without hand-editing
+    the URL, e.g. a run that hides listings between a fragment render and a Next
+    click — yields zero rows while the queue is non-empty, and the pager must stay
+    on screen so the Previous control can return the user to a real page. At
+    `offset == 0` the two readings coincide, so the Phase-1 pins are unchanged.
     """
     return {
         "page": page,
         "listings": page.rows,
         "count": page.total,
-        "is_empty": not page.rows,
+        "is_empty": page.total == 0,
     }
 
 

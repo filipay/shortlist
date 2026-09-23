@@ -427,3 +427,39 @@ async def test_a_sort_or_threshold_change_emits_no_offset(
     assert "offset" not in form.group(0), (
         "no predicate control may carry an offset — a change must reset to page 1"
     )
+
+
+async def test_an_out_of_range_offset_still_renders_the_pager_and_previous(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """WR-01: an out-of-range offset is not an empty queue.
+
+    `is_empty` keys on `page.total`, so a stale offset past the end (e.g. a run that
+    hid listings between a fragment render and a Next click) still shows the position
+    line and the Previous control, instead of "No listings yet" stranding the user
+    with no way back. The empty state is reserved for a genuinely empty queue.
+    """
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    fragment = await client.get("/queue/list", params={"offset": "99"})
+
+    assert fragment.status_code == 200
+    assert "5 listings" in fragment.text, "the grand total is still reported"
+    assert "No listings yet" not in fragment.text, "the queue is not empty"
+    assert "No listings match these filters." not in fragment.text
+    assert 'id="queue-page-position"' in fragment.text, "the position line must render"
+    assert "of 3 (2 per page)" in fragment.text, "the real page count and page size"
+
+    prev_match = PAGER_PREV_RE.search(fragment.text)
+    assert prev_match is not None, "an out-of-range offset is a page after the first"
+    assert "offset=97" in prev_match.group(1), "Previous carries page.prev_offset"
+
+    assert PAGER_NEXT_RE.search(fragment.text) is None, "there is nothing past the end"
+    assert _rows(fragment.text) == [], "the requested slice itself has no rows"
+
+    # The empty state is reserved for a genuinely empty queue, not an empty slice.
+    empty = await client.get("/queue/list", params={"offset": "99", "q": "nomatchxyz"})
+    assert "No listings match these filters." in empty.text
