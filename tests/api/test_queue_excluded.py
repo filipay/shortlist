@@ -26,7 +26,8 @@ NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 RULE_KIND = "exclude_keyword"
 
 TOGGLE_RE = re.compile(r'<input[^>]*id="queue-toggle-excluded"[^>]*>', re.S)
-LOAD_MORE_RE = re.compile(r'id="queue-load-more"[^>]*hx-get="([^"]+)"', re.S)
+PAGER_PREV_RE = re.compile(r'id="queue-page-prev"[^>]*hx-get="([^"]+)"', re.S)
+PAGER_NEXT_RE = re.compile(r'id="queue-page-next"[^>]*hx-get="([^"]+)"', re.S)
 ROW_ID_RE = re.compile(r'<tr id="listing-row-(\d+)"')
 
 
@@ -254,7 +255,7 @@ async def test_the_chip_count_is_grouped_over_the_run_not_per_row(
 # --- paging -------------------------------------------------------------------
 
 
-async def test_a_predicate_change_resets_the_page_and_load_more_carries_it(
+async def test_a_predicate_change_resets_the_page_and_the_pager_carries_it(
     client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
 ) -> None:
     """Page N of a DIFFERENT filtered set is meaningless, so the toggle restarts."""
@@ -272,7 +273,75 @@ async def test_a_predicate_change_resets_the_page_and_load_more_carries_it(
 
     fragment = await client.get("/queue/list", params={"excluded": "0", "offset": "2"})
 
-    match = LOAD_MORE_RE.search(fragment.text)
-    assert match is not None, "a page with more rows must offer Load more"
-    assert "offset=4" in match.group(1), "Load more carries the current offset + limit"
-    assert "excluded=" not in match.group(1), "and the current predicate set"
+    next_match = PAGER_NEXT_RE.search(fragment.text)
+    assert next_match is not None, "page 2 of 3 must offer Next"
+    assert "offset=4" in next_match.group(1), "Next carries the next offset"
+    assert "excluded=" not in next_match.group(1), "and the current predicate set"
+
+    prev_match = PAGER_PREV_RE.search(fragment.text)
+    assert prev_match is not None, "page 2 of 3 must offer Previous"
+    assert "offset" not in prev_match.group(1), (
+        "the previous page of page 2 is offset 0, which the query string omits"
+    )
+
+    assert "Page 2 of 3 (2 per page)" in fragment.text
+
+
+async def test_the_first_page_has_no_previous_and_the_last_has_no_next(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """The pager's two ends: nothing before page 1, nothing after the last page."""
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    first = await client.get("/queue/list")
+
+    assert PAGER_PREV_RE.search(first.text) is None, "page 1 has no Previous"
+    first_next = PAGER_NEXT_RE.search(first.text)
+    assert first_next is not None and "offset=2" in first_next.group(1)
+    assert "Page 1 of 3 (2 per page)" in first.text
+
+    last = await client.get("/queue/list", params={"offset": "4"})
+
+    assert PAGER_NEXT_RE.search(last.text) is None, "the last page has no Next"
+    last_prev = PAGER_PREV_RE.search(last.text)
+    assert last_prev is not None and "offset=2" in last_prev.group(1), (
+        "the previous page of page 3 is offset 2"
+    )
+    assert "Page 3 of 3 (2 per page)" in last.text
+
+
+async def test_the_page_size_is_server_fixed_and_only_surfaced(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """T-02-28: `limit` is never read from the request; the pager only displays it."""
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    default = await client.get("/queue/list")
+    attempted = await client.get("/queue/list", params={"limit": "1"})
+
+    assert len(_rows(attempted.text)) == 2, "a request-supplied limit must be ignored"
+    assert _rows(attempted.text) == _rows(default.text), (
+        "?limit=1 returns the same rows as the server-fixed page size"
+    )
+    assert "(2 per page)" in attempted.text, "the position line shows the server value"
+
+
+async def test_the_full_page_renders_the_pager_and_the_position_line(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """The pager lives in the shared partial, so the page renders it too."""
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    page = await client.get("/")
+
+    assert 'id="queue-page-next"' in page.text
+    assert "Page 1 of 3 (2 per page)" in page.text
