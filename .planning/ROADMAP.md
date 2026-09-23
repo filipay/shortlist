@@ -211,7 +211,7 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 executed + 3 gap-closure plans awaiting execution (05-08, 05-09, 05-10)
 **UI hint**: yes
 
 Plans:
@@ -238,6 +238,12 @@ Plans:
 
 - [x] 05-05-PLAN.md — The ranking strip reports one run's population: `RunSummary.candidate_count` (the run's own `reason_counts_json['survivors']`) replaces the request-derived page total, so the strip can no longer read "Ranked 30 of 5"
 - [x] 05-06-PLAN.md — An unreadable (non-UTF-8) CV fact store takes the documented D-94 skip: one path-qualified `CvFactStoreError` at the read boundary, so the detached ranking task returns cleanly instead of leaking `UnicodeDecodeError`
+
+**Gap closure — round 2** *(planned 2026-09-23 from the UAT diagnoses; wave 1 = 05-08, wave 2 = 05-09 and 05-10)*
+
+- [ ] 05-08-PLAN.md — G-05-1: the ranking outcome is persisted on the run (`reason_counts_json['ranking']`, written by `_finish`) and rendered, so the queue strip distinguishes running from skipped-and-why from not-attempted from ranked
+- [ ] 05-09-PLAN.md — G-05-1/G-05-2: the job detail page names the last run's real ranking state instead of hedging, and names the CV fact-store path when that is the skip reason
+- [ ] 05-10-PLAN.md — G-05-2: disclose the CV fact-store prerequisite — a `/settings` card naming the path and the supply steps, an unconditional queue status line, a `cv` object in `/health`, and the documented `cv.draft.yaml` → `cv.yaml` promotion
 
 **Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
