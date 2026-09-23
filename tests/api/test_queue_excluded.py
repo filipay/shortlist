@@ -28,6 +28,7 @@ RULE_KIND = "exclude_keyword"
 TOGGLE_RE = re.compile(r'<input[^>]*id="queue-toggle-excluded"[^>]*>', re.S)
 PAGER_PREV_RE = re.compile(r'id="queue-page-prev"[^>]*hx-get="([^"]+)"', re.S)
 PAGER_NEXT_RE = re.compile(r'id="queue-page-next"[^>]*hx-get="([^"]+)"', re.S)
+FORM_RE = re.compile(r'<form id="queue-filters".*?</form>', re.S)
 ROW_ID_RE = re.compile(r'<tr id="listing-row-(\d+)"')
 
 
@@ -345,3 +346,84 @@ async def test_the_full_page_renders_the_pager_and_the_position_line(
 
     assert 'id="queue-page-next"' in page.text
     assert "Page 1 of 3 (2 per page)" in page.text
+
+
+async def test_the_position_line_renders_on_a_single_page_queue(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """The truth is explicit: the line renders even when there is only one page.
+
+    A single-page queue is exactly where gating the pager on `has_more` would hide
+    the answer to "how many jobs per page" — so this is the case the fix must not
+    lose. One listing at page size 2 is a partial single page.
+    """
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, title="Engineer 1", index=1)
+
+    fragment = await client.get("/queue/list")
+
+    assert "Page 1 of 1 (2 per page)" in fragment.text, (
+        "a single-page queue still states its page size"
+    )
+    assert PAGER_PREV_RE.search(fragment.text) is None, "there is no page 0"
+    assert PAGER_NEXT_RE.search(fragment.text) is None, "there is no page 2"
+
+
+async def test_the_pager_carries_the_current_predicate_set(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """Both controls keep the user's filters — the truth says "the CURRENT predicate set".
+
+    The existing paging test only exercises the `excluded` toggle; a regression that
+    dropped `q`/`sort` from a pager URL would survive it. This uses a non-default sort
+    and a search, so both must ride along on Previous and Next.
+    """
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    fragment = await client.get(
+        "/queue/list", params={"q": "Engineer", "sort": "recent", "offset": "2"}
+    )
+
+    next_match = PAGER_NEXT_RE.search(fragment.text)
+    assert next_match is not None, "page 2 of 3 must offer Next"
+    next_url = next_match.group(1)
+    assert "q=Engineer" in next_url, "Next must keep the search"
+    assert "sort=recent" in next_url, "Next must keep the ordering"
+    assert "offset=4" in next_url
+
+    prev_match = PAGER_PREV_RE.search(fragment.text)
+    assert prev_match is not None, "page 2 of 3 must offer Previous"
+    prev_url = prev_match.group(1)
+    assert "q=Engineer" in prev_url, "Previous must keep the search"
+    assert "sort=recent" in prev_url, "Previous must keep the ordering"
+    assert "offset" not in prev_url, "the previous page of page 2 is offset 0"
+
+
+async def test_a_sort_or_threshold_change_emits_no_offset(
+    client, session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """The predicate-reset rule covers EVERY predicate control, not just the toggle.
+
+    A filter, sort or threshold change must restart at page 1. No control inside the
+    filter form may carry an `offset`; only the pager (outside the form) does.
+    """
+    monkeypatch.setattr(settings, "queue_page_size", 2)
+    await _register_sources(session_factory, "linkedin")
+    for index in range(1, 6):
+        await _seed_listing(session_factory, title=f"Engineer {index}", index=index)
+
+    page = await client.get("/")
+
+    form = FORM_RE.search(page.text)
+    assert form is not None, "the predicate form must be on the page"
+    assert 'id="queue-sort"' in form.group(0), "the sort control is a predicate control"
+    assert 'id="queue-min-score"' in form.group(0), (
+        "the threshold control is a predicate control"
+    )
+    assert "offset" not in form.group(0), (
+        "no predicate control may carry an offset — a change must reset to page 1"
+    )
