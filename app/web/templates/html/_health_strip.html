@@ -1,7 +1,9 @@
 {# SRC-07 / D-13 — the per-source health strip.
    One row per source: liveness, last success, listings returned, field fill-rate.
    The LLM indicator exists because a silent backend failure is the confusing case
-   (D-08 / STACK Q8). #}
+   (D-08 / STACK Q8). The CV fact-store status line sits beside that indicator: a
+   fresh checkout's empty, gitignored cv/ would otherwise leave the page mute about
+   the ranking prerequisite. #}
 <section id="source-health">
   <h2>Source health</h2>
 
@@ -13,6 +15,17 @@
   {% else %}
   <p class="llm-status llm-reachable" id="llm-backend-reachable">
     LLM backend reachable{% if opencode_version %} — version {{ opencode_version }}{% endif %}.
+  </p>
+  {% endif %}
+
+  {% if cv %}
+  <p class="cv-status" id="cv-fact-store-status">
+    {% if cv.available %}
+    CV fact store loaded from <code>{{ cv.path }}</code>.
+    {% else %}
+    No readable CV fact store at <code>{{ cv.path }}</code> — ranking is skipped until
+    one is supplied. See <a href="/settings">Settings</a> for how to supply it.
+    {% endif %}
   </p>
   {% endif %}
 

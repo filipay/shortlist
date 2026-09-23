@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.runs import render_run_fragment
 from app.config import settings
+from app.cv.factstore import fact_store_report
 from app.db.repositories import event_repo, llm_call_repo, run_repo, state_repo
 from app.db.repositories.queue_repo import QueuePage, QueueQuery, read_queue
 from app.db.repositories.run_repo import RunSummary
@@ -43,7 +44,7 @@ from app.db.session import get_session
 from app.domain.models import User
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
-from app.pipeline.rank import RANK_SKIP_LABELS, ranking_in_progress
+from app.pipeline.rank import CV_FILENAME, RANK_SKIP_LABELS, ranking_in_progress
 from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
@@ -86,6 +87,17 @@ async def _health_strip(
         return rows, False, None, type(exc).__name__
 
     return rows, bool(outcome.reachable), outcome.version, outcome.error
+
+
+def _cv_status() -> dict[str, Any]:
+    """The CV fact-store report — total, so it can never 500 the queue page.
+
+    The probe never raises (a missing, unreadable or invalid store is reported), and
+    it is the same computation the settings card performs (`Settings.cv_dir` +
+    `rank.CV_FILENAME`), so the queue line and the settings card cannot disagree
+    about the path or whether a readable store is present.
+    """
+    return fact_store_report(Path(settings.cv_dir) / CV_FILENAME)
 
 
 def _flag(value: str | None) -> bool:
@@ -357,6 +369,7 @@ async def queue(
             "last_run": last_run,
             "last_run_fragment": last_run_fragment,
             "ranking_strip": ranking_strip,
+            "cv": _cv_status(),
             "source_health": source_health,
             "opencode_reachable": reachable,
             "opencode_version": version,

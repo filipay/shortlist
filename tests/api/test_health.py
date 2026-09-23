@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import health as health_module
+from app.config import settings
 from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.db.session import get_session, get_session_factory
@@ -44,6 +45,7 @@ from app.sources.linkedin import CAPABILITIES
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STRIP_TEMPLATE = PROJECT_ROOT / "app" / "web" / "templates" / "html" / "_health_strip.html"
 QUEUE_TEMPLATE = PROJECT_ROOT / "app" / "web" / "templates" / "html" / "queue.html"
+CV_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "cv" / "awesomecv_standin.yaml"
 
 SENTINEL = json.loads(
     (PROJECT_ROOT / "tests" / "fixtures" / "opencode_providers.json").read_text(
@@ -393,7 +395,9 @@ async def test_the_health_body_carries_no_raw_upstream_payload(
 
     body = (await health_env.client.get("/health")).json()
 
-    assert set(body) == {"status", "db", "opencode", "tectonic", "sources"}
+    # The exact-key-set pin is a DELIBERATE premise change: the test exists to pin
+    # the body's shape, and the shape now has one more reported dependency (`cv`).
+    assert set(body) == {"status", "db", "opencode", "tectonic", "cv", "sources"}
     assert set(_all_keys(body)) & FORBIDDEN_BODY_KEYS == set()
     assert SENTINEL not in json.dumps(body)
 
@@ -466,6 +470,58 @@ async def test_health_reports_a_raising_engine_instead_of_propagating(
     assert body["tectonic"]["available"] is False
     assert body["tectonic"]["error"] == "RuntimeError"
     assert body["status"] == "ok"
+
+
+# --- the CV fact store is reported, never raised (G-05-2 / RANK-08) -----------
+
+
+async def test_health_always_reports_a_cv_object(health_env: HealthEnv) -> None:
+    response = await health_env.client.get("/health")
+
+    assert response.status_code == 200
+    cv = response.json()["cv"]
+    assert set(cv) == {"available", "path", "error"}
+    assert isinstance(cv["available"], bool)
+
+
+async def test_health_reports_a_missing_store_without_degrading_status(
+    health_env: HealthEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path / "empty"))
+
+    response = await health_env.client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok", "a missing fact store must not degrade the app"
+    assert body["cv"]["available"] is False
+    assert body["cv"]["error"] == "CvFactStoreError"
+    assert body["cv"]["path"] == str(tmp_path / "empty" / "cv.yaml")
+
+
+async def test_health_reports_a_readable_store(
+    health_env: HealthEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "cv.yaml").write_text(
+        CV_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    body = (await health_env.client.get("/health")).json()
+
+    assert body["cv"]["available"] is True
+    assert body["cv"]["error"] is None
+    assert body["status"] == "ok"
+
+
+async def test_the_queue_page_renders_the_cv_status_line(
+    health_env: HealthEnv,
+) -> None:
+    response = await health_env.client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="cv-fact-store-status"' in response.text
+    assert str(Path(settings.cv_dir) / "cv.yaml") in response.text
 
 
 # --- the visible health strip (D-13) ------------------------------------------

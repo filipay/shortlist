@@ -13,6 +13,7 @@ built from typed fields only: no raw upstream payload is echoed (T-01-30).
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -21,6 +22,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
+from app.config import settings
+from app.cv.factstore import fact_store_report
 from app.db.repositories.source_repo import get_source_health
 from app.db.session import get_session, get_session_factory
 from app.domain.models import User
@@ -28,6 +31,7 @@ from app.latex import get_latex_engine
 from app.latex.base import LatexEngine
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
+from app.pipeline.rank import CV_FILENAME
 from app.probe.probe import probe_all
 
 log = structlog.get_logger(__name__)
@@ -67,6 +71,18 @@ async def _tectonic_report(engine: LatexEngine) -> dict[str, Any]:
         "version": probe.version,
         "error": probe.error,
     }
+
+
+def _cv_report() -> dict[str, Any]:
+    """`{available, path, error}`. A store problem must not break `/health`.
+
+    Mirrors `_tectonic_report`'s totality: the probe is total, so a failure is
+    REPORTED, never raised, and never changes `status`. Unlike `tectonic` the object
+    carries `path` instead of `version` — a fact store is a data document with no
+    engine version, and the path is the operator's actionable datum. `error` is the
+    exception CLASS NAME only, never a message, so no document text can reach the JSON.
+    """
+    return fact_store_report(Path(settings.cv_dir) / CV_FILENAME)
 
 
 @router.get("/health")
@@ -132,6 +148,9 @@ async def health(
         "db": database,
         "opencode": opencode,
         "tectonic": tectonic,
+        # A missing or unreadable CV fact store never degrades "status" — the same
+        # rule the LaTeX engine already follows. Ranking is skipped, and that is data.
+        "cv": _cv_report(),
         "sources": sources,
     }
 
