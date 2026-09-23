@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-10-PLAN.md
-last_updated: "2026-09-23T11:00:05.948Z"
+stopped_at: Completed 05-11-PLAN.md
+last_updated: "2026-09-23T15:55:18.938Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 05 execution started
-state_head: 7df8af47b07f137cfcb0b2688d02d58bbaf874c7
+state_head: c083082c37641dd44a250a80fd9d62531c74009f
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 43
-  completed_plans: 43
+  total_plans: 44
+  completed_plans: 44
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 4 of 10
+Plan: 2 of 11
 Status: Ready to execute
 Last activity: 2026-09-23 — Phase 05 execution started
 
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P08 | 13min | 3 tasks | 7 files |
 | Phase 05 P09 | 7min | 2 tasks | 3 files |
 | Phase 05 P10 | 20 | 3 tasks | 13 files |
+| Phase 05 P11 | 10min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-10: one total fact_store_report(path) probe (available/path/error, class name only) is shared by the Settings CV card, the queue status line and /health, so the three cannot disagree about the path or the load outcome
 - [Phase 05]: 05-10: the /health cv object carries path, not version (a fact store is a data document); a missing store is reported and never degrades status, mirroring the tectonic rule
 - [Phase 05]: 05-10: every disclosed path is str(Path(settings.cv_dir) / rank.CV_FILENAME) — the expression the loader uses — and the copy says 'no readable CV fact store', never 'missing file' (D-94 covers absent/unreadable/non-decodable)
+- [Phase 05]: The pager renders on every non-empty queue page, not gated on has_more, so the position line shows the server-fixed page size even for a single-page queue
+- [Phase 05]: No htmx history/URL-push for paging: a fragment URL in browser history reloads as a bare fragment, so the in-page Previous control is the backward affordance
+- [Phase 05]: QueuePage's four page accessors are pure derivations of offset/limit/total with max(1, limit) guards, so a degenerate instance cannot 500 the queue
 
 ### Pending Todos
 
@@ -145,6 +149,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T11:00:05.823Z
-Stopped at: Completed 05-10-PLAN.md
+Last session: 2026-09-23T15:55:18.826Z
+Stopped at: Completed 05-11-PLAN.md
 Resume file: None
