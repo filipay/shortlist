@@ -7,7 +7,7 @@ status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: "2026-09-22"
-validated: "2026-09-22"
+validated: "2026-09-23"
 ---
 
 # Phase 5 — Validation Strategy
@@ -44,17 +44,20 @@ validated: "2026-09-22"
 
 **Last full-suite result (2026-09-23, after the round-2 gap-closure plans 05-07…05-10):** `1065 passed, 14 deselected, 2 xfailed`.
 
+**Last full-suite result (2026-09-23, after the round-3 gap-closure plan 05-11 + this re-audit):** `1085 passed, 14 deselected, 2 xfailed`.
+
 ---
 
 ## Per-Task Verification Map
 
-The phase executed as ten plans: the four wave-ordered delivery plans (waves 1–4), the
-first gap-closure pair (05-05, 05-06, wave 5), and the round-2 gap-closure plans
-(05-07 and 05-08 in wave 1; 05-09 and 05-10 in wave 2). Task IDs below are `{plan}-T{n}`
+The phase executed as eleven plans: the four wave-ordered delivery plans (waves 1–4), the
+first gap-closure pair (05-05, 05-06, wave 5), the round-2 gap-closure plans
+(05-07 and 05-08 in wave 1; 05-09 and 05-10 in wave 2), and the round-3 gap-closure plan
+05-11 (wave 1). Task IDs below are `{plan}-T{n}`
 (the plans carry no explicit task IDs). The requirement→evidence binding is the contract;
 the `Wave 0` column records whether the named file had to be created before the task could
 run. Rows for 05-05/05-06 were added by the first re-audit; rows for 05-07…05-10 by the
-2026-09-23 round-2 re-audit.
+2026-09-23 round-2 re-audit; rows for 05-11 by the 2026-09-23 round-3 re-audit.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
@@ -84,6 +87,11 @@ run. Rows for 05-05/05-06 were added by the first re-audit; rows for 05-07…05-
 | 05-08-T1/T2 | 08 | 1 | UI-01 / RANK-08 | T-05-34 | The ranking outcome is persisted on the run (`reason_counts_json['ranking']`) and rendered: running / skipped + reason / nothing-to-rank / not-completed, with a persisted skip winning over a live task | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_queue_ranked.py -k "ranking_strip" -x` | ✅ | ✅ green |
 | 05-09-T1 | 09 | 2 | UI-02 | T-05-39 | The unscored detail page names the last run's real ranking state (skipped + reason / running / not-completed) and the CV fact-store path, never a hedge | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_listing_detail.py -k "unscored" -x` | ✅ | ✅ green |
 | 05-10-T1/T2/T3 | 10 | 2 | RANK-08 / UI-01 | T-05-43 | The CV fact-store prerequisite is disclosed on `/settings`, the queue status line and the `/health` `cv` object; only the exception class name crosses the boundary | unit + integration | `.venv/bin/python -m pytest -q tests/api/test_settings_page.py tests/api/test_health.py tests/cv/test_factstore.py -q` | ✅ | ✅ green |
+| 05-11-T1 | 11 | 1 | UI-01 | — | The four derived page accessors are total: a degenerate `QueuePage` (limit 0/negative, total 0, in-page offset) never raises `ZeroDivisionError`, `page_count ≥ 1`, `page_index ≥ 1`, `prev_offset ≥ 0` | unit (pure) | `.venv/bin/python -m pytest -q tests/db/test_queue_page.py -q` | ✅ | ✅ green |
+| 05-11-T2 | 11 | 1 | UI-01 | T-05-40 | The shared fragment renders `Page X of Y (N per page)` on a **single-page** non-empty queue (the plan's explicit "even when there is only one page" case) with no Previous and no Next | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_queue_excluded.py::test_the_position_line_renders_on_a_single_page_queue -x` | ✅ | ✅ green |
+| 05-11-T2 | 11 | 1 | UI-01 | T-05-40 | Both pager controls carry the CURRENT predicate set (a non-default `sort` and a `q` ride along on Previous and Next, not just the `excluded` toggle) | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_queue_excluded.py::test_the_pager_carries_the_current_predicate_set -x` | ✅ | ✅ green |
+| 05-11-T2 | 11 | 1 | UI-01 | T-05-39 | The predicate-reset rule covers every control in the filter form: no `offset` appears in `#queue-filters`, so a filter/sort/threshold change restarts at page 1 | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_queue_excluded.py::test_a_sort_or_threshold_change_emits_no_offset -x` | ✅ | ✅ green |
+| 05-11-T3 | 11 | 1 | UI-01 | T-05-39 | First page has no Previous, last page has no Next; `?limit=1` is ignored and the position line shows the server-fixed page size; the full page renders the same pager | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_queue_excluded.py -q` | ✅ | ✅ green |
 | 05-04-T3 | 04 | 4 | RANK-04 | — | Weight change re-derives with zero new LLM calls | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_ranking_weights.py::test_weight_change_writes_zero_llm_calls -x` | ✅ | ✅ green |
 | 05-04-T3 | 04 | 4 | UI-03 | — | Weights editor saves and re-renders; criteria editor untouched | integration (API) | `.venv/bin/python -m pytest -q tests/api/test_ranking_weights.py::test_weights_form_saves_and_rerenders tests/api/test_ranking_weights.py::test_settings_page_still_renders_existing_cards -x` | ✅ | ✅ green |
 | — | — | — | UI-07 | — | New templates' classes all have CSS rules; no CDN | guard | `.venv/bin/python -m pytest -q tests/test_stylesheet_coverage.py tests/test_no_cdn.py -q` | ✅ | ✅ green |
@@ -140,6 +148,7 @@ are accepted by design (see Known Accepted Limitations below). Run uncensored wi
 | E-04 | UI-01 / RANK-08 | 05-REVIEW CR-01 | The "Ranked X of Y" strip drew its numerator from `runs.ranked_count` and its denominator from the current page total — two different populations — so it read "Ranked 30 of 5" | ✅ **Resolved** by plan 05-05 (`d5ac5c2`, `f894b4c`): `RunSummary.candidate_count` reads the run's own `reason_counts_json['survivors']`; `_ranking_strip` no longer takes a request-derived denominator and the template degrades to `Ranked N` alone. Two first-class regression tests pin both branches. |
 | E-02 | RANK-03 | 05-REVIEW WR-05 | `read_weights` returns a negative stored weight verbatim (`_as_float` rejects only non-finite values) | ⚠️ **Open — accepted by design.** Strict-xfail sentinel retained; RANK-03's requirement-level behaviour is green. |
 | E-03 | UI-01 / T-05-19 | 05-REVIEW WR-03 | `?min_score=nan` passes `float()` and `total >= nan` is False, so a junk threshold silently hides every scored row | ⚠️ **Open — accepted by design.** Strict-xfail sentinel retained; UI-01/T-05-19's requirement-level behaviour is green. |
+| G-05-3 | UI-01 | UAT ad-hoc finding | The queue's paging was forward-only and stateless: "Load more" did an `innerHTML` replace (destroying on-screen rows), no back control existed, and the UI showed only the grand total — never the page index, page count or page size | ✅ **Resolved** by plan 05-11 (`71c4e3b`, `d8e5893`, `c083082`): `QueuePage` derives `has_prev`/`prev_offset`/`page_index`/`page_count`; the shared fragment renders Previous / `Page X of Y (N per page)` / Next through the existing `GET /queue/list` swap; no new route, state, history integration or JS. |
 
 ### Known Accepted Limitations (tracked by strict-xfail sentinels — NOT coverage gaps)
 
@@ -180,6 +189,10 @@ former BLOCKER gaps E-01 and E-04 are closed by plans 05-06 and 05-05; WR-03/WR-
 accepted-by-design limitations tracked by strict-xfail sentinels, not coverage gaps.
 Re-verified 2026-09-23 after the round-2 gap-closure plans 05-07…05-10 — still COMPLIANT,
 still 0 coverage gaps.
+Re-verified 2026-09-23 after the round-3 gap-closure plan 05-11 (G-05-3) — still
+COMPLIANT. Four coverage gaps in the 05-11 delta were found and filled with 17 new tests
+(including the accessor-totality suite the 05-11 SUMMARY had wrongly attributed to
+`tests/db/test_queue_state.py`); 0 BLOCKERs, 0 escalations.
 
 ---
 
@@ -235,3 +248,59 @@ still 0 coverage gaps.
 `tests/api/test_settings_page.py`, `tests/api/test_health.py` and `tests/cv/test_factstore.py`;
 no requirement was left without green automated verification, and no new requirement ID was
 introduced (the plans address existing UI-01/UI-02/RANK-08 gaps).
+
+---
+
+## Round-3 Validation Audit 2026-09-23 (after plan 05-11, G-05-3)
+
+The delta under audit: `QueuePage` gained four derived accessors
+(`has_prev`/`prev_offset`/`page_index`/`page_count`), the shared fragment
+`queue_list.html` replaced the forward-only control with a
+`#queue-pager` (Previous / position line / Next), and `static/vendor/app.css` +
+`assets/tailwind/input.css` swapped the dead control rules for `#queue-pager` /
+`#queue-page-position`. No route, no state, no migration (head stays `0004`), no JS,
+no CDN asset.
+
+The 05-11 SUMMARY cites `tests/db/test_queue_state.py` as the D1 (accessor totality)
+evidence. **That file is the watermark suite and contains no `QueuePage` assertion** —
+the claimed coverage did not exist. This audit found and closed that and three other
+coverage gaps against the plan's `must_haves.truths`:
+
+| Gap | Truth | Gap type | Resolution |
+|-----|-------|----------|------------|
+| G-05-3-a | "The four derived accessors are total: `page_count` never returns 0 and never divides by zero, and `prev_offset` never goes negative" | MISSING (SUMMARY cited a file that does not test it) | New `tests/db/test_queue_page.py` — 14 tests over first/middle/last/empty/non-divisible/zero-size/negative-size/degenerate shapes |
+| G-05-3-b | "whenever the queue is non-empty the fragment renders `Page <page_index> of <page_count> (<limit> per page)` … even when there is only one page" | MISSING (only 3-page queues were tested) | `test_the_position_line_renders_on_a_single_page_queue` |
+| G-05-3-c | "Previous … with the CURRENT predicate set" / Next likewise | PARTIAL (only the `excluded` toggle was exercised) | `test_the_pager_carries_the_current_predicate_set` — a `q` and a non-default `sort` must ride both controls |
+| G-05-3-d | "a filter, sort or threshold change still emits no offset" | PARTIAL (only the toggle was pinned) | `test_a_sort_or_threshold_change_emits_no_offset` — no `offset` anywhere in `#queue-filters` |
+
+All four were verified non-vacuous by a runtime mutation probe (no implementation file
+was modified): breaking `page_count`'s `max(1, limit)` guard and making
+`QueueQuery.query_string` return `""` turned the three probe-run tests red. The probe
+was then deleted. No implementation bug was found — the accessors, the pager markup and
+the server-fixed `limit` all behave as the plan's truths state.
+
+| Metric | Count |
+|--------|-------|
+| Requirements audited | 11 (RANK-01..08, UI-01..03) — unchanged |
+| New map rows added | 5 (05-11-T1, T2 ×3, T3) |
+| Coverage gaps found against the 05-11 delta | 4 |
+| Gaps resolved by new tests | 4 (all FILLED) |
+| Gaps escalated / BLOCKER | 0 |
+| New first-class tests added | 17 (14 unit in `tests/db/test_queue_page.py`, 3 API in `tests/api/test_queue_excluded.py`) |
+| Tests modified | `tests/api/test_queue_excluded.py` (added `FORM_RE` + 3 tests; existing 8 unchanged and still green) |
+| Non-vacuous probe | 3/3 mutated tests failed as expected, probe removed |
+| Remaining strict-xfail sentinels | 2 (WR-05, WR-03 — accepted by design, unchanged) |
+| Nyquist verdict | ✅ compliant (`nyquist_compliant: true`) |
+
+**Evidence verified on HEAD** (`6062f77` + this audit's working tree): targeted guard run
+`tests/db/test_queue_page.py tests/api/test_queue_excluded.py tests/api/test_queue_search.py
+tests/api/test_run_trigger.py tests/api/test_queue_links.py tests/test_stylesheet_coverage.py
+tests/test_no_cdn.py` → `57 passed`. Full suite `.venv/bin/python -m pytest -q` →
+`1085 passed, 14 deselected, 2 xfailed` (was `1068 passed` at the 05-11 SUMMARY; +17 new).
+
+**Files added/updated by this audit:**
+
+- `tests/db/test_queue_page.py` (new, 14 tests) — accessor totality.
+- `tests/api/test_queue_excluded.py` (updated, +3 tests) — single-page position line,
+  predicate-set carry, form-wide predicate reset.
+- `.planning/phases/05-ranking-core-value/05-VALIDATION.md` (this file).
