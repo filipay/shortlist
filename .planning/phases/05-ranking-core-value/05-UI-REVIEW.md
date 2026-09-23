@@ -1,12 +1,12 @@
 # Phase 5 — UI Review
 
-**Audited:** 2026-09-23 (round-3 re-audit; **supersedes** the 2026-09-22 review in this file)
-**Baseline:** abstract 6-pillar standards — **no `UI-SPEC.md` exists** in this phase dir or anywhere under `.planning/` (re-verified this run: `find .planning -iname "*UI-SPEC*"` → empty). There is therefore no approved design contract; findings are judged against the phase's own decision record (`05-CONTEXT.md` D-88…D-100), the plan acceptance criteria, and general 6-pillar standards.
-**Screenshots:** **not captured.** No dev server was reachable this run — ports 3000 / 5173 / 8080 / 8000 all returned connection failure (`000`). The reason is unchanged: the shipped default DB URL is `sqlite+aiosqlite:////data/jobsearch.db` (absolute `/data`, absent here) while the real DB lives at `./data/jobsearch.db`. Audit is therefore **code-only** (template + compiled-CSS + route + rendered-test analysis). No screenshots were fabricated.
-**Method:** template source, the compiled `static/vendor/app.css` (Tailwind v4.3.3), `app/web/routes.py`, `app/api/listings.py`, `app/api/settings.py`, `app/api/health.py`, the rendered-HTML tests, and a Jinja render probe for the two precedence/repr defects. Test run this audit: `.venv/bin/python -m pytest tests/api/test_queue_ranked.py tests/api/test_listing_detail.py tests/api/test_ranking_weights.py tests/test_stylesheet_coverage.py tests/api/test_health.py tests/api/test_settings_page.py tests/api/test_queue_ranking_adversarial.py` → **70 passed, 1 xfailed** (the WR-03 `min_score=nan` strict-xfail sentinel remains).
-**Scope of this round:** the round-2 gap-closure UI deltas — 05-08 (`queue.html` `#ranking-strip`, five states), 05-09 (`listing_detail.html` ranking-state copy + CV path), 05-10 (`settings.html` CV card, `_health_strip.html` `#cv-fact-store-status`, `app.css` `.cv-status`) — plus the surviving findings from the prior review, re-verified.
+**Audited:** 2026-09-23 (round-4 re-audit; **supersedes** the 2026-09-23 round-3 review in this file)
+**Baseline:** abstract 6-pillar standards — **no `UI-SPEC.md` exists** in this phase dir or anywhere under `.planning/` (re-verified: `find .planning -iname "*UI-SPEC*"` → empty). There is no approved design contract, so findings are judged against the phase's own decision record (`05-CONTEXT.md` D-88…D-100), the plan acceptance criteria, and general 6-pillar standards.
+**Screenshots:** **not captured.** No dev server was reachable this run — ports 3000 / 5173 / 8080 / 8000 all returned connection failure (`000`). The shipped default DB URL is `sqlite+aiosqlite:////data/jobsearch.db` (absolute `/data`, absent here) while the real DB lives at `./data/jobsearch.db`; the app cannot boot as-shipped. Audit is therefore **code-only** (template source, compiled `static/vendor/app.css`, repository/route source, rendered-HTML tests). No screenshots were fabricated.
+**Method:** `queue_list.html`, `queue.html`, `_listing_row.html`, `listing_detail.html`, `runs.html`, `_health_strip.html`, `app/db/repositories/queue_repo.py`, `app/web/routes.py`, `app/pipeline/run.py`, `assets/tailwind/input.css` + compiled `static/vendor/app.css`, vendored `htmx.min.js` (v2.0.10), and the paging tests. Test run this audit: `.venv/bin/python -m pytest tests/api/test_queue_excluded.py tests/test_stylesheet_coverage.py tests/api/test_queue_ranked.py tests/api/test_listing_detail.py` → **39 passed**.
+**Scope of this round:** the 05-11 gap-closure delta (G-05-3) — the forward-only "Load more" control replaced by a two-way `#queue-pager` (Previous / `Page X of Y (N per page)` / Next) in the shared `queue_list.html` fragment, plus the derived `QueuePage` accessors and the two id-scoped CSS rules. Surviving findings from round 3 are re-verified, not assumed.
 
-**Reused evidence (stated explicitly):** `queue_list.html`, `_listing_row.html`, `base.html`, `runs.html`, `criteria.html`, `merges.html` are unchanged since the prior review and are carried forward as re-verified. The colour-contrast ratios **were** recomputed from the current compiled stylesheet.
+**Reused evidence (stated explicitly):** `_listing_row.html`, `base.html`, `criteria.html`, `merges.html`, `_health_strip.html` are unchanged since round 3. `queue.html`'s filter comment changed (no markup change). Colour ratios **were** recomputed from the current compiled stylesheet. The 05-11 delta touched only the queue pager and its CSS.
 
 ---
 
@@ -14,27 +14,26 @@
 
 | Pillar | Score | Key Finding |
 |--------|-------|-------------|
-| 1. Copywriting | 2/4 | The round-2 work added excellent honest state copy, but also **regressed**: `/runs/{id}` now prints the new ranking marker as a raw Python dict repr (WR-01), and the two pre-existing raw-token leaks (`all_filtered`, `per_run`) remain. |
-| 2. Visuals | 3/4 | The CV prerequisite — the blocker for the phase's Core Value — is disclosed only at the very bottom of the queue page, inside `#source-health`, below the queue table. |
-| 3. Color | 2/4 | Unchanged three AA failures (`req-met` 3.77:1, `badge-score-tier-high` 3.58:1, `badge-score-tier-low` 4.39:1) plus a new 4.39:1 muted-on-`surface-2` failure on the CV-path `<code>` spans. |
-| 4. Typography | 3/4 | Coherent, modest size/weight set; verdicts and body still share one size so hierarchy rests on colour alone. |
-| 5. Spacing | 3/4 | Disciplined rem scale, no arbitrary `[Npx]` values; new `.cv-status` matches `.llm-status` padding. Minor chip-padding inconsistency. |
-| 6. Experience Design | 2/4 | Still the worst pillar: **detail-page Save/Hide remain inert** (BLOCKER — unchanged), plus the `nan`/`inf` threshold, the 5000-row truncation, and no busy state on the primary run action. |
+| 1. Copywriting | 2/4 | The pager's own copy is clean and the mislabelled "Load more" is gone — but the round-3 raw-token leaks and the `/runs/{id}` dict repr (WR-01) are untouched. |
+| 2. Visuals | 3/4 | New pager instability: Previous is *omitted* on page 1 and Next on the last page, so the position line jumps horizontally between pages; the top-of-list count still doesn't disclose that the list is paginated. |
+| 3. Color | 2/4 | Unchanged four AA failures (`req-met` 3.77:1, `badge-score-tier-high` 3.58:1, `badge-score-tier-low` 4.39:1, `code` on `surface-2` 4.39:1). The pager adds no new colour and its own line passes (4.83:1). |
+| 4. Typography | 3/4 | Coherent, modest set; the pager's `.9rem` position line and `.85rem` controls sit inside the existing scale. Verdicts and body still share one size. |
+| 5. Spacing | 3/4 | Disciplined rem scale, no arbitrary values; `#queue-pager` `gap:1rem` / `margin-top:1rem` match the system. New minor: the pager has no `flex-wrap`, so it can overflow at narrow widths / large page counts. |
+| 6. Experience Design | 2/4 | Still the worst pillar. The pager is correct but has **no scroll reset, no busy state, and no request coalescing**; the detail-page Save/Hide BLOCKER is unchanged; the 5000-row scan cap now manifests as a **wrong page count**. |
 
-**Overall: 15/24** (down from 16/24). The round-2 observability work is a genuine improvement to state coverage — but Pillar 1 loses a point to a **new, user-visible regression** (the run-detail dict repr) that the delta itself introduced. No other pillar moved.
+**Overall: 15/24** (unchanged from round 3). The 05-11 delta genuinely closes G-05-3 — the queue is now two-way pageable and the control no longer lies about appending — but the replacement pager introduces its own interaction gaps, so no pillar moves.
 
-Requirement read: **UI-01** (browse ranked list) — the strip is now truthful across five states; the silent `>5000`-row truncation (WR-01 prior) remains. **UI-02** (detail with fit breakdown + rationale) — the unscored state now names a real cause (05-09, good), but its primary actions are still inert (WR-04 prior). **UI-03** (edit criteria + weights) — met; the weights editor is a clean, plain form.
+Requirement read: **UI-01** (browse ranked list) — materially improved: a discrete page swap is now correctly labelled, backward navigation exists, and the page size is surfaced. **UI-02** (detail with fit breakdown + rationale) — unchanged; primary actions still inert (BLOCKER). **UI-03** (edit criteria + weights) — met.
 
 ---
 
 ## Top 3 Priority Fixes
 
-1. **Detail-page Save/Hide is still inert (BLOCKER — WR-04, unchanged).** `listing_detail.html:103` and `:114` set `hx-target="#listing-row-{{ row.id }}"`, but `#listing-row-*` is emitted only by `_listing_row.html:30` on the queue page. htmx resolves the target after the response, finds nothing, fires `htmx:targetError`, and performs **no swap** — the user clicks Save/Hide, the event is appended server-side, and **nothing changes on screen**. The template comment (`:96-99`) now documents this as deliberate ("the page reflects the new state on reload"), but a primary action that gives zero feedback is a broken interaction on UI-02's flagship surface. Fix: drop the `hx-*` attributes for a plain full-page `method="post"` form (the posture the comment claims), or return a purpose-built fragment and swap `#detail-actions`, or use an `hx-swap-oob` button flip. Do not leave a dead htmx target.
+1. **Detail-page Save/Hide is still inert (BLOCKER — carried forward, unchanged).** `listing_detail.html:103,114` set `hx-target="#listing-row-{{ row.id }}"`, but `#listing-row-*` is emitted only by `_listing_row.html:30` on the queue page. htmx resolves the target after the response, finds nothing, fires `htmx:targetError`, and performs **no swap** — the user clicks Save/Hide, the event is appended server-side, and **nothing changes on screen**. The template comment (`:96-99`) documents this as deliberate ("the page reflects the new state on reload"), but a primary action that gives zero feedback is a broken interaction on UI-02's flagship surface. Fix: drop the `hx-*` attributes for a plain full-page `method="post"` form, or return a purpose-built fragment and swap `#detail-actions`, or use an `hx-swap-oob` button flip. Do not leave a dead htmx target.
 
-2. **`/runs/{id}` prints the new ranking marker as a raw Python dict repr (WARNING — WR-01, NEW in 05-08).** `runs.html:106-112` iterates the whole `reason_counts` bag generically; 05-08 merged a **nested object** into it (`reason_counts_json['ranking'] = {"status": ..., "reason": ...}`). Every other value is a scalar, so the run-detail "Counts behind the reason" list now renders, for every skipped or nothing-to-rank run:
-   `<dt>ranking</dt><dd>{'status': 'skipped', 'reason': 'fact_store_absent'}</dd>` (reproduced this audit via a Jinja render probe; quotes arrive as `&#39;`). The 05-08 decision that "existing readers ignore the unknown sub-key" is **false** — `runs.html` is the counterexample. Fix: skip non-scalar values in the loop and render `status`/`reason` explicitly, or persist the outcome as two scalar keys (`ranking_status`/`ranking_reason`) so no generic bag reader meets a nested shape. Add a run-detail test seeding a marker and asserting the repr is absent.
+2. **Pager swaps do not reset scroll (WARNING — NEW, 05-11).** Both pager controls swap `#queue-list` with `hx-swap="innerHTML"` and **no `show:` modifier** (`queue_list.html:88-90, 98-100`; vendored htmx 2.0.10 only scrolls when `show` is truthy, and nothing here sets it). The pager sits *below* a table of up to 25 rows, so the user must scroll to the bottom to click Next — and after the swap the viewport stays at the bottom, showing the pager and the tail of the new page. The first rows of the new page are above the fold. This is the same class of defect for the filter form and the toggles. Fix: add `show:top` to the `#queue-list` swaps (`hx-swap="innerHTML show:top"`), or scroll `#queue-list` into view on `htmx:afterSwap`.
 
-3. **Four colour pairings fail WCAG AA (WARNING — accessibility).** Recomputed from the current compiled `app.css`: `.req-met` `#059669` on white = **3.77:1**; `.badge-score-tier-high` `#059669` on `#ecfdf5` = **3.58:1**; `.badge-score-tier-low` `#6b7280` on `#f3f4f6` = **4.39:1**; and **new this round** — the CV-path `<code>` spans introduced by 05-09/05-10 render `--color-muted` on `code`'s `--color-surface-2` background = **4.39:1** (in `.cv-status` `_health_strip.html:24,26`, `.settings-note` `settings.html:116,120,124-127`, and `.detail-not-ranked` `listing_detail.html:72`). All are below the 4.5:1 floor for normal text. Fix: darken the success/tier-low text token (e.g. `#047857`, ~5.1:1) or move verdict colour off the sentence body; give `code` a darker colour inside muted contexts.
+3. **Pager boundary controls are absent, not disabled (WARNING — NEW, 05-11).** `queue_list.html:85-93` omits Previous on page 1 and `:95-103` omits Next on the last page. Because `#queue-pager` is a plain `display:flex` row, the position line shifts horizontally by roughly a button-width + `1rem` gap as the user moves between first, middle, and last pages, and there is no stable cue that the boundary has been reached beyond the text. Fix: always render both controls and set `disabled` + `aria-disabled="true"` when `not page.has_prev` / `not page.has_more` — the existing `button:disabled{opacity:.6;cursor:not-allowed}` rule already styles it. This also gives the busy state (fix 2's sibling) somewhere to live.
 
 ---
 
@@ -42,78 +41,78 @@ Requirement read: **UI-01** (browse ranked list) — the strip is now truthful a
 
 ### Pillar 1: Copywriting (2/4)
 
-**What the round-2 work got right.** The five-state strip is honest and specific: `Ranked 5 of 30` / `Ranking in progress. Scores appear as they land — refresh to update.` / `Ranking skipped — <human reason>.` / `Nothing to rank on the last run.` / `Ranking has not completed for the last run.` (`queue.html:148-162`). The skip vocabulary has one definition (`RANK_SKIP_LABELS`, `app/pipeline/rank.py:92-97`) and the template never hardcodes a reason string. The detail page's unscored block (`listing_detail.html:72`) now names a real cause — including the CV fact-store skip with the exact loader path and a `/settings` pointer — and says "not readable", never "missing file". Empty states still distinguish *"No listings yet…"* from *"No listings match these filters. Clear filters"* (`queue_list.html:44-54`), and an absent factor still renders the words `no data`, never `0.00`.
+**What 05-11 got right.** The pager's copy is precise and conventional: `Previous` / `Next` are the correct labels for discrete page navigation, and `Page {{ page.page_index }} of {{ page.page_count }} ({{ page.limit }} per page)` states position *and* page size in one line (`queue_list.html:94`). Crucially, the old control is gone: `queue-load-more` returns **zero** matches in `app/`, `static/`, `assets/` and `tests/` (only stale `.pyc` strings and two doc-comments in `queue_repo.py:176,178` / `routes.py:163` / `config.py:126` still say "Load more" — cosmetic drift, not user-visible). A control that promised an append while its `innerHTML` swap destroyed the rows already on screen was a real lie, and it is now fixed.
 
 **Findings.**
-- **Raw Python dict repr on the run-detail page (WARNING, NEW — WR-01):** `runs.html:106-112` stringifies the nested `ranking` marker. This is the regression that costs the pillar its point. → see Top-3 fix 2.
-- **Raw enum still leaks into the last-run strip (WARNING, unchanged — IN-01):** `queue.html:30` is `{{ last_run.reason or 'unknown' | human_label }}`; Jinja's `|` binds tighter than `or`, so `human_label` only ever applies to the `'unknown'` fallback. Re-proven this run: `all_filtered` → `all_filtered`, `no_survivors` → `no_survivors`, `None` → `Unknown`. Same bug at `runs.html:66`. Fix: `{{ (last_run.reason or 'unknown') | human_label }}`.
-- **Raw cap token still leaks into the ranking strip (WARNING, unchanged):** `queue.html:151` interpolates `cap_reason` unfiltered; the read model returns the bare `per_run`/`per_day` text (`llm_call_repo.py:253-268`). The D-93 sentence therefore reads *"Ranked 12 of 40 — cap reached (per_run)"*. Fix: apply `human_label` to `cap_reason`.
-- **The queue CV line overstates (WARNING, NEW — IN-03):** `_health_strip.html:26-27` is unconditional and asserts "ranking is skipped until one is supplied". When `Settings.ranking_enabled` is false, ranking is *off*, not blocked on the CV; and a queue that a prior run already scored is not unranked. Fix: pass `ranking_enabled` into the strip and soften/omit the sentence when ranking is disabled.
-- **A corrupt CV store can be reported as the wrong cause (WARNING, NEW — WR-02):** `ranking_skip_reason()` (`rank.py:100-112`) claims totality but catches only `(CvFactStoreError, OSError)`; a `RecursionError` from a deeply nested `cv.yaml` escapes, is swallowed by the ranking block's broad handler, and the strip then says *"Ranking skipped — the pass could not be started"* when the real cause is an unreadable fact store. Fix: add the `except Exception` catch-all the sibling `fact_store_report` already has.
-- **Low-context link text:** the queue row's only path to the fit breakdown is a bare **"Details"** link (`_listing_row.html:37`) — for the phase's headline capability it says nothing about fit breakdown or why this score. → recommendation.
-- **"Signals" column header** (`queue_list.html:60`) still umbrellas badges as different as `new`, `stale`, `flagged`, `merged`, the score and the confidence tier; the score has no label of its own. → recommendation.
-- The 404 body is the bare fragment `"Unknown listing."` (`app/api/listings.py:70`) with no chrome or route back. → minor.
+- **Raw Python dict repr on the run-detail page (WARNING, unchanged — WR-01):** `runs.html:106-112` iterates the whole `reason_counts` bag generically and `app/pipeline/run.py:976` merges a **nested object** into it (`reason_counts = {**reason_counts, "ranking": ranking_outcome}` where the outcome is `{"status": ..., "reason": ...}`). Every skipped/nothing-to-rank run therefore renders `<dt>ranking</dt><dd>{'status': 'skipped', 'reason': 'fact_store_absent'}</dd>`. The 05-08 assumption that "existing readers ignore the unknown sub-key" is false — `runs.html` is the counterexample. Fix: skip non-scalar values and render `status`/`reason` explicitly, or persist two scalar keys.
+- **Raw enum still leaks into the last-run strip (WARNING, unchanged — IN-01):** `queue.html:30` is `{{ last_run.reason or 'unknown' | human_label }}`; Jinja's `|` binds tighter than `or`, so `human_label` only ever applies to the `'unknown'` fallback (`all_filtered` → `all_filtered`, `None` → `Unknown`). Same bug at `runs.html:66`. Fix: `{{ (last_run.reason or 'unknown') | human_label }}`.
+- **Raw cap token still leaks into the ranking strip (WARNING, unchanged):** `queue.html:151` interpolates `cap_reason` unfiltered, so the D-93 sentence reads *"Ranked 12 of 40 — cap reached (per_run)"*.
+- **The queue CV line overstates (WARNING, unchanged — IN-03):** `_health_strip.html:26-27` is unconditional and asserts "ranking is skipped until one is supplied", which is wrong when `Settings.ranking_enabled` is false.
+- **Pager copy nit (minor, NEW):** on a single-page queue the pager renders a lone `Page 1 of 1 (25 per page)` with no controls. The summary defends it ("the page size is itself the answer"), but "1 of 1" carries no information and reads as a stray line. Consider suppressing the pager when `page.page_count == 1` unless a control is present.
+- **Low-context link text (unchanged):** the queue row's only path to the fit breakdown is a bare **"Details"** link (`_listing_row.html:37`) — for the phase's headline capability it says nothing about fit breakdown or why this score.
 
 ### Pillar 2: Visuals (3/4)
 
-**What is good.** There is a clear focal point per surface: the queue's first column carries title + the `Details` link; the detail page leads with `h2` title, then "Fit score", "Factor breakdown", "Why", "Requirement fit", and actions. Hierarchy comes from section `h3`s, a bordered factor table with uppercase muted `th`s, and badges. **No icon-only buttons exist** — every control carries a text label. External anchors are correctly `rel="noopener noreferrer"` and render only when the URL is truthy. The factor table shows each factor's sub-score **and** its weight, with a dropped factor in muted italic — good disclosure.
+**What is good.** Clear focal point per surface; section `h3`s, a bordered factor table with uppercase muted `th`s, and badges carry the hierarchy. **No icon-only buttons exist** — every control, including the new pager, carries a text label. External anchors are `rel="noopener noreferrer"` and render only when the URL is truthy. The new `#queue-pager` is a semantically correct `<nav aria-label="Queue pagination">` (`queue_list.html:84`).
 
 **Findings.**
-- **The Core Value's prerequisite is buried (NEW, hierarchy):** the CV fact-store status line renders inside `#source-health` (`_health_strip.html:21-30`), which is the **last section** of the queue page (`queue.html:169`), below the queue table. For a fresh checkout — the exact case G-05-2 exists for — the one fact that explains why nothing is ranked sits under "Source health", off-screen on any populated queue. The disclosure is correct but not where the user looks. → recommendation: surface the unreadable-store state beside `#ranking-strip` (or above the queue table) and leave the healthy case in the health strip.
-- **The primary queue does not adapt to small screens.** `queue_list.html:56-74` renders up to 8 columns; `.queue-table` is `display:block;overflow-x:auto`, so a 375 px viewport is a long horizontal scroll, not a stacked/card layout. No table-to-card breakpoint exists in the compiled stylesheet (only `min-width` 40/48/64/80/96rem). Soft gap for a desktop-first local tool (D-16), but a real mobile gap with no declared breakpoint contract. → WARNING.
-- **The requirement list colours whole sentences.** `listing_detail.html:86` puts `req-met`/`req-partial`/`req-gap` on the `<li>` and `app.css` sets `color` on that element, so an entire requirement sentence renders green/amber/red rather than just the verdict marker — a red/green wall that is hard to scan, and the direct cause of the Pillar 3 contrast failures. → recommendation: colour only the verdict chip.
-- **The score badge has no accessible context.** `_listing_row.html:49` renders `<span class="badge badge-score">0.82</span>`; a screen reader announces "0.82" inside a cell headed by the vague "Signals", with nothing saying it is a fit score out of 1.0. → recommendation: `aria-label="Fit score 0.82 of 1.00"`.
-- No skip-to-content link in `base.html` (nav → `<main>` only). → minor.
+- **Pager layout instability (WARNING, NEW):** as Top-3 fix 3 — omitted Previous/Next move the position line horizontally between pages. A stable three-slot row (disabled-at-boundary) is the conventional fix.
+- **The grand-total count does not disclose pagination (WARNING, NEW):** `#queue-count` renders `page.total` as `"30 listings"` at the **top** of the fragment (`queue_list.html:17`), while the only indication that the list is paginated — `Page 1 of 2 (25 per page)` — sits at the **bottom**, below the table (`:94`). A user reading "30 listings" over a 25-row table reasonably concludes all 30 are present until they scroll to the bottom. The two are styled near-identically (`.95rem` vs `.9rem`, both `--color-muted`), so there is no hierarchy distinguishing "how many matched" from "where you are". Fix: make the count line paging-aware (e.g. `30 listings · page 1 of 2`) or duplicate the pager above the table.
+- **The pager has no `flex-wrap` (minor, NEW):** `#queue-pager{display:flex;gap:1rem}` (`input.css:468`). At 375 px with a three-digit page size (`Page 12 of 34 (100 per page)`) the row cannot wrap and will overflow. Desktop-first per D-16, so minor — but the fix is one property.
+- **The Core Value's prerequisite is still buried (unchanged):** the CV fact-store status renders inside `#source-health` (`_health_strip.html:21-30`), the **last** section of the queue page (`queue.html:169`), below the queue table.
+- **The requirement list colours whole sentences (unchanged):** `listing_detail.html:86` puts `req-met`/`req-partial`/`req-gap` on the `<li>`, so an entire requirement sentence renders green/amber/red — the direct cause of the Pillar 3 contrast failures.
+- **The score badge has no accessible context (unchanged):** `_listing_row.html:49` renders `<span class="badge badge-score">0.82</span>` inside a cell headed by the vague "Signals"; nothing says it is a fit score out of 1.0.
 
 ### Pillar 3: Color (2/4)
 
-**Token discipline is good.** The compiled theme defines a coherent 17-token palette (`app.css` `@layer theme`). The phase-5 additions (`badge-score`, `badge-score-tier-*`, `badge-unranked`, `req-*`, `factor-absent`, `detail-*`, `ranking-strip`, `weight-*`, and now `cv-status`) are written entirely in `var(--color-*)` tokens — **no new hardcoded hex in any phase-5 template** (the only `#` match in `app/web/templates/html/` is the `&#9733;` entity). Raw hexes still present are confined to earlier phases' `rule-chip-*` and health badges.
+**Token discipline is good.** The pager introduces **no new colour and no hardcoded hex** — `#queue-page-position` uses `--color-muted`, and the Previous/Next buttons inherit the generic `button` rule (border `--color-border`, background `--color-paper`, ink text). `#queue-page-position` (`#6b7280` on white) = **4.83:1** — passes. The phase's 60/30/10 distribution remains sound; the accent family stays on links, the score badge, and primary actions.
 
-**60/30/10 distribution is sound.** Neutral tokens dominate; the accent family is reserved for links, the score badge and primary actions. There is no accent overuse.
-
-**Findings — contrast failures (WARNING, accessibility). Ratios recomputed from the current compiled CSS:**
+**Findings — four AA failures remain, all unchanged by 05-11 (WARNING, accessibility). Ratios recomputed from the current compiled CSS:**
 
 | Pairing | Ratio | AA |
 |---|---|---|
 | `.req-met` `#059669` on white | **3.77:1** | FAIL |
 | `.badge-score-tier-high` `#059669` on `#ecfdf5` | **3.58:1** | FAIL |
 | `.badge-score-tier-low` `#6b7280` on `#f3f4f6` | **4.39:1** | FAIL |
-| **`code` on `--color-surface-2` inside `.cv-status` / `.settings-note` / `.detail-not-ranked` (NEW)** | **4.39:1** | FAIL |
+| `code` on `--color-surface-2` inside `.cv-status` / `.settings-note` / `.detail-not-ranked` | **4.39:1** | FAIL |
+| `#queue-page-position` `#6b7280` on white (**NEW, pager**) | 4.83:1 | pass |
 | `.req-partial` `#b45309` on white | 5.02:1 | pass |
-| `.req-gap` `#dc2626` on white | 4.83:1 | pass |
 | `.badge-score` `#1d4ed8` on `#eff6ff` | 6.16:1 | pass |
-| `--color-muted` on white / surface | 4.83 / 4.63:1 | pass |
 
-The three pre-existing failures land on phase-5 surfaces (requirement fit, confidence tier). The new fourth is introduced by the CV-path disclosure: `code` sets only a background (`--color-surface-2`) and inherits the surrounding muted colour, so every `<code>{{ cv.path }}</code>` in a muted paragraph sits at 4.39:1. Fix by darkening the success/tier-low text tokens and giving `code` an explicit ink-coloured text.
+Fix: darken the success token (e.g. `#047857`, ~5.1:1), move verdict colour off the sentence body onto a chip, and give `code` an explicit ink colour inside muted contexts. None of this is pager-specific — it is the surviving phase-level debt.
 
 ### Pillar 4: Typography (3/4)
 
-**What is good.** A compact, intentional set. Phase-5 surfaces draw from only a handful: `.badge` 12 px/600, table `th` 12.8 px/600 uppercase, controls `.85rem`, `ranking-strip` `.95rem`, body 1rem, section `h3` 1.25rem. Weights used are 400/500/600/700 only. Two deliberate touches: the score badge and evidence IDs use `--font-mono`, and `.detail-rationale` is capped at `65ch`. Headings use a serif display face (`--font-display`) against sans body. The new `.cv-status` (`.75rem 1rem` padding, `font-weight:500`, 1rem) matches `.llm-status` — consistent.
+**What is good.** A compact, intentional set: `.badge` 12 px/600, table `th` 12.8 px/600 uppercase, controls `.85rem`, body 1rem, section `h3` 1.25rem, weights 400/500/600/700 only. The pager adds `#queue-page-position` at `.9rem` and inherits `.85rem` buttons — both already in use elsewhere, so the pager introduces **no new size or weight**. Score badge and evidence IDs use `--font-mono`; `.detail-rationale` is capped at `65ch`.
 
 **Findings.**
-- The requirement verdict (`<strong>{{ entry.verdict }}</strong>`) and the requirement text share the same size and weight; hierarchy rests entirely on colour — which is the Pillar 3 problem. A size/weight step or a chip for the verdict would decouple legibility from hue. → recommendation.
-- `badge` at 12 px bold is the smallest text on the row, yet it carries the row's most important number (the fit score). → minor.
-- The `confidence_tier` badge prints the raw lowercase token (`high`/`medium`/`low`, `_listing_row.html:50`, `listing_detail.html:40`) with no "confidence" label. → minor, copy-adjacent.
+- The requirement verdict (`<strong>{{ entry.verdict }}</strong>`) and the requirement text share size and weight; hierarchy rests on colour alone — the Pillar 3 problem. → recommendation.
+- The `confidence_tier` badge prints the raw lowercase token (`high`/`medium`/`low`) with no "confidence" label. → minor, copy-adjacent.
+- `badge` at 12 px bold carries the row's most important number (the fit score). → minor.
 
 ### Pillar 5: Spacing (3/4)
 
-**What is good.** A single coherent rem scale (`.125/.2/.25/.375/.5/.625/.75/.875/1/1.25/1.5/2/2.5/3rem`), table cells on `.875rem 1rem`, cards on `1.25rem`, page gutters `1.5rem 1rem 3rem` (`#content`). **No arbitrary `[Npx]`/`[Nrem]` values anywhere.** New phase-5 layouts are responsive by construction: `.weight-grid{repeat(auto-fit,minmax(11rem,1fr))}`, `.factor-table{max-width:44rem;overflow-x:auto}`. The new `.cv-status` uses `.75rem 1rem` with `1rem` bottom margin, matching `.llm-status`. Grouping is consistent (`gap:.5rem` for action clusters, `.25rem` for label/field stacks).
+**What is good.** A single coherent rem scale; table cells `.875rem 1rem`, cards `1.25rem`, page gutters `1.5rem 1rem 3rem`. **No arbitrary `[Npx]`/`[Nrem]` values anywhere.** The new pager uses `gap:1rem` and `margin-top:1rem`, consistent with the surrounding system, and `.queue-count` keeps its `margin-bottom:.75rem`. Grouping is consistent (`gap:.5rem` action clusters, `.25rem` label/field stacks).
 
 **Findings.**
-- Two chip padding scales coexist: `.badge{padding:.2rem .5rem}` vs `.rule-chip{padding:.25rem .625rem}`. Both look intentional but there is no documented scale (no UI-SPEC) to say which is canonical. → minor.
-- `.queue-sort`/`.queue-threshold` use a vertical `gap:.25rem` stack while sibling filter controls sit inline; the filter bar mixes two alignment models. → minor observation.
+- **No `flex-wrap` on `#queue-pager` (minor, NEW):** see Pillar 2. One-property fix.
+- **The pager's `margin-top:1rem` is the only separation from the table.** The table carries `border-radius` + `box-shadow`, so 1rem reads as slightly tight against the pager row. → minor observation.
+- Two chip padding scales coexist (`.badge{padding:.2rem .5rem}` vs `.rule-chip{padding:.25rem .625rem}`) with no documented canonical scale. → minor, pre-existing.
 
 ### Pillar 6: Experience Design (2/4)
 
-**What is good — and what round-2 added.** State coverage is broad and materially better after 05-08/09/10: loading/progress via the polling `#run-status` fragment (`_run_status.html`, `aria-live="polite"`, 2 s poll); error states for a failed/partial run, the LLM backend (`settings-banner-error`, probe cause line), and a 404 fragment; two distinct empty states; a `disabled` button pattern (`merges.html:92`); destructive actions confirmed (`hx-confirm` on Dismiss-all, typed-token confirmation on reset). The `#ranking-strip` now distinguishes five states instead of one blank, derives `running` from the live task so a crashed pass degrades honestly, and the detail page names the last run's cause — a real fix for the "I don't know why the queue is unranked" report. The weights editor explicitly promises "no new model call". The CV disclosure answers "where do I put my CV?".
+**What 05-11 got right.** G-05-3 is genuinely closed: paging is now two-way, the page model is derived (no schema, no route, no migration), the page size stays server-fixed (T-02-28 pinned by `test_the_page_size_is_server_fixed_and_only_surfaced`), and the first/last-page behaviour is pinned by tests. The four `QueuePage` accessors are total (`max(1, limit)` guards). Broad state coverage from 05-08/09/10 is retained.
 
 **Findings.**
-- **Detail-page Save/Hide is inert (BLOCKER, unchanged):** `listing_detail.html:103,114` target `#listing-row-{{ row.id }}`, which exists only on the queue page. htmx raises `htmx:targetError` and performs no swap, so the click appends the event but gives **no feedback at all** — not even a button flip. → WR-04; see Top-3 fix 1. This is the single highest-impact open defect in the phase and neither 05-09 nor 05-10 touched it.
-- **No busy/disabled state on the primary action:** `queue.html:7-13` (`#run-search-now`) has no `hx-indicator`, no `hx-disabled-elt`, no `aria-busy` (verified: zero matches across all templates). The button stays fully clickable while a run is in flight; feedback appears only later inside `#run-status-slot`. → WARNING.
-- **A junk threshold silently hides every scored listing:** `?min_score=nan` (and now `inf`) passes `_float_or_none` (`routes.py:122-129`, bare `float()`), and `total_score >= nan` is False for every scored row, so the queue empties of scored jobs while unscored ones remain — contradicting the documented "junk degrades to `None`". Still pinned by the one remaining strict-xfail sentinel (`tests/api/test_queue_ranking_adversarial.py`). → WR-02 prior, WARNING.
-- **The queue can silently omit listings:** the default score sort is bounded by `SCORE_SORT_SCAN_LIMIT = 5000` (`queue_repo.py`), so beyond 5 000 matches the oldest listings are absent from the queue entirely and `page.total` under-reports so paging stops early. This also defeats the Dismiss-all cap guard. → CR-01 prior, WARNING.
-- **A cap-read failure drops the whole strip:** `_ranking_strip` (`routes.py:319-332`) builds `ranked`/`candidates`/`state`/`reason`/`cap_reason` in one `try`; a failure in the unrelated `rank_cap_reason_for_run` read returns `{}` and vanishes the disclosure it exists to provide. → IN-04, minor.
-- **The 404 has no way back:** the fragment from `app/api/listings.py:67-72` renders without the base layout/nav, so a mistyped or stale detail URL strands the user. → minor.
+- **Detail-page Save/Hide is inert (BLOCKER, unchanged):** `listing_detail.html:103,114` → dead `#listing-row-*` target; htmx raises `htmx:targetError` and performs no swap. See Top-3 fix 1. Highest-impact open defect in the phase; neither 05-09, 05-10 nor 05-11 touched it.
+- **No scroll reset after any `#queue-list` swap (WARNING, NEW):** see Top-3 fix 2. Affects the pager, the filter form, the toggles, and the search input.
+- **No busy state and no request coalescing on the pager (WARNING, NEW):** `queue_list.html:86-102` has no `hx-indicator`, `hx-disabled-elt`, or `hx-sync` (verified: **zero** `hx-indicator`/`hx-disabled` matches across all templates). A double-click or two fast clicks on Next fire overlapping `GET /queue/list` requests (offset 25 and offset 50); htmx 2.0.10 does not abort in-flight requests to the same target, so responses can land out of order and the user can end up on an unintended page. Nothing tells the user a page load is in flight. Fix: `hx-disabled-elt="this"` (or `hx-sync="closest nav:replace"`) on both pager controls.
+- **The pager's `aria-live="polite"` region is the whole list (WARNING, NEW):** the pager lives inside `<div id="queue-list" aria-live="polite">` (`queue.html:164`). Every page swap therefore announces the count, both action buttons, the full 25-row table, and the pager — a screen-reader flood for a control that changed one line. Fix: move the live region onto `#queue-count`/`#queue-page-position` only, or set `aria-live="off"` on the table.
+- **No URL/history state (WARNING, documented trade-off, NEW):** the pager deliberately sets no `hx-push-url` (`05-11-SUMMARY.md` decision). The consequence is that the current page is not in the URL, browser Back does not return to the previous page (it leaves the queue), and a refresh always returns to page 1. The in-page Previous control is the only backward affordance. Acceptable for a local tool, but it is a real limitation of the new pager and should be named as such.
+- **The 5000-row scan cap now manifests as a wrong page count (WARNING, inherited — CR-01):** the default score path sets `total = len(enriched)` where `enriched` is built from `_score_candidate_ids` bounded by `SCORE_SORT_SCAN_LIMIT = 5000` (`queue_repo.py:454-477, 553`). Beyond 5 000 matches, `page.total` under-reports, so `page_count` is wrong and Next disappears while listings remain unshown. The old "Load more" hid this as a silent truncation; the new position line makes it a visibly wrong `Page X of Y`.
+- **A junk threshold silently hides every scored listing (WARNING, inherited):** `?min_score=nan`/`inf` passes `_float_or_none` (`routes.py:122-129`, bare `float()`), and `total_score >= nan` is False for every scored row, emptying the queue of scored jobs. Still pinned by the one remaining strict-xfail sentinel.
+- **No busy state on the primary run action (WARNING, inherited):** `queue.html:7-13` has no `hx-indicator`/`hx-disabled-elt`/`aria-busy`.
+- **The 404 has no way back (minor, inherited):** the fragment from `app/api/listings.py:67-72` renders without the base layout/nav.
 
 ---
 
@@ -127,27 +126,23 @@ Skipped: no `components.json` exists (this is a Jinja2 + HTMX + vendored-Tailwin
 
 **Re-read and re-verified this run:**
 
-- `app/web/templates/html/queue.html` — five-state `#ranking-strip` (05-08); raw `reason` (`:30`) and `cap_reason` (`:151`) leaks confirmed
-- `app/web/templates/html/listing_detail.html` — state-driven unscored copy (`:72`, 05-09); inert action targets (`:103,:114`) confirmed
-- `app/web/templates/html/settings.html` — `#cv-fact-store` card (`:112-131`, 05-10); `<code>` path spans
-- `app/web/templates/html/_health_strip.html` — `#cv-fact-store-status` line (`:21-30`, 05-10)
-- `app/web/templates/html/runs.html` — generic `reason_counts` loop (`:106-112`) → the dict-repr regression; raw reason (`:66`)
-- `app/web/templates/html/_listing_row.html` — badges (`:48-50`), `Details` link (`:37`), action forms
-- `app/web/templates/html/queue_list.html` — 8-column table, empty-state predicates
-- `app/web/templates/html/base.html` — nav/`main`, no skip link
-- `app/web/routes.py` (`_ranking_strip`, `_cv_status`, `_float_or_none`, queue handler)
-- `app/api/listings.py` (detail route, ranking-state context, 404 fragment)
-- `app/api/settings.py` (`cv` context entry)
-- `app/db/repositories/llm_call_repo.py` (`rank_cap_reason_for_run` — the raw cap token source)
-- `app/pipeline/rank.py` (`RANK_SKIP_LABELS`, `ranking_in_progress`, `ranking_skip_reason`)
-- `app/web/filters.py` (`human_label`) + empirical Jinja precedence and dict-repr probes
-- `static/vendor/app.css` (compiled Tailwind v4.3.3) — contrast ratios recomputed, `.cv-status` rule verified
-- Tests: `tests/api/test_queue_ranked.py`, `tests/api/test_listing_detail.py`, `tests/api/test_ranking_weights.py`, `tests/api/test_health.py`, `tests/api/test_settings_page.py`, `tests/api/test_queue_ranking_adversarial.py`, `tests/test_stylesheet_coverage.py` → **70 passed, 1 xfailed**
-- `.planning/phases/05-ranking-core-value/05-CONTEXT.md` (D-88…D-100), `05-01…05-10-PLAN.md`, `05-08…05-10-SUMMARY.md`, `05-REVIEW.md`
+- `app/web/templates/html/queue_list.html` — the `#queue-pager` nav (`:84-104`): `#queue-page-prev` only when `has_prev` (`:85-93`), `#queue-page-position` on every non-empty page (`:94`), `#queue-page-next` only while `has_more` (`:95-103`); no `show:` modifier, no `hx-disabled-elt`, no `hx-sync`
+- `app/web/templates/html/queue.html` — `#queue-count` at top of fragment, pager at bottom; `#queue-list` `aria-live="polite"` (`:164`); raw `reason` (`:30`) and `cap_reason` (`:151`) leaks confirmed
+- `app/db/repositories/queue_repo.py` — `QueuePage.has_prev`/`prev_offset`/`page_index`/`page_count` (`:284-301`); `next_offset` (`:276`); score-path `total = len(enriched)` bounded by `SCORE_SORT_SCAN_LIMIT` (`:553`, `:454-477`)
+- `app/web/routes.py` — `_queue_context` (`count = page.total`), `GET /queue/list`, server-fixed `limit=settings.queue_page_size` (`:151`)
+- `assets/tailwind/input.css` (`:458-478`) + compiled `static/vendor/app.css` — `.queue-count`, `#queue-pager{display:flex;gap:1rem;margin-top:1rem}`, `#queue-page-position{color:muted;font-size:.9rem}`; contrast ratios recomputed
+- `app/pipeline/run.py:976` — nested `ranking` marker merged into `reason_counts` (the WR-01 dict-repr source)
+- `app/web/templates/html/listing_detail.html:103,114` — inert `#listing-row-*` htmx targets (BLOCKER) confirmed
+- `app/web/templates/html/runs.html:106-112` — generic `reason_counts` loop → dict repr
+- `app/web/templates/html/_listing_row.html` — badges (`:48-50`), `Details` link (`:37`), row action forms (`:70-91`)
+- `static/vendor/htmx.min.js` — v2.0.10; `show` acts only when truthy (no default window scroll)
+- Tests: `tests/api/test_queue_excluded.py` (pager regexes + first/last-page, server-fixed-limit, full-page assertions), `tests/test_stylesheet_coverage.py`, `tests/api/test_queue_ranked.py`, `tests/api/test_listing_detail.py` → **39 passed**
+- `.planning/phases/05-ranking-core-value/05-11-PLAN.md`, `05-11-SUMMARY.md`, `05-CONTEXT.md` (D-88…D-100)
 
-**Note on screenshot hygiene:** `.planning/ui-reviews/.gitignore` already exists and ignores `*.png`/`*.webp`/`*.jpg`/etc. The gitignore gate was re-run before any capture attempt (none succeeded — no server). No binaries were written by this audit.
+**Note on screenshot hygiene:** `.planning/ui-reviews/.gitignore` exists and ignores `*.png`/`*.webp`/`*.jpg`/`*.jpeg`/`*.gif`/`*.bmp`/`*.tiff`. The gitignore gate was re-run before any capture attempt (none succeeded — no server). No binaries were written by this audit.
 
+---
 _Reviewed: 2026-09-23_
 _Reviewer: the agent (gsd-ui-auditor)_
 _Baseline: abstract 6-pillar (no UI-SPEC.md exists)_
-_Round-2 delta: 05-08/09/10 landed; Pillar 1 regressed via WR-01 (raw dict repr on `/runs/{id}`); detail-page Save/Hide BLOCKER remains_
+_Round-3 delta: 05-11 landed — G-05-3 closed (two-way pager, "Load more" mislabel gone); new pager interaction gaps (no scroll reset, absent-not-disabled boundaries, no busy/race); detail-page Save/Hide BLOCKER remains_
