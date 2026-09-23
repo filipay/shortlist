@@ -14,9 +14,13 @@ what escaping looks like.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from pathlib import Path
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api import listings as listings_module
+from app.config import settings
 from app.db.models import ListingDupe, Run, Source
 from app.db.repositories import score_repo
 from app.db.repositories.listing_repo import upsert_listing_source
@@ -83,6 +87,29 @@ async def _seed_listing(
 async def _seed_run(session_factory: async_sessionmaker[AsyncSession]) -> int:
     async with session_factory() as session:
         run = Run(trigger="manual", status="done", started_at=NOW, finished_at=NOW)
+        session.add(run)
+        await session.commit()
+        return int(run.id)
+
+
+async def _seed_run_with_ranking(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    ranking: dict | None = None,
+) -> int:
+    """A finished run carrying a `reason_counts_json['ranking']` marker.
+
+    `ranking` is written in exactly the shape `app.pipeline.run._finish` produces, so
+    the detail page's state branches are exercised without a live ranking pass.
+    """
+    async with session_factory() as session:
+        run = Run(
+            trigger="manual",
+            status="done",
+            started_at=NOW,
+            finished_at=NOW,
+            reason_counts_json={"ranking": ranking} if ranking is not None else None,
+        )
         session.add(run)
         await session.commit()
         return int(run.id)
@@ -232,3 +259,67 @@ async def test_unknown_listing_returns_404_fragment(
 
     assert response.status_code == 404
     assert 'data-error="unknown-listing"' in response.text
+
+
+# --- the not-yet-ranked block names a real cause (G-05-1 / G-05-2, plan 05-09) --
+
+
+async def test_unscored_detail_names_the_skipped_reason_and_the_cv_path(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The fact-store skip names the store, the path the loader reads, and Settings.
+
+    The path is computed from `settings.cv_dir` exactly as the route does, so this
+    test does not pin the container's default `/cv`.
+    """
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=4)
+    await _seed_run_with_ranking(
+        session_factory, ranking={"status": "skipped", "reason": "fact_store_absent"}
+    )
+
+    response = await client.get(f"/listings/{listing_id}")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Not yet ranked" in body
+    assert "Ranking was skipped because there is no readable CV fact store." in body
+    assert str(Path(settings.cv_dir) / "cv.yaml") in body, "the exact loader path is named"
+    assert "/settings" in body, "the page points at Settings"
+    # The UI-02 prohibition, pinned on the new branch too.
+    assert "Fit score" not in body
+    assert "0.0" not in body
+
+
+async def test_unscored_detail_shows_a_running_pass(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A live pass reads as running — the state that used to be indistinguishable from a skip."""
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=5)
+    await _seed_run_with_ranking(session_factory, ranking=None)
+    monkeypatch.setattr(listings_module, "ranking_in_progress", lambda: True)
+
+    body = (await client.get(f"/listings/{listing_id}")).text
+
+    assert "A ranking pass is running right now — refresh once it finishes." in body
+    assert "The ranking pass has not completed" not in body
+
+
+async def test_unscored_detail_is_honest_when_no_pass_has_completed(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The staleness rule: an interrupted pass must never read as in progress."""
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=6)
+    await _seed_run_with_ranking(session_factory, ranking=None)
+    monkeypatch.setattr(listings_module, "ranking_in_progress", lambda: False)
+
+    body = (await client.get(f"/listings/{listing_id}")).text
+
+    assert "The ranking pass has not completed — refresh once it finishes." in body
+    assert "A ranking pass is running right now" not in body
