@@ -39,7 +39,12 @@ from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
 from app.pipeline.dedup_stage import DEDUP_STAGE, run_dedup_stage
 from app.pipeline.filter_stage import FILTER_STAGE, run_filter_stage
-from app.pipeline.rank import RANK_STAGE, start_ranking_task
+from app.pipeline.rank import (
+    RANK_SKIP_START_FAILED,
+    RANK_STAGE,
+    ranking_skip_reason,
+    start_ranking_task,
+)
 from app.pipeline.stages import normalise_listing
 from app.probe.survival import (
     compute_fill_rates,
@@ -737,6 +742,11 @@ async def run_pipeline(
     adapters_resolved = 0
     stage_log: list[dict[str, Any]] = []
     compile_warnings: list[dict[str, Any]] = []
+    # The ranking pass's terminal outcome, computed synchronously in the ranking
+    # block below and merged into `reason_counts` before `_finish`. Initialised
+    # BEFORE the outer `try` because the merge happens after it: a run that failed
+    # before the ranking block must still see this name rather than raise.
+    ranking_outcome: dict[str, Any] | None = None
     # The searches this run's fetch plan actually used, for the post-run
     # `last_run_at` stamp. Pre-declared so a failure before the plan resolves leaves
     # it empty rather than raising in the `finally`-style tail below.
@@ -902,15 +912,32 @@ async def run_pipeline(
                     session, run_id=resolved_run_id
                 )
             if any(record.id not in excluded_ids for record in candidates):
-                start_ranking_task(
+                # The reason is knowable BEFORE the detached task exists, so it is
+                # read here (sync) and persisted by `_finish` — a task-side write
+                # would be clobbered. The task is STILL started on a skip: it
+                # returns immediately on its own guard, and
+                # tests/pipeline/test_finish_llm_counters.py pins that the entry
+                # point is reached with an absent fact store.
+                precheck_reason = ranking_skip_reason()
+                # A live task's skip wins over the precheck: it is the more specific
+                # fact (another pass is already running this moment).
+                in_flight_reason = start_ranking_task(
                     resolved_run_id,
                     session_factory,
                     llm=backend,
                     search_id=search_id,
                 )
+                effective_reason = (
+                    in_flight_reason if in_flight_reason is not None else precheck_reason
+                )
+                if effective_reason is not None:
+                    ranking_outcome = {"status": "skipped", "reason": effective_reason}
+            else:
+                ranking_outcome = {"status": "not_attempted"}
         except Exception as exc:  # noqa: BLE001 — a ranking-start failure must not sink the run
             log.exception("pipeline.rank_start_failed", run_id=resolved_run_id, error=str(exc))
             errors.append({"source": RANK_STAGE, "status": "failed", "error": str(exc)})
+            ranking_outcome = {"status": "skipped", "reason": RANK_SKIP_START_FAILED}
     except Exception as exc:  # noqa: BLE001 — the background task must never die silently
         log.exception("pipeline.failed", error=str(exc))
         errors.append({"source": "*", "status": "failed", "error": str(exc)})
@@ -938,6 +965,15 @@ async def run_pipeline(
         source_counts=source_counts,
         capability_warnings=compile_warnings,
     )
+
+    # The ranking marker rides the EXISTING counts bag and is written HERE, by the
+    # single writer `_finish`, never by the detached task: `_finish` assigns
+    # `reason_counts_json` wholesale, so an earlier task-side write would be
+    # clobbered. Only terminal outcomes are persisted — `running` is derived at
+    # render time from the live task, so a crashed or restarted pass can never read
+    # "in progress" forever (rank.py:31-34).
+    if ranking_outcome is not None:
+        reason_counts = {**reason_counts, "ranking": ranking_outcome}
 
     await _finish(
         session_factory,

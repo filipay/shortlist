@@ -74,6 +74,43 @@ RANK_STAGE = "rank"
 #: The committed fact-store filename, resolved under ``Settings.cv_dir``.
 CV_FILENAME = "cv.yaml"
 
+# --- the skip-reason vocabulary (D-94) ----------------------------------------
+#
+# These four strings are the ONLY definition of the reasons a ranking pass can be
+# skipped. `run_ranking`'s own guards, `run_pipeline`'s synchronous precheck and the
+# render layer all read them from here, so the vocabulary cannot drift.
+#
+# The fact-store reason deliberately covers ABSENT, UNREADABLE and NON-DECODABLE
+# alike (05-06's single operator-visible situation), so no surface may say
+# "missing file".
+RANK_SKIP_DISABLED = "ranking_disabled"
+RANK_SKIP_FACT_STORE = "fact_store_absent"
+RANK_SKIP_IN_FLIGHT = "ranking_in_flight"
+RANK_SKIP_START_FAILED = "rank_start_failed"
+
+#: One human sentence per skip reason, read by the queue strip.
+RANK_SKIP_LABELS: dict[str, str] = {
+    RANK_SKIP_DISABLED: "ranking is turned off in Settings",
+    RANK_SKIP_FACT_STORE: "no readable CV fact store",
+    RANK_SKIP_IN_FLIGHT: "another ranking pass is already running",
+    RANK_SKIP_START_FAILED: "the pass could not be started",
+}
+
+
+def ranking_skip_reason() -> str | None:
+    """The D-94 skip reason knowable BEFORE the detached task exists, or `None`.
+
+    Read-only and total: it never raises. It answers "would the task skip?", not
+    "rank this" — the fact store it loads is discarded on purpose.
+    """
+    if not settings.ranking_enabled:
+        return RANK_SKIP_DISABLED
+    try:
+        load_facts(Path(settings.cv_dir) / CV_FILENAME)
+    except (CvFactStoreError, OSError):
+        return RANK_SKIP_FACT_STORE
+    return None
+
 #: The frozen ranking system prompt (D-82's fairness control).
 #:
 #: NO f-string, no percent-formatting and no concatenation of any request-derived
@@ -371,7 +408,7 @@ async def run_ranking(
     # D-94's first skip condition and the cheapest: the operator off switch is
     # checked BEFORE the filesystem or the backend is touched, so it costs nothing.
     if not settings.ranking_enabled:
-        log.info("pipeline.rank_skipped", run_id=run_id, reason="ranking_disabled")
+        log.info("pipeline.rank_skipped", run_id=run_id, reason=RANK_SKIP_DISABLED)
         return
 
     if facts is None:
@@ -381,7 +418,7 @@ async def run_ranking(
             log.info(
                 "pipeline.rank_skipped",
                 run_id=run_id,
-                reason="fact_store_absent",
+                reason=RANK_SKIP_FACT_STORE,
                 error=type(exc).__name__,
             )
             return
@@ -504,13 +541,23 @@ _BACKGROUND_TASKS: set[asyncio.Task] = set()
 _RANKING_TASK: asyncio.Task | None = None
 
 
+def ranking_in_progress() -> bool:
+    """True while the live single-flight ranking task is running (a render-time snapshot; D-88 adds no polling).
+
+    Deliberately takes no run id: the strip renders only the latest run, and a newer
+    run cannot start a pass while one is live (it takes the in-flight skip), so a
+    live task is by construction the latest run's.
+    """
+    return _RANKING_TASK is not None and not _RANKING_TASK.done()
+
+
 def start_ranking_task(
     run_id: int,
     session_factory: async_sessionmaker[AsyncSession],
     *,
     llm: LLMBackend | None = None,
     search_id: int | None = None,
-) -> None:
+) -> str | None:
     """Schedule the ranking pass detached from the run (D-88).
 
     Start-or-skip: while a ranking task is live a new run's ranking is skipped and
@@ -519,11 +566,14 @@ def start_ranking_task(
     task and it would construct a real backend against the configured host.
     `run_pipeline` reaches this inside its best-effort shape, so a failure to start
     is recorded and the run still finishes.
+
+    Returns `RANK_SKIP_IN_FLIGHT` when a live task means this pass is skipped, and
+    `None` once the task has been created and registered.
     """
     global _RANKING_TASK
     if _RANKING_TASK is not None and not _RANKING_TASK.done():
-        log.info("pipeline.rank_skipped", run_id=run_id, reason="ranking_in_flight")
-        return
+        log.info("pipeline.rank_skipped", run_id=run_id, reason=RANK_SKIP_IN_FLIGHT)
+        return RANK_SKIP_IN_FLIGHT
 
     backend = llm if llm is not None else get_llm_backend()
     task = asyncio.create_task(
@@ -532,15 +582,23 @@ def start_ranking_task(
     _RANKING_TASK = task
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return None
 
 
 __all__ = [
     "CV_FILENAME",
+    "RANK_SKIP_DISABLED",
+    "RANK_SKIP_FACT_STORE",
+    "RANK_SKIP_IN_FLIGHT",
+    "RANK_SKIP_LABELS",
+    "RANK_SKIP_START_FAILED",
     "RANK_STAGE",
     "RANK_SYSTEM_PROMPT",
     "build_ranking_parts",
     "criteria_version_for_run",
     "rank_listing",
+    "ranking_in_progress",
+    "ranking_skip_reason",
     "run_ranking",
     "start_ranking_task",
 ]
