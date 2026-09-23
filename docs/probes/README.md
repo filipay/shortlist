@@ -151,6 +151,12 @@ plus a report of everything the bounded parser could not resolve. Nothing is
 guessed, and the draft is written to a separate path — never back over the source
 and never over `cv.yaml`. It is **re-runnable whenever the real CV changes**.
 
+The draft is not the store ranking reads: review it, then promote the reviewed draft to cv/cv.yaml
+— the file the ranking pass reads. The container mounts the checkout's `cv/`
+directory at `/cv`, so ranking loads `/cv/cv.yaml`; until that file exists, ranking
+is skipped by design (D-94) and the queue stays unranked. Nothing is promoted
+automatically.
+
 - Verdict: `docs/probes/2026-09-21-cv-tex-spike.md` — status `PARTIAL` until the
   real document is measured, with an `UNRESOLVED` section naming the exact trigger.
 - Command: `bash scripts/cv-tex-spike.sh`.

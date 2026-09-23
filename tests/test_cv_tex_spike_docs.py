@@ -9,6 +9,10 @@ The `.planning/STATE.md` pointer the plan also asserts is deliberately not pinne
 here: STATE.md is orchestrator-owned mutable planning state, and a future phase
 rewriting it would produce a false failure in a permanent gate. It was verified at
 execution time and is recorded in the SUMMARY.
+
+The promotion pin exists because the in-app supply steps are only correct if the
+documented escape hatch states the same promotion from the review draft to the
+fact store — exactly what the CV-intake diagnosis found missing.
 """
 
 from __future__ import annotations
@@ -107,6 +111,17 @@ def test_the_probes_readme_points_at_the_latex_probe_and_the_compile_runbook() -
 
     assert "cv-tex-spike" in text
     assert "runbook-latex-compile" in text
+
+
+def test_the_probe_docs_document_the_promotion_to_the_fact_store() -> None:
+    """The escape hatch is only complete if both documents state the promotion.
+
+    The in-app supply steps point here; if this prose stops at the review draft,
+    a user following it lands in the dead end the CV-intake diagnosis recorded.
+    """
+    for text in (_verdict(), README.read_text(encoding="utf-8")):
+        assert "promote the reviewed draft to cv/cv.yaml" in text
+        assert "/cv/cv.yaml" in text
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -117,14 +117,20 @@ document are recorded here. The steps, in order:
    The default source is `cv/base.tex`; the draft is written to a separate review
    path (`cv/cv.draft.yaml`), never back over the source and never over
    `cv/cv.yaml`.
-3. Append the resulting counts and the unresolved names to **this document**.
+3. Review the draft at `cv/cv.draft.yaml`, then promote the reviewed draft to cv/cv.yaml
+   — that is the file the ranking pass reads. The container mounts the checkout's
+   `cv/` directory at `/cv`, so ranking loads `/cv/cv.yaml`; until the file exists,
+   ranking is skipped by design (D-94) and the queue stays unranked. The draft is
+   machine-produced; the promotion is the human's curation step, and nothing is
+   promoted automatically.
+4. Append the resulting counts and the unresolved names to **this document**.
    Counts, names, versions, commands and unit-suffixed durations only.
-4. Run the bundle-coverage check once per preamble package:
+5. Run the bundle-coverage check once per preamble package:
    ```bash
    docker compose run --rm app tectonic -X bundle search <package>
    ```
    Record which packages the bundle holds here.
-5. Confirm the engine's own option names (D-75):
+6. Confirm the engine's own option names (D-75):
    ```bash
    docker compose run --rm app tectonic --help
    ```
