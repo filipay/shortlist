@@ -1,14 +1,21 @@
 ---
-status: diagnosed
+status: testing
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-23T15:25:20Z
+updated: 2026-09-23T16:50:49Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 7
+name: G-05-3 closure in a browser — two-way paging
+expected: |
+  Boot the app against a real DB, load a multi-page queue, click Next then Previous.
+  Each control swaps the page through `GET /queue/list`; the row set changes; the
+  position line ("Page X of Y (N per page)") tracks the slice; backward navigation
+  returns to the prior slice; the viewport lands somewhere readable.
+awaiting: user confirmation
 
 ## Tests
 
@@ -36,49 +43,50 @@ result: pass
 expected: Decide whether a refused call should write an audit row at all, and record a deterministic, documented answer. The plan chose one refusal row per refused call with status=error and the cap name in the error text; the alternative (no row, rely on `runs.ranked_count`) remains a legitimate reading. Related to the open advisory on refusal-row spend accounting (05-REVIEW.md WR-04).
 result: pass
 
+### 7. G-05-3 closure in a browser — two-way paging
+expected: |
+  Boot the app against a real DB, load a multi-page queue, click Next then Previous.
+  Each control swaps the page through `GET /queue/list`; the row set changes; the
+  position line ("Page X of Y (N per page)") tracks the slice; backward navigation
+  returns to the prior slice; the viewport lands somewhere readable.
+  Decision also required: the round-3 UI audit flags that the swaps carry no
+  `show:top` (no scroll reset after a page swap) and that boundary controls are
+  omitted rather than rendered-disabled — decide whether those need fixing.
+result: pending
+
+### 8. Detail-page action feedback (UI-02 surface)
+expected: |
+  Open a job detail, click Save and Hide, and decide whether the current
+  no-feedback behaviour is acceptable. The event is appended server-side, but the
+  on-page swap never happens because the forms target `#listing-row-{id}`, which the
+  detail page never renders — htmx raises `targetError`. Record a deliberate
+  fix-vs-accept decision.
+result: pending
+
 ## Summary
 
-total: 6
+total: 8
 passed: 6
-issues: 1
-pending: 0
+issues: 0
+pending: 2
 skipped: 0
 blocked: 0
 
 ## Gaps
 
 <!-- G-05-1 (ranking observability) and G-05-2 (CV fact-store disclosure) were closed by
-     the round-2 gap-closure plans 05-08, 05-09 and 05-10 and re-verified 2026-09-23
-     (05-VERIFICATION.md: 42/42 observable truths verified, 0 gaps). No open gaps. -->
+     the round-2 gap-closure plans 05-08, 05-09 and 05-10 and re-verified 2026-09-23. -->
 
 - gap_id: G-05-3
   truth: "The queue is navigable, not one-way: the user can move back to earlier listings after loading further ones, and the UI shows which page they are on and how many listings each page holds (UI-01 browse)."
-  status: diagnosed
+  status: closed
   reason: "User reported: \"one usability issue is 'load more' loads more found jobs but then cannot go back to the previous jobs, we should have paginated responses and a ui way to show what page we're on and how many jobs per page\""
   severity: major
-  test: null
+  test: 7
   source: ad-hoc UAT finding, reported during test 2 (not a numbered checkpoint)
   requirement: UI-01
-  root_cause: "The queue's paging affordance is forward-only and stateless in the DOM. The \"Load more\" button performs an `hx-swap=\"innerHTML\"` replacement of `#queue-list` with a fragment containing only the next offset's rows, so it destroys the rows already on screen instead of appending — the label promises append, the behaviour is \"go to next page\". No previous/back control exists anywhere, and no `hx-push-url`/`hx-history`/`hx-boost` is present, so browser history cannot restore a prior offset either; offset only ever increases from that one button. Compounding this, the UI renders only the grand total (`page.total`) as `N listings` and never the current offset, page size, page index, or page count, so the user cannot tell which slice they are viewing or how many rows a page holds. `QueuePage` already exposes everything needed to derive prev/next and a position indicator — only rendering is missing. Design intent drift: 02-RESEARCH.md:672 says Load more \"appends the next page's rows into `#queue-list`\"; the implementation uses innerHTML replace."
-  debug_session: .planning/debug/queue-pagination-load-more.md
-  artifacts:
-    - path: app/web/templates/html/queue_list.html
-      issue: "Lines 79-85 — Load-more control does `hx-get=\"/queue/list?...offset=page.next_offset\"` with `hx-target=\"#queue-list\"` and `hx-swap=\"innerHTML\"`; the replace discards already-rendered rows. Line 17 renders only `{{ count }} listings` (grand total), no position indicator."
-    - path: app/web/templates/html/queue.html
-      issue: "Lines 39-167 — filter/sort/threshold controls emit no offset (all reset to 0); no prev/back control and no page indicator markup; no htmx history (`hx-push-url`/`hx-history`/`hx-boost` absent), so browser Back cannot restore an earlier offset."
-    - path: app/db/repositories/queue_repo.py
-      issue: "Lines 262-277 — `QueuePage` carries rows/total/offset/limit/has_more/query + next_offset; no `has_prev`/`prev_offset`/`page_index`/`page_count`. All derivable from existing fields but not exposed."
-    - path: app/web/routes.py
-      issue: "Lines 132-154 — `parse_queue_query` fixes `limit` from `settings.queue_page_size` and never reads it from the request (T-02-28); offset clamped at 0. Line 168 passes `count=page.total` (grand total) to the template."
-    - path: app/config.py
-      issue: "Line 127 — `queue_page_size: int = 25`; the page size is server-fixed and never surfaced in the UI."
-    - path: tests/api/test_queue_excluded.py
-      issue: "Lines 257-278 — currently pins the forward-only behaviour (Load-more link carries `offset=4`, predicate changes carry no offset). Must be updated by any fix."
-  missing:
-    - "A previous/back control (or htmx history integration) — nothing can currently return to an earlier offset."
-    - "Any page-position display: page index, page count, page size, or \"showing X-Y of N\" — only the grand total is rendered."
-    - "Derived `QueuePage` accessors for backward navigation (`has_prev`/`prev_offset`) and position (`page_index`/`page_count`)."
-    - "A swap strategy that preserves already-rendered rows (append/`beforeend`) or an explicit page model — the current `innerHTML` replace is the mechanism that discards them."
+  closed_by: "05-11 (two-way pager) + b572f93 (WR-01 is_empty gate); code-verified 2026-09-23 in 05-VERIFICATION.md"
+  note: "Closed in code: `QueuePage.has_prev/prev_offset/page_index/page_count` (queue_repo.py:283-301, 14-case tests/db/test_queue_page.py), the `#queue-pager` Previous / position / Next block in queue_list.html, zero `queue-load-more` matches anywhere, page size still server-fixed. Human in-browser confirmation is still outstanding — tracked as test 7 above."
 
 ## Deferred Follow-Ups
 
