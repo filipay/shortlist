@@ -11,7 +11,13 @@
    The total is NOT recomputed here: `row.total_score` was derived at read time from the
    stored sub-scores under the weights currently in force (D-100). A dropped factor
    renders "no data", never a zero, and an unscored listing renders the not-yet-ranked
-   state rather than a numeric total. #}
+   state rather than a numeric total.
+
+   The not-yet-ranked block names the LAST run's persisted ranking state (G-05-1 /
+   G-05-2) — running / skipped (+ reason) / nothing-to-rank / not-this-listing / not
+   completed — under the retained not-yet-ranked heading. The fact-store skip also
+   names the exact path the loader reads. All of it is precomputed in the route: the
+   template never branches on a reason string and adds no polling, JS or `|safe`. #}
 
 {% block title %}{{ row.title }} — Job Search Copilot{% endblock %}
 
@@ -63,8 +69,7 @@
 </section>
 {% else %}
 <p class="detail-not-ranked">
-  Not yet ranked. This listing has no score yet — ranking may still be running, or the
-  pass was skipped. Refresh once it finishes.
+  Not yet ranked. {% if ranking_state == 'running' %}A ranking pass is running right now — refresh once it finishes.{% elif ranking_state == 'skipped' and cv_fact_store_skipped %}Ranking was skipped because there is no readable CV fact store. The app reads <code>{{ cv_path }}</code> — see <a href="/settings">Settings</a> for how to supply one.{% elif ranking_state == 'skipped' %}Ranking was skipped — {{ ranking_reason_label or ranking_reason or 'no reason recorded' }}.{% elif ranking_state == 'not_attempted' %}The last run had nothing to rank.{% elif ranking_state == 'ranked' %}The last run did not score this listing.{% else %}The ranking pass has not completed — refresh once it finishes.{% endif %}
 </p>
 {% endif %}
 
