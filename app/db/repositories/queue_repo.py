@@ -276,6 +276,30 @@ class QueuePage:
     def next_offset(self) -> int:
         return self.offset + len(self.rows)
 
+    # The four accessors below are pure derivations of `offset`/`limit`/`total`, which
+    # `read_queue` always sets (and clamps `limit` at >= 1). The `max(1, ...)` guards
+    # exist only so a hand-constructed instance cannot raise `ZeroDivisionError` or
+    # report a 0-page queue — they never change a value `read_queue` produces.
+    @property
+    def has_prev(self) -> bool:
+        """True when a previous page exists (the current page is not the first)."""
+        return self.offset > 0
+
+    @property
+    def prev_offset(self) -> int:
+        """The offset of the previous page, never negative; 0 when there is no previous page."""
+        return max(0, self.offset - self.limit)
+
+    @property
+    def page_index(self) -> int:
+        """The 1-based index of the page currently shown."""
+        return self.offset // max(1, self.limit) + 1
+
+    @property
+    def page_count(self) -> int:
+        """The number of pages at this page size, never below 1 (the current page always exists); total==0 reads as one page."""
+        return max(1, (self.total + max(1, self.limit) - 1) // max(1, self.limit))
+
 
 # --- predicates ---------------------------------------------------------------
 
