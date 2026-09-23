@@ -127,18 +127,37 @@
     </label>
   </form>
 
-  {# The ranking strip (D-89 / D-93): refresh-only, no polling or SSE (D-88). It is
-     rendered only once the ranking task has written `runs.ranked_count`, so a fresh
-     run shows nothing rather than a misleading "Ranked 0 of N".
+  {# The ranking strip (D-89 / D-93 / G-05-1): refresh-only, no polling or SSE (D-88).
+     Five states, so "a pass is running" and "the pass was skipped" no longer render
+     identically:
+       ranked        — completion; `ranked_count` is the only evidence of it;
+       running       — the live in-process task, derived at render time (never persisted,
+                       so a crashed or restarted pass can never read "in progress" forever);
+       skipped       — a persisted marker written by `_finish`, with a human reason;
+       not_attempted — the no-candidates gate (`{"status": "not_attempted"}`);
+       unknown       — no completed pass and no live task (e.g. after a crash/restart).
+
+     The skip reason is persisted by `_finish`, never by the detached task, whose
+     earlier write `_finish` would clobber wholesale.
 
      The denominator is the RUN's own candidate population, never this request's page
      total — the two are disjoint sets, so pairing them would print a ratio of nothing.
      When the run persisted no candidate count — or a non-positive one, which is not a
      usable denominator — the ratio is dropped and only the numerator renders, rather
      than inventing a denominator. #}
-  {% if ranking_strip.get('ranked') is not none %}
+  {% if ranking_strip.get('state') %}
   <p id="ranking-strip" class="ranking-strip">
+    {%- if ranking_strip.get('state') == 'ranked' -%}
     {% if ranking_strip.get('candidates') %}Ranked {{ ranking_strip.get('ranked') }} of {{ ranking_strip.get('candidates') }}{% else %}Ranked {{ ranking_strip.get('ranked') }}{% endif %}{% if ranking_strip.get('cap_reason') %} — cap reached ({{ ranking_strip.get('cap_reason') }}){% endif %}
+    {%- elif ranking_strip.get('state') == 'running' -%}
+    Ranking in progress. Scores appear as they land — refresh to update.
+    {%- elif ranking_strip.get('state') == 'skipped' -%}
+    Ranking skipped — {{ ranking_strip.get('reason_label') or ranking_strip.get('reason') or 'no reason recorded' }}.
+    {%- elif ranking_strip.get('state') == 'not_attempted' -%}
+    Nothing to rank on the last run.
+    {%- else -%}
+    Ranking has not completed for the last run.
+    {%- endif %}
   </p>
   {% endif %}
 

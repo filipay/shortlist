@@ -43,6 +43,7 @@ from app.db.session import get_session
 from app.domain.models import User
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
+from app.pipeline.rank import RANK_SKIP_LABELS, ranking_in_progress
 from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
@@ -276,24 +277,30 @@ async def _last_run_strip(
 async def _ranking_strip(
     session: AsyncSession, latest_run: RunSummary | None
 ) -> dict[str, Any]:
-    """`{ranked, candidates, cap_reason}` for the queue's ranking strip — never raises.
+    """The queue's ranking strip — never raises.
+
+    Reports the latest run's FIVE possible ranking states, one key each so the
+    template can branch without re-deriving anything:
+
+    * `state` — `latest_run.ranking_state(in_progress=ranking_in_progress())`:
+      `"ranked"` (a completed pass), `"skipped"`, `"not_attempted"`, `"running"`
+      (derived at render time from the live in-process task; never persisted) or
+      `"unknown"`.
+    * `reason` / `reason_label` — the persisted skip reason and its human sentence,
+      from `reason_counts_json['ranking']` written by `app.pipeline.run._finish`.
+    * `ranked` / `candidates` keep 05-05's meaning: the latest run's own
+      `ranked_count`, and its own candidate population (`reason_counts_json['survivors']`,
+      surfaced as `RunSummary.candidate_count`) — NOT `page.total`. The page total is
+      the rows surviving THIS request's predicates, the `min_score` threshold and the
+      truncation: a disjoint population, so pairing the two would print a ratio of
+      nothing. An absent/non-positive candidate count stays `None`, so the template
+      degrades to the numerator alone rather than inventing a denominator.
+    * `cap_reason` is non-None only when the ranking pass was refused by a spend
+      ceiling (D-93).
 
     A decorative strip must not 500 the product page (the `_last_run_strip` and
     `_health_strip` convention), so any failure yields `{}` and the queue renders
-    without the strip. `ranked` is the latest run's `ranked_count` (D-89) and is `None`
-    until the detached ranking task has written it.
-
-    `candidates` is the run's OWN candidate population — `reason_counts_json['survivors']`
-    (surfaced as `RunSummary.candidate_count`) — and NOT `page.total`. The page total is
-    the rows surviving THIS request's `q`/`excluded`/`hidden`/`saved`/`scope` predicates,
-    the `min_score` threshold and the `SCORE_SORT_SCAN_LIMIT` truncation: a disjoint
-    population from the run's score rows, so pairing the two would print a ratio of
-    nothing (a run that scored 30 of 40 could read "Ranked 30 of 5"). When the run
-    persisted no candidate count it stays `None` so the template degrades to the
-    numerator alone rather than inventing a denominator.
-
-    `cap_reason` is non-None only when the ranking pass was refused by a spend ceiling
-    (D-93). Refresh-only: no polling, no SSE, no new poll target (D-88).
+    without the strip. Refresh-only: no polling, no SSE, no new poll target (D-88).
     """
     if latest_run is None:
         return {}
@@ -304,6 +311,9 @@ async def _ranking_strip(
             "cap_reason": await llm_call_repo.rank_cap_reason_for_run(
                 session, run_id=latest_run.id
             ),
+            "state": latest_run.ranking_state(in_progress=ranking_in_progress()),
+            "reason": latest_run.ranking_reason,
+            "reason_label": RANK_SKIP_LABELS.get(latest_run.ranking_reason or ""),
         }
     except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the queue
         log.warning("queue.ranking_strip_failed", error=type(exc).__name__)

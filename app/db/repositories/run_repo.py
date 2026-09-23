@@ -89,6 +89,24 @@ def _optional_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _ranking_marker(value: Any) -> tuple[str | None, str | None]:
+    """The persisted ranking marker's `(status, reason)`, or `(None, None)`.
+
+    Total, in the same tolerant style as `_mapping`/`_entries`: a non-mapping value,
+    a hand-edited row or a row written by an older build yields `(None, None)` rather
+    than raising, and a non-string `status`/`reason` is treated as absent. A
+    corrupted marker therefore degrades to the truthful generic sentence.
+    """
+    if not isinstance(value, Mapping):
+        return (None, None)
+    status = value.get("status")
+    reason = value.get("reason")
+    return (
+        status if isinstance(status, str) else None,
+        reason if isinstance(reason, str) else None,
+    )
+
+
 def _duration(started_at: datetime | None, finished_at: datetime | None) -> float | None:
     """Seconds between the two stamps, or `None` when the run has not finished.
 
@@ -163,6 +181,13 @@ class RunSummary:
     #: persisted no such count. It is the only honest denominator for `ranked_count`: a
     #: request-derived total is a different population and must never be paired with it.
     candidate_count: int | None
+    #: The persisted ranking outcome for a run that did NOT complete a pass —
+    #: `reason_counts_json['ranking']`, written by `app.pipeline.run._finish`.
+    #: `"skipped"` or `"not_attempted"`; `None` for a run whose pass was started (or
+    #: for a row written before this marker existed).
+    ranking_status: str | None
+    #: The skip reason constant when `ranking_status == "skipped"`, else `None`.
+    ranking_reason: str | None
     sources: Mapping[str, Any]
     #: The first `STAGE_LOG_ERROR_LIMIT` errors, so no row can render unbounded.
     errors: tuple[Mapping[str, Any], ...]
@@ -174,6 +199,27 @@ class RunSummary:
     @property
     def in_flight(self) -> bool:
         return self.finished_at is None
+
+    def ranking_state(self, *, in_progress: bool) -> str:
+        """The latest run's ranking state — one of the five the strip renders.
+
+        `"ranked"` is completion, evidenced solely by `ranked_count` (written only by
+        a finished pass); then a persisted skip or not-attempted marker (a persisted
+        skip is authoritative over a live task); then `"running"` when `in_progress`
+        is true; else `"unknown"`. `running` cannot be derived from persisted fields
+        by design — it is a render-time fact about the live in-process task (D-88,
+        refresh-only), which is what stops an interrupted pass from reading
+        "in progress" forever.
+        """
+        if self.ranked_count is not None:
+            return "ranked"
+        if self.ranking_status == "skipped":
+            return "skipped"
+        if self.ranking_status == "not_attempted":
+            return "not_attempted"
+        if in_progress:
+            return "running"
+        return "unknown"
 
     @property
     def errors_json(self) -> tuple[Mapping[str, Any], ...]:
@@ -231,6 +277,8 @@ def _summary(row: Run) -> RunSummary:
     all_errors = tuple(
         entry for entry in _entries(row.errors_json) if isinstance(entry, Mapping)
     )
+    ranking = _mapping(row.reason_counts_json)
+    ranking_status, ranking_reason = _ranking_marker(ranking.get("ranking"))
     return RunSummary(
         id=int(row.id),
         trigger=str(row.trigger or ""),
@@ -243,7 +291,9 @@ def _summary(row: Run) -> RunSummary:
         deduped_count=_int(row.deduped_count),
         filtered_count=_int(row.filtered_count),
         ranked_count=None if row.ranked_count is None else int(row.ranked_count),
-        candidate_count=_optional_int(_mapping(row.reason_counts_json).get("survivors")),
+        candidate_count=_optional_int(ranking.get("survivors")),
+        ranking_status=ranking_status,
+        ranking_reason=ranking_reason,
         sources=_mapping(row.source_counts_json),
         errors=all_errors[:STAGE_LOG_ERROR_LIMIT],
         error_count=len(all_errors),
