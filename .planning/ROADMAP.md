@@ -241,7 +241,7 @@ Plans:
 
 **Gap closure — round 2** *(planned 2026-09-23 from the UAT diagnoses; wave 1 = 05-08, wave 2 = 05-09 and 05-10)*
 
-- [ ] 05-08-PLAN.md — G-05-1: the ranking outcome is persisted on the run (`reason_counts_json['ranking']`, written by `_finish`) and rendered, so the queue strip distinguishes running from skipped-and-why from not-attempted from ranked
+- [x] 05-08-PLAN.md — G-05-1: the ranking outcome is persisted on the run (`reason_counts_json['ranking']`, written by `_finish`) and rendered, so the queue strip distinguishes running from skipped-and-why from not-attempted from ranked
 - [ ] 05-09-PLAN.md — G-05-1/G-05-2: the job detail page names the last run's real ranking state instead of hedging, and names the CV fact-store path when that is the skip reason
 - [ ] 05-10-PLAN.md — G-05-2: disclose the CV fact-store prerequisite — a `/settings` card naming the path and the supply steps, an unconditional queue status line, a `cv` object in `/health`, and the documented `cv.draft.yaml` → `cv.yaml` promotion
 
@@ -311,7 +311,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
-| 5. Ranking — CORE VALUE | 7/7 | In Progress|  |
+| 5. Ranking — CORE VALUE | 8/10 | In Progress|  |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |

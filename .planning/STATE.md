@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-07-PLAN.md
-last_updated: "2026-09-22T17:25:51.817Z"
-last_activity: 2026-09-22
+stopped_at: Completed 05-08-PLAN.md
+last_updated: "2026-09-23T10:23:16.459Z"
+last_activity: 2026-09-23
 last_activity_desc: Phase 05 execution started
-state_head: 236c0864a99d6d35c0f6697a972a7633e746f27c
+state_head: 09598ce2bc2cff1f2b936543e2e40a1d7d477f68
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 40
-  completed_plans: 40
+  total_plans: 43
+  completed_plans: 41
   percent: 0
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 2 of 7
+Plan: 2 of 10
 Status: Ready to execute
-Last activity: 2026-09-22 — Phase 05 execution started
+Last activity: 2026-09-23 — Phase 05 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -75,6 +75,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P05 | 8 min | 2 tasks | 5 files |
 | Phase 05 P06 | 6 min | 2 tasks | 4 files |
 | Phase 05 P07 | 9min | 2 tasks | 3 files |
+| Phase 05 P08 | 13min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Phase 05: `load_facts` catches `(OSError, UnicodeError)` and re-raises a path-qualified `CvFactStoreError`, so a non-decodable `cv.yaml` is one typed failure at the shared reader — the fix belongs there, not in `rank.py`'s guard, and Phase 6 tailoring inherits it
 - [Phase 05]: Phase 05: the unreadable fact store reuses D-94's existing `fact_store_absent` skip reason (same operator-visible situation), now pinned by an asserted `pipeline.rank_skipped` event rather than inferred from the absence of rows
 - [Phase 05]: 05-07: a non-positive candidate count is not a denominator — excluded at the run read boundary (run_repo._optional_int), with a truthiness gate at the render site
+- [Phase 05]: Phase 05: a ranking pass's outcome is persisted as reason_counts_json['ranking'] by _finish (the sole writer), while the live 'running' state is derived at render time from the in-process task and never persisted
+- [Phase 05]: Phase 05: the four ranking skip reasons (ranking_disabled/fact_store_absent/ranking_in_flight/rank_start_failed) have exactly one definition in app/pipeline/rank.py (RANK_SKIP_* + RANK_SKIP_LABELS), read by the guard, the precheck and the render layer
 
 ### Pending Todos
 
@@ -136,6 +139,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T17:25:51.708Z
-Stopped at: Completed 05-07-PLAN.md
+Last session: 2026-09-23T10:23:16.355Z
+Stopped at: Completed 05-08-PLAN.md
 Resume file: None
