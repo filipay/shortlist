@@ -6,6 +6,11 @@ switch), no fact store, and an unreadable fact store. In every case
 `run_pipeline` completes normally and `runs.status` is `"done"` — hitting a
 deliberate skip is not a failure.
 
+As of 05-08 (G-05-1) each of the four skip paths ALSO leaves a persisted, named
+outcome on the run: `reason_counts_json['ranking'] ==
+{"status": "skipped", "reason": "<constant>"}`, written by `_finish` in its single
+commit — so the queue strip can say why, rather than rendering nothing.
+
 The fourth case pins the single-flight lifecycle: a run whose ranking would overlap
 an in-flight task is skipped, not queued.
 """
@@ -65,7 +70,7 @@ async def _run_with_one_listing(
 
 
 async def _assert_skipped(
-    session_factory: async_sessionmaker[AsyncSession], run_id: int
+    session_factory: async_sessionmaker[AsyncSession], run_id: int, *, reason: str
 ) -> None:
     async with session_factory() as session:
         run = await session.get(Run, run_id)
@@ -76,6 +81,10 @@ async def _assert_skipped(
     assert run.status == "done", "a deliberate skip is not a failure"
     assert calls == 0
     assert scores == 0
+    # The persisted, machine-readable outcome (G-05-1): the strip reads THIS, not the
+    # pad of a log line. `_finish` is the sole writer of `reason_counts_json`.
+    marker = dict(run.reason_counts_json or {})
+    assert marker.get("ranking") == {"status": "skipped", "reason": reason}
 
 
 # --- the three skip paths ------------------------------------------------------
@@ -90,7 +99,9 @@ async def test_ranking_disabled_writes_nothing_and_the_run_is_done(
     run_id = await _run_with_one_listing(session_factory)
     await drain_ranking_tasks()
 
-    await _assert_skipped(session_factory, run_id)
+    await _assert_skipped(
+        session_factory, run_id, reason=rank_module.RANK_SKIP_DISABLED
+    )
 
 
 async def test_no_fact_store_writes_nothing_and_the_run_is_done(
@@ -104,7 +115,9 @@ async def test_no_fact_store_writes_nothing_and_the_run_is_done(
     run_id = await _run_with_one_listing(session_factory)
     await drain_ranking_tasks()
 
-    await _assert_skipped(session_factory, run_id)
+    await _assert_skipped(
+        session_factory, run_id, reason=rank_module.RANK_SKIP_FACT_STORE
+    )
 
 
 async def test_unreadable_fact_store_writes_nothing_and_the_run_is_done(
@@ -118,7 +131,9 @@ async def test_unreadable_fact_store_writes_nothing_and_the_run_is_done(
     run_id = await _run_with_one_listing(session_factory)
     await drain_ranking_tasks()
 
-    await _assert_skipped(session_factory, run_id)
+    await _assert_skipped(
+        session_factory, run_id, reason=rank_module.RANK_SKIP_FACT_STORE
+    )
 
 
 async def test_non_utf8_fact_store_writes_nothing_and_the_run_is_done(
@@ -139,7 +154,9 @@ async def test_non_utf8_fact_store_writes_nothing_and_the_run_is_done(
         run_id = await _run_with_one_listing(session_factory)
         await drain_ranking_tasks()
 
-    await _assert_skipped(session_factory, run_id)
+    await _assert_skipped(
+        session_factory, run_id, reason=rank_module.RANK_SKIP_FACT_STORE
+    )
     assert any(
         entry.get("event") == "pipeline.rank_skipped"
         and entry.get("reason") == "fact_store_absent"

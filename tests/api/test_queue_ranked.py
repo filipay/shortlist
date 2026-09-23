@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Run, Source
@@ -20,6 +21,7 @@ from app.db.repositories import run_repo, score_repo
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
+from app.web import routes as routes_module
 
 DAY = datetime(2026, 9, 1, tzinfo=UTC)
 TR_RE = re.compile(r'<tr id="listing-row-(\d+)"')
@@ -92,6 +94,38 @@ async def _seed_run_with_coverage(
             finished_at=DAY,
             ranked_count=ranked_count,
             reason_counts_json={"survivors": survivors},
+        )
+        session.add(run)
+        await session.commit()
+        return int(run.id)
+
+
+async def _seed_run_with_ranking(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    ranking: dict | None = None,
+    ranked_count: int | None = None,
+    survivors: int | None = None,
+) -> int:
+    """A finished run carrying an optional persisted ranking marker.
+
+    `ranking` lands in `reason_counts_json['ranking']` exactly as
+    `app.pipeline.run._finish` writes it, so the strip's five states can be exercised
+    without a live ranking pass.
+    """
+    counts: dict = {}
+    if survivors is not None:
+        counts["survivors"] = survivors
+    if ranking is not None:
+        counts["ranking"] = ranking
+    async with session_factory() as session:
+        run = Run(
+            trigger="manual",
+            status="done",
+            started_at=DAY,
+            finished_at=DAY,
+            ranked_count=ranked_count,
+            reason_counts_json=counts or None,
         )
         session.add(run)
         await session.commit()
@@ -394,3 +428,94 @@ async def test_run_summary_has_no_candidate_count_for_a_non_positive_survivors(
         summaries = await run_repo.list_runs(session)
 
     assert summaries and all(summary.candidate_count is None for summary in summaries)
+
+
+# --- the ranking strip's FIVE states (G-05-1, plan 05-08) -----------------------
+#
+# Before 05-08 "ranking is running" and "ranking was skipped" rendered identically —
+# both a blank strip — because the only gate was `ranked_count is not None`. These
+# tests pin each state, including the two the gap was about: a live pass reads as in
+# progress, and an interrupted one never does.
+
+
+async def test_ranking_strip_names_the_skip_reason(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_ranking(
+        session_factory, ranking={"status": "skipped", "reason": "fact_store_absent"}
+    )
+
+    body = (await client.get("/")).text
+
+    assert "Ranking skipped — no readable CV fact store." in body
+    assert "Ranking in progress" not in body, "a skipped pass is not a running one"
+
+
+async def test_ranking_strip_shows_nothing_to_rank_for_a_not_attempted_run(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_ranking(session_factory, ranking={"status": "not_attempted"})
+
+    body = (await client.get("/")).text
+
+    assert "Nothing to rank on the last run." in body
+    assert re.search(r"Ranked \d+", body) is None, "no ratio for a run that never ranked"
+
+
+async def test_ranking_strip_shows_in_progress_while_a_pass_is_running(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_ranking(session_factory)
+    monkeypatch.setattr(routes_module, "ranking_in_progress", lambda: True)
+
+    body = (await client.get("/")).text
+
+    assert "Ranking in progress. Scores appear as they land — refresh to update." in body
+
+
+async def test_ranking_strip_says_not_completed_when_no_pass_is_running(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The staleness rule: an interrupted pass (crash, restart) must never read "running".
+
+    `running` is derived at render time from the live task and is never persisted, so
+    when no task is live the honest state is "has not completed".
+    """
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_ranking(session_factory)
+    monkeypatch.setattr(routes_module, "ranking_in_progress", lambda: False)
+
+    body = (await client.get("/")).text
+
+    assert "Ranking has not completed for the last run." in body
+    assert "Ranking in progress" not in body
+
+
+async def test_ranking_strip_prefers_a_persisted_skip_over_a_live_task(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persisted skip is authoritative over a live task (T-05-35)."""
+    await _register_sources(session_factory, "linkedin")
+    await _seed_listing(session_factory, index=1, title="Only")
+    await _seed_run_with_ranking(
+        session_factory, ranking={"status": "skipped", "reason": "ranking_disabled"}
+    )
+    monkeypatch.setattr(routes_module, "ranking_in_progress", lambda: True)
+
+    body = (await client.get("/")).text
+
+    assert "Ranking skipped — ranking is turned off in Settings." in body
+    assert "Ranking in progress" not in body
