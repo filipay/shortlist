@@ -3,22 +3,21 @@ status: testing
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-22T17:37:33Z
+updated: 2026-09-23T14:10:00Z
 ---
 
 ## Current Test
 
 number: 1
-name: RANK-05 rationale prose quality (backstop) — read stored rationales on the job detail page
+name: RANK-05 rationale prose quality (backstop)
 expected: |
-  Each rationale reads as prose grounded in the listing's stated requirements and
-  the CV evidence IDs actually returned — not a keyword restatement of the listing title.
+  Open several ranked listings on the job detail page and read each stored rationale. Each reads as prose grounded in the listing's stated requirements and the CV evidence IDs actually returned — not a keyword restatement of the listing title.
 awaiting: user response
 
 ## Tests
 
 ### 1. RANK-05 rationale prose quality (backstop)
-expected: Open several ranked listings on the job detail page and read each stored rationale. Each reads as prose grounded in the listing's stated requirements and the CV evidence IDs actually returned — not a keyword restatement of the listing title.
+expected: Open several ranked listings and read each stored rationale on the job detail page. Each reads as prose grounded in the listing's stated requirements and the CV evidence IDs actually returned — not a keyword restatement of the listing title.
 result: [pending]
 
 ### 2. RANK-07 live-model stability tolerance
@@ -51,3 +50,7 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+<!-- G-05-1 (ranking observability) and G-05-2 (CV fact-store disclosure) were closed by
+     the round-2 gap-closure plans 05-08, 05-09 and 05-10 and re-verified 2026-09-23
+     (05-VERIFICATION.md: 42/42 observable truths verified, 0 gaps). No open gaps. -->
