@@ -2,7 +2,7 @@
 
    Rendered two ways from ONE definition: `queue.html` includes it for the initial
    page, and `GET /queue/list` returns it for the `hx-get` swap into `#queue-list`.
-   That is why the count paragraph and the Load-more control live here rather than in
+   That is why the count paragraph and the pager live here rather than in
    the page — a swapped fragment must carry them, or the count would go stale.
 
    The count markup is the Phase-1 markup verbatim: `tests/api/test_run_trigger.py`
@@ -73,15 +73,33 @@
   </tbody>
 </table>
 
-{% if page.has_more %}
-{# Load more keeps the CURRENT page index: it is the same predicate set, one page
-   further on. A predicate change resets it (see queue.html). #}
-<button type="button"
-        id="queue-load-more"
-        hx-get="/queue/list?{{ page.query.query_string(offset=page.next_offset) }}"
-        hx-target="#queue-list"
-        hx-swap="innerHTML">
-  Load more
-</button>
-{% endif %}
+{# The pager. This fragment renders a discrete PAGE, so replacing the list's CONTENTS
+   (`hx-swap="innerHTML"`) is correct: Previous and Next move between slices rather
+   than appending to one. A predicate change still resets to page 1 — this pager is the
+   ONLY control that carries an offset, forward or back (see queue.html).
+
+   No browser-history integration is added on purpose: a fragment request URL pushed
+   into history reloads as a bare fragment with no page shell, so the in-page Previous
+   control is the backward affordance. #}
+<nav id="queue-pager" aria-label="Queue pagination">
+  {% if page.has_prev %}
+  <button type="button"
+          id="queue-page-prev"
+          hx-get="/queue/list?{{ page.query.query_string(offset=page.prev_offset) }}"
+          hx-target="#queue-list"
+          hx-swap="innerHTML">
+    Previous
+  </button>
+  {% endif %}
+  <span id="queue-page-position">Page {{ page.page_index }} of {{ page.page_count }} ({{ page.limit }} per page)</span>
+  {% if page.has_more %}
+  <button type="button"
+          id="queue-page-next"
+          hx-get="/queue/list?{{ page.query.query_string(offset=page.next_offset) }}"
+          hx-target="#queue-list"
+          hx-swap="innerHTML">
+    Next
+  </button>
+  {% endif %}
+</nav>
 {% endif %}

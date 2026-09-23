@@ -56,7 +56,7 @@
 
     {# A predicate change RESETS the page index: page 3 of a different filtered set is
        meaningless, so these controls emit no `offset` and the queue restarts at 0.
-       Only the Load-more control in queue_list.html carries an offset forward. #}
+       Only the pager in queue_list.html carries an offset — forward and back. #}
     <label class="queue-toggle" for="queue-toggle-excluded">
       <input type="checkbox"
              id="queue-toggle-excluded"

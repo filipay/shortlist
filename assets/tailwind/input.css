@@ -461,13 +461,20 @@
     margin-bottom: 0.75rem;
   }
 
-  #queue-mark-seen,
-  #queue-load-more {
+  #queue-mark-seen {
     margin-bottom: 1rem;
   }
 
-  #queue-load-more {
+  #queue-pager {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
     margin-top: 1rem;
+  }
+
+  #queue-page-position {
+    color: var(--color-muted);
+    font-size: 0.9rem;
   }
 
   .empty-state {
