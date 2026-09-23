@@ -14,6 +14,7 @@ document; this module reads it, and no module writes it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -88,4 +89,25 @@ def load_facts(path: Path) -> CvFacts:
     return facts
 
 
-__all__ = ["CvFactStoreError", "load_facts"]
+def fact_store_report(path: Path) -> dict[str, Any]:
+    """Answer "is a readable fact store at ``path``?" for the UI and health surfaces.
+
+    Read-only: it performs no write, no cache and no default-fill — it only asks the
+    one loader whether ``path`` loads. Total: it never raises, so a missing, unreadable
+    or invalid store is REPORTED rather than propagated.
+
+    ``error`` carries the exception CLASS NAME only, never the exception's own message:
+    a YAML or validation message can echo document text, and this dict is rendered to a
+    browser and returned from ``/health``, so nothing from the exception beyond its type
+    may cross that boundary.
+    """
+    try:
+        load_facts(path)
+    except (CvFactStoreError, OSError) as exc:
+        return {"available": False, "path": str(path), "error": type(exc).__name__}
+    except Exception as exc:  # noqa: BLE001 — a report must never raise
+        return {"available": False, "path": str(path), "error": type(exc).__name__}
+    return {"available": True, "path": str(path), "error": None}
+
+
+__all__ = ["CvFactStoreError", "fact_store_report", "load_facts"]

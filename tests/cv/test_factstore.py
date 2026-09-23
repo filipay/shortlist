@@ -185,5 +185,33 @@ def test_a_full_load_and_identity_patch_leaves_base_tex_byte_identical(
     assert base_tex.stat().st_mtime_ns == before_mtime
 
 
+# --- Test 9: the report is total and names the path, never the message --------
+
+
+def test_fact_store_report_is_total_and_names_the_path() -> None:
+    """A valid store reports available, the path it was asked about, and no error."""
+    report = factstore.fact_store_report(FIXTURE)
+
+    assert report == {"available": True, "path": str(FIXTURE), "error": None}
+
+
+def test_the_report_carries_the_exception_class_name_only(tmp_path: Path) -> None:
+    """A failure is REPORTED, never raised, and never echoes the exception message.
+
+    The decode error's own text can echo document content, so only the exception
+    CLASS NAME may cross into the dict that is rendered and returned from /health.
+    """
+    path = tmp_path / "cv.yaml"
+    path.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+
+    report = factstore.fact_store_report(path)
+
+    assert report["available"] is False
+    assert report["path"] == str(path)
+    assert report["error"] == "CvFactStoreError"
+    assert not any("unreadable" in str(value) for value in report.values())
+    assert not any("utf-8" in str(value) for value in report.values())
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])

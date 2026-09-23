@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.searches import read_form
 from app.config import settings
+from app.cv.factstore import fact_store_report
 from app.db.models import Base, Run
 from app.db.repositories import llm_call_repo, ranking_config_repo
 from app.db.session import get_session
@@ -43,6 +44,7 @@ from app.domain.schemas.probe import ProbeResult
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend, StructuredCallResult
 from app.llm.contract import STRUCTURED_RESPONSE_PATH
+from app.pipeline.rank import CV_FILENAME
 from app.pipeline.run import TERMINAL_STATUSES
 from app.web.template_env import make_templates
 
@@ -162,6 +164,10 @@ async def _settings_context(
         # re-render after a save, so the pre-filled values and the note cannot disagree.
         "weights": await ranking_config_repo.read_weights(session),
         "factors": tuple((key, rubric.FACTOR_LABELS[key]) for key in rubric.FACTORS),
+        # The CV fact-store card. The same path string and the same total probe serve
+        # the settings card, the queue status line and `/health`, so the three surfaces
+        # cannot disagree about where the loader reads or whether it loaded.
+        "cv": fact_store_report(Path(settings.cv_dir) / CV_FILENAME),
         # The selftest surface (D-48/D-52). `probe_error_kind` and the observation
         # are only available on the immediate render — `llm_calls` has no column for
         # either, so a reload shows D-52's PERSISTED detail only.

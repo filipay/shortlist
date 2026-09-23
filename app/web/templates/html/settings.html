@@ -109,6 +109,27 @@
   </form>
 </section>
 
+<section class="settings-card" id="cv-fact-store">
+  <h3>CV fact store</h3>
+  <p class="settings-note">
+    {% if cv.available %}
+    A readable CV fact store is loaded from <code>{{ cv.path }}</code>, and every
+    surviving listing is scored against it.
+    {% else %}
+    Ranking needs a CV fact store: there is no readable CV fact store at
+    <code>{{ cv.path }}</code>, so ranking is skipped and the queue stays unranked.
+    {% endif %}
+  </p>
+  <p class="settings-note">
+    To supply one: put your LaTeX CV at <code>cv/base.tex</code> in the project
+    checkout, run <code>bash scripts/cv-tex-spike.sh</code>, review the draft it
+    writes to <code>cv/cv.draft.yaml</code>, then promote the reviewed draft to
+    <code>cv/cv.yaml</code> — the checkout's <code>cv/</code> directory is what the
+    container mounts, read at the path above. There is deliberately no upload
+    control: the CV is a host file and never crosses the network.
+  </p>
+</section>
+
 <section class="danger-card" id="danger-zone">
   <h3>Danger zone</h3>
   <p class="settings-note">
