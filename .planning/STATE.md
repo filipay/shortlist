@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-09-24T22:41:04.983Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-09-24T22:54:06.900Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 06 execution started
-state_head: 97c718d47035251a90106f4ab049e1f6b5cc16b4
+state_head: 70fcdc3fd580d74f16e9778648b0450cb95902ba
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 52
-  completed_plans: 50
+  completed_plans: 51
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 06 (Tailoring + Verification) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 06 execution started
 
@@ -85,6 +85,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 06 P03 | 18min | 3 tasks | 6 files |
 | Phase 06 P04 | 15min | 3 tasks | 7 files |
 | Phase 06 P05 | 9 | 2 tasks | 6 files |
+| Phase 06 P06 | 12 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-05: check-4 metric containment is region-local — an entry's OWN date cores, page-number lines inside the region, and the non-entry structured strings that physically appear in it; the document-wide date union and page scan are deleted (GAP 1/CR-01 + WR-03)
 - [Phase 06]: 06-05: GAP 1 fixed with the stricter form — exclude non-entry structured content only where its string physically appears, never a global union (would silence a fabricated digit equal to a skill-label digit) and never a heading bound (the template renders a section's skills table AFTER its last entry)
 - [Phase 06]: 06-05: VERIFIER_VERSION bumped 1.0.0 -> 1.0.1 as provenance, not a migration; no column/table/Alembic change (head stays 0004) and persisted verification_json rows keep their written version
+- [Phase 06]: 06-06: _validate_patch grounds op ids per family — the four bullet ops against bullet_ids, ReorderSection against section_ids, gap/suggestion references against the full fact-id set; a non-family id raises UnknownIdError before _build_plan, so no phantom ChangeRecord (WR-02/GAP 2 closed)
+- [Phase 06]: 06-06: change-log honesty is per-op-locus (a record names a real source fact of its family's kind at the right locus), NOT 'every record changed the output' — a valid-id no-op (move before itself, reweight to current weight) deliberately still records
+- [Phase 06]: 06-06: no stored row is invalidated by the tighter grounding — D-109 does not persist a generated patch and cv_artifacts.patch_json is written only after validation; the Alembic head stays 0004
 
 ### Pending Todos
 
@@ -175,6 +179,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:40:41.289Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-09-24T22:53:53.305Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
