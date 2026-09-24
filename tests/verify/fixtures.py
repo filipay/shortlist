@@ -39,6 +39,27 @@ def load_standin_facts() -> CvFacts:
     return load_facts(FACTS_YAML)
 
 
+def with_digit_skill(
+    facts: CvFacts, *, label: str = "AWS S3", group: str = "infrastructure"
+) -> CvFacts:
+    """A copy of ``facts`` whose LAST skill of every skill-bearing section carries ``label``.
+
+    Rebuilt through ``model_copy`` so the loaded stand-in object is never mutated and
+    ``tests/golden/base.rendered.tex`` cannot shift. A section with no skills is
+    returned unchanged. The digit ``3`` in the default label is ordinary CV content
+    (the verifier's own example), not a fabricated metric.
+    """
+    sections = []
+    for section in facts.sections:
+        if not section.skills:
+            sections.append(section)
+            continue
+        skills = list(section.skills)
+        skills[-1] = skills[-1].model_copy(update={"label": label, "group": group})
+        sections.append(section.model_copy(update={"skills": skills}))
+    return facts.model_copy(update={"sections": sections})
+
+
 def build_fixture(
     patch: TailoringPatch | None = None,
     *,
@@ -46,13 +67,14 @@ def build_fixture(
     page_count: int = 1,
     expected: bool = True,
     bands: dict[str, str] | None = None,
+    facts: CvFacts | None = None,
 ) -> VerifyFixture:
-    facts = load_standin_facts()
+    resolved_facts = facts if facts is not None else load_standin_facts()
     resolved = patch or TailoringPatch(listing_id=1)
-    plan = apply_patch(facts, resolved)
+    plan = apply_patch(resolved_facts, resolved)
     text = (VERIFY_FIXTURES / extract_name).read_text(encoding="utf-8")
     return VerifyFixture(
-        facts=facts,
+        facts=resolved_facts,
         plan=plan,
         patch=resolved,
         text=text,
@@ -62,4 +84,11 @@ def build_fixture(
     )
 
 
-__all__ = ["FACTS_YAML", "VERIFY_FIXTURES", "VerifyFixture", "build_fixture", "load_standin_facts"]
+__all__ = [
+    "FACTS_YAML",
+    "VERIFY_FIXTURES",
+    "VerifyFixture",
+    "build_fixture",
+    "load_standin_facts",
+    "with_digit_skill",
+]

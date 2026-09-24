@@ -11,7 +11,12 @@ from __future__ import annotations
 from app.domain.cv import DropBullet, TailoringPatch
 from app.verify import verify_text
 from app.verify.base import VERIFIER_VERSION, CheckResult, VerificationResult
-from tests.verify.fixtures import VerifyFixture, build_fixture
+from tests.verify.fixtures import (
+    VerifyFixture,
+    build_fixture,
+    load_standin_facts,
+    with_digit_skill,
+)
 
 BULLET3 = "bul/northwind-labs-2021/3"
 
@@ -79,6 +84,27 @@ def test_a_date_core_does_not_fail_metric_containment() -> None:
     _, result = _verify()
 
     assert _check(result, "metric_containment").status == "pass"
+
+
+def test_a_digit_bearing_skill_label_still_passes_metric_containment() -> None:
+    """CR-01: a valid CV whose Skills block carries an ordinary digit-bearing label passes.
+
+    The digit is grounded in the region that renders the skill label, so it is not a
+    surplus candidate. ``entity_present``/``layout_ats`` are asserted too: their
+    org/title/date strings must still match the extraction, so a fixture typo cannot
+    make this pass by accident.
+    """
+    facts = with_digit_skill(load_standin_facts())
+    fixture = build_fixture(facts=facts, extract_name="digit_skill_extract.txt")
+
+    result = verify_text(
+        fixture.facts, fixture.plan, fixture.patch, fixture.text, page_count=fixture.page_count
+    )
+
+    assert _check(result, "metric_containment").status == "pass"
+    assert _check(result, "entity_present").status == "pass"
+    assert _check(result, "layout_ats").status == "pass"
+    assert result.passed is True
 
 
 # --- check 7: injection_residue ------------------------------------------------

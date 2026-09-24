@@ -22,7 +22,7 @@ from app.verify.numbers import (
     is_page_number_line,
     region_token_report,
 )
-from tests.verify.fixtures import build_fixture
+from tests.verify.fixtures import build_fixture, load_standin_facts, with_digit_skill
 
 # --- digit cores ---------------------------------------------------------------
 
@@ -217,6 +217,18 @@ def test_a_digit_in_a_skill_label_appearing_in_the_region_is_not_a_candidate() -
 
     assert "3" not in report.candidates
     assert "3" in report.allowed
+
+
+def test_the_committed_digit_skill_extract_has_no_surplus_candidate() -> None:
+    """CR-01 end-to-end at the region level over the committed digit-skill extraction."""
+    facts = with_digit_skill(load_standin_facts())
+    fixture = build_fixture(facts=facts, extract_name="digit_skill_extract.txt")
+
+    report = region_token_report(fixture.plan, fixture.text, page_count=1)[0]
+
+    # The only surviving metric tokens are the bullets' own; the "3" in "AWS S3" is not.
+    assert report.candidates == ["99", "40"]
+    assert set(report.candidates) <= set(report.allowed)
 
 
 if __name__ == "__main__":  # pragma: no cover

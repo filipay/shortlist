@@ -1,0 +1,14 @@
+Alex Example
+alex.example@example.invalid
+https://example.invalid/alex
+Experience
+Northwind Labs --- Senior Engineer
+2021-03 -- 2024-09
+Dublin, IE
+Reduced p99 latency 40% by rewriting the ingest path
+Led the migration to a single-writer queue
+Mentored four engineers through their first on-call rotation
+Skills
+languages Python
+databases PostgreSQL
+infrastructure AWS S3
