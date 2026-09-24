@@ -1,10 +1,10 @@
 """The verification package (D-111..D-115).
 
 Its OWN package, NOT under ``app/domain``: the verifier may import ``rapidfuzz``
-(06-02 does), and ``tests/test_import_discipline.py`` forbids that under
-``app/domain``. Layer 1 (the deterministic pre-check) lives in ``plan_checks``;
-Layer 2 (the PDF-text post-checks, the metric tokeniser and the advisory
-similarity band) follows in 06-02.
+(the advisory grounding band), and ``tests/test_import_discipline.py`` forbids that
+under ``app/domain``. Layer 1 (the deterministic pre-check) lives in ``plan_checks``;
+Layer 2 (the extracted-PDF-text post-checks, the metric tokeniser and the advisory
+similarity band) lives in ``text_checks``, ``numbers`` and ``grounding``.
 """
 
 from app.verify.base import (
@@ -13,12 +13,26 @@ from app.verify.base import (
     CheckStatus,
     VerificationResult,
 )
+from app.verify.numbers import (
+    RegionReport,
+    date_like_cores_for_entry,
+    digit_cores,
+    is_page_number_line,
+    region_token_report,
+)
 from app.verify.plan_checks import verify_plan
+from app.verify.text_checks import verify_text
 
 __all__ = [
     "VERIFIER_VERSION",
     "CheckResult",
     "CheckStatus",
+    "RegionReport",
     "VerificationResult",
+    "date_like_cores_for_entry",
+    "digit_cores",
+    "is_page_number_line",
+    "region_token_report",
     "verify_plan",
+    "verify_text",
 ]
