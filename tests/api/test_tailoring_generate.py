@@ -25,8 +25,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.cv.factstore import load_facts
 from app.db.models import CvArtifact
-from app.domain.cv import BulletWeight, GapFinding, TailoringPatch
+from app.domain.cv import BulletWeight, GapFinding, TailoringPatch, facts_hash
 from app.latex.base import CompileResult, EngineProbe
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
 from app.pipeline import tailor as tailor_module
@@ -34,6 +35,7 @@ from tests.api.test_listing_detail import _register_sources, _seed_listing, _see
 from tests.verify.fixtures import FACTS_YAML, VERIFY_FIXTURES
 
 PATCH_RE = re.compile(r'name="patch_json" value="([^"]*)"')
+HIDDEN_RE = re.compile(r'name="(patch_json|base_cv_version_id|fact_store_hash)" value="([^"]*)"')
 
 
 class TailoringStubBackend:
@@ -169,6 +171,11 @@ def _extract_patch(body: str) -> str:
     return html.unescape(match.group(1))
 
 
+def _hidden_fields(body: str) -> dict[str, str]:
+    """The three D-109 guard fields, as the compile route reads them."""
+    return {match.group(1): html.unescape(match.group(2)) for match in HIDDEN_RE.finditer(body)}
+
+
 # --- truth 2: the unscored page offers no generate control ---------------------
 
 
@@ -220,11 +227,9 @@ async def test_compile_writes_one_ok_row_and_returns_a_download_link(
     listing_id = await _seed_scored_listing(session_factory, title="Compiling Role")
 
     generated = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
-    patch_json = _extract_patch(generated.text)
+    fields = _hidden_fields(generated.text)
 
-    response = await tailoring_client.post(
-        f"/listings/{listing_id}/cv/compile", data={"patch_json": patch_json}
-    )
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
 
     assert response.status_code == 200
     assert f"/listings/{listing_id}/cv/pdf" in response.text, "a download link is returned"
@@ -255,7 +260,10 @@ async def test_compile_short_circuits_a_layer_one_fail_to_a_blocked_row(
 
     response = await tailoring_client.post(
         f"/listings/{listing_id}/cv/compile",
-        data={"patch_json": blocked_patch.model_dump_json()},
+        data={
+            "patch_json": blocked_patch.model_dump_json(),
+            "fact_store_hash": facts_hash(load_facts(FACTS_YAML)),
+        },
     )
 
     assert response.status_code == 200
@@ -282,12 +290,10 @@ async def test_the_pdf_route_serves_the_ok_artifact(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     listing_id = await _seed_scored_listing(session_factory, title="Served Role")
-    patch_json = _extract_patch(
+    fields = _hidden_fields(
         (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
     )
-    await tailoring_client.post(
-        f"/listings/{listing_id}/cv/compile", data={"patch_json": patch_json}
-    )
+    await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
 
     response = await tailoring_client.get(f"/listings/{listing_id}/cv/pdf")
 

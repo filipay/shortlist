@@ -103,6 +103,13 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+def _form_text(value: Any) -> str | None:
+    """A non-empty form string, or `None`. An empty guard field is a missing one."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
+
+
 def _not_found() -> HTMLResponse:
     """A small HTML fragment, not a bare JSON 404 — the events route's convention."""
     return HTMLResponse(
@@ -367,20 +374,23 @@ async def compile_tailored_cv(
     session: AsyncSession = Depends(get_session),
     engine: Any = Depends(get_latex_engine),
 ) -> HTMLResponse:
-    """Re-parse the client's patch, compile it, persist one artifact row."""
+    """Re-parse the client's patch, refuse a stale one, compile, persist one row."""
     form = await read_form(request)
 
     listing = await session.get(Listing, listing_id)
     if listing is None:
         return _not_found()
 
+    # The round-tripped patch is CLIENT-CONTROLLED. It is re-parsed with Pydantic
+    # (`extra="forbid"`) and, because the schema has no text field, a forged patch can
+    # only reorder/reweight/demote/drop/re-order — it cannot fabricate.
     raw_patch = form.get("patch_json")
     if not isinstance(raw_patch, str) or not raw_patch.strip():
-        return _error_fragment("invalid-patch", "No patch was supplied.", 422)
+        return _error_fragment("bad-patch", "No patch was supplied.", 422)
     try:
         patch = TailoringPatch.model_validate_json(raw_patch)
     except ValidationError:
-        return _error_fragment("invalid-patch", "The patch could not be parsed.", 422)
+        return _error_fragment("bad-patch", "The patch could not be parsed.", 422)
 
     try:
         facts = load_facts(Path(settings.cv_dir) / CV_FILENAME)
@@ -389,12 +399,33 @@ async def compile_tailored_cv(
             TAILOR_SKIP_FACT_STORE, TAILOR_SKIP_LABELS[TAILOR_SKIP_FACT_STORE], 409
         )
 
+    # D-109's optimistic-concurrency guard: the hash is recomputed from the facts just
+    # loaded and the version is read fresh, so a forged guard field cannot make a stale
+    # store look current. A mismatch is a 409 refusal that writes NO row — the tool must
+    # never compile against facts the user did not review.
+    current = await cv_repo.current_version(session)
+    guard = verify_original_matches(
+        facts,
+        captured_hash=_form_text(form.get("fact_store_hash")),
+        captured_version_id=_optional_int(form.get("base_cv_version_id")),
+        current_version_id=current.id if current is not None else None,
+    )
+    if not guard.ok:
+        # The refusal the operator sees: a 409 fragment carrying data-error="stale-patch"
+        # (and nothing else — no compile control to retry the same stale patch).
+        return _error_fragment(
+            "stale-patch",
+            "The CV fact store changed since this patch was generated. "
+            "Generate a fresh tailoring and review it again.",
+            409,
+        )
+
     record = await compile_tailored(
         session,
         listing=listing,
         facts=facts,
         patch=patch,
-        base_cv_version_id=_optional_int(form.get("base_cv_version_id")),
+        base_cv_version_id=current.id if current is not None else None,
         engine=engine,
         artifacts_dir=Path(settings.artifacts_dir),
         now=datetime.now(UTC),
