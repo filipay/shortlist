@@ -29,8 +29,9 @@ from app.db.models import CvArtifact
 from app.domain.cv import BulletWeight, GapFinding, TailoringPatch
 from app.latex.base import CompileResult, EngineProbe
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
+from app.pipeline import tailor as tailor_module
 from tests.api.test_listing_detail import _register_sources, _seed_listing, _seed_scored_listing
-from tests.verify.fixtures import FACTS_YAML
+from tests.verify.fixtures import FACTS_YAML, VERIFY_FIXTURES
 
 PATCH_RE = re.compile(r'name="patch_json" value="([^"]*)"')
 
@@ -128,6 +129,14 @@ async def tailoring_client(
     (cv_dir / "cv.yaml").write_text(FACTS_YAML.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(settings, "cv_dir", str(cv_dir))
     monkeypatch.setattr(settings, "artifacts_dir", str(tmp_path / "artifacts"))
+    # The stub engine writes a canned (non-pypdf-readable) PDF, so Layer-2 extraction
+    # is stubbed to the committed pass fixture. The real extraction is exercised by the
+    # container `latex` lane, never here.
+    monkeypatch.setattr(
+        tailor_module,
+        "extract_pdf_text",
+        lambda path: (VERIFY_FIXTURES / "base_extract.txt").read_text(encoding="utf-8"),
+    )
 
     app = create_app()
 

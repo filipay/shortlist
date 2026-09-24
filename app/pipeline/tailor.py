@@ -22,6 +22,7 @@ with no interpolation of any request-derived value. ``tools=()`` is passed expli
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -44,6 +45,7 @@ from app.domain.cv import (
     facts_hash,
 )
 from app.latex.base import LatexEngine
+from app.latex.compile import extract_pdf_text
 from app.latex.render import render_plan_to_tex, write_rendered
 from app.llm.base import LLMBackend
 
@@ -55,7 +57,7 @@ from app.llm.base import LLMBackend
 # different window, a per-purpose budget), hoist `_reserve`/`_release`/`_cv_facts_text`
 # into a shared `app/pipeline/spend.py` rather than copying them.
 from app.pipeline.rank import CV_FILENAME, _cv_facts_text, _release, _reserve
-from app.verify import verify_plan
+from app.verify import VERIFIER_VERSION, VerificationResult, verify_plan, verify_text
 
 log = structlog.get_logger(__name__)
 
@@ -259,9 +261,12 @@ async def compile_tailored(
     - a re-grounding failure (``UnknownIdError`` / ``InvalidPatchError``) → ``blocked``;
     - a Layer-1 ``fail`` → ``blocked``, BEFORE the engine is reached (D-111);
     - an engine failure → ``failed`` (Layer-2 verification never ran);
-    - success → ``ok`` with the PDF paths and hashes.
+    - a Layer-2 ``fail`` → ``blocked``, with the compiled PDF RETAINED for diagnosis
+      (D-115), but still unreachable to download (D-118);
+    - success → ``ok`` with the PDF paths, the page count and the check-9 findings.
 
-    Every call inserts a NEW row (D-117); older rows are never overwritten.
+    Every call inserts a NEW row (D-117); older rows are never overwritten. There is
+    deliberately no repair path: a finding is written and the function returns.
     """
     listing_id = int(listing.id)
     patch_payload = patch.model_dump(mode="json")
@@ -298,6 +303,7 @@ async def compile_tailored(
         "fact_store_hash": store_hash,
     }
     if not verification.passed:
+        # A Layer-1 fail stores NO paths: nothing was rendered into a PDF to retain.
         return await cv_artifact_repo.insert_artifact(
             session,
             listing_id=listing_id,
@@ -310,9 +316,6 @@ async def compile_tailored(
             now=now,
         )
 
-    # --- Layer-2 hook (06-02): the extracted-PDF-text post-checks land here. Any
-    # blocking extraction (`pypdf`) MUST go through `asyncio.to_thread`, as
-    # `app/latex/compile.py` already does. ---
     tex = render_plan_to_tex(plan)
     tex_hash = hashlib.sha256(tex.encode("utf-8")).hexdigest()
     base = Path(artifacts_dir) / str(listing_id)
@@ -322,7 +325,9 @@ async def compile_tailored(
     workdir = base / tex_hash[:12]
     compile_result = await engine.compile(tex=tex, workdir=workdir)
 
-    if not compile_result.ok:
+    if not compile_result.ok or not compile_result.pdf_path:
+        # An engine failure is `failed`, NEVER `blocked`: Layer-2 verification never
+        # ran, so there is no finding to explain.
         return await cv_artifact_repo.insert_artifact(
             session,
             listing_id=listing_id,
@@ -340,6 +345,81 @@ async def compile_tailored(
             now=now,
         )
 
+    # Layer 2 (D-111 / PITFALLS P13): read the PDF text OFF the event loop. pypdf is
+    # synchronous by nature, so the single blocking read goes through a worker thread
+    # (T-06-12) — a multi-page extraction must not stall the single worker.
+    try:
+        extracted_text = await asyncio.to_thread(extract_pdf_text, Path(compile_result.pdf_path))
+    except Exception:  # noqa: BLE001 — an unreadable PDF is a value, never a raise
+        return await cv_artifact_repo.insert_artifact(
+            session,
+            listing_id=listing_id,
+            base_cv_version_id=base_cv_version_id,
+            patch_json=patch_payload,
+            change_log_json=change_log,
+            compile_status="failed",
+            verification_json=verification_json,
+            page_count=None,
+            tex_path=str(tex_path),
+            tex_hash=compile_result.tex_hash or tex_hash,
+            compile_log=compile_result.compile_log,
+            backend="opencode_server",
+            model=settings.opencode_model,
+            now=now,
+        )
+
+    text_verification = verify_text(
+        facts,
+        plan,
+        patch,
+        extracted_text,
+        page_count=compile_result.page_count or 0,
+        now=now,
+    )
+    combined = VerificationResult(
+        passed=verification.passed and text_verification.passed,
+        checks=[*verification.checks, *text_verification.checks],
+        findings=[*verification.findings, *text_verification.findings],
+        extracted_text_hash=text_verification.extracted_text_hash,
+        page_count=text_verification.page_count,
+        verifier_version=VERIFIER_VERSION,
+    )
+    combined_json = {**combined.model_dump(mode="json"), "fact_store_hash": store_hash}
+
+    if not text_verification.passed:
+        # A Layer-2 fail is STILL `blocked`, but the compiled PDF is RETAINED so the
+        # diagnosis is possible (D-115). It is not downloadable and not linkable: the
+        # `ok`-only repository selection is what enforces that (D-118).
+        #
+        # THERE IS NO REPAIR BRANCH ANYWHERE ON THIS PATH. Verification is written and
+        # the function returns; nothing edits the patch, the plan, the fact store or
+        # the compiled output in response to a finding. Recovery is a fresh tailor
+        # (D-118).
+        return await cv_artifact_repo.insert_artifact(
+            session,
+            listing_id=listing_id,
+            base_cv_version_id=base_cv_version_id,
+            patch_json=patch_payload,
+            change_log_json=change_log,
+            compile_status="blocked",
+            verification_json=combined_json,
+            page_count=compile_result.page_count,
+            tex_path=str(tex_path),
+            pdf_path=compile_result.pdf_path,
+            tex_hash=compile_result.tex_hash or tex_hash,
+            pdf_hash=compile_result.pdf_hash,
+            compile_log=compile_result.compile_log,
+            backend="opencode_server",
+            model=settings.opencode_model,
+            now=now,
+        )
+
+    # Check 9's findings, on their own column, so the ATS/layout panel needs no
+    # re-derivation and no second query.
+    ats_checks_json = [
+        check.model_dump(mode="json") for check in combined.checks if check.id == "layout_ats"
+    ]
+
     return await cv_artifact_repo.insert_artifact(
         session,
         listing_id=listing_id,
@@ -347,7 +427,7 @@ async def compile_tailored(
         patch_json=patch_payload,
         change_log_json=change_log,
         compile_status="ok",
-        verification_json=verification_json,
+        verification_json=combined_json,
         page_count=compile_result.page_count,
         tex_path=str(tex_path),
         pdf_path=compile_result.pdf_path,
@@ -356,6 +436,7 @@ async def compile_tailored(
         compile_log=compile_result.compile_log,
         backend="opencode_server",
         model=settings.opencode_model,
+        ats_checks_json=ats_checks_json,
         now=now,
     )
 
