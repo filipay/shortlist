@@ -487,6 +487,72 @@ async def test_the_compile_route_refuses_when_tailoring_is_disabled(
     assert _ENGINE.calls == [], "a disabled refusal never reaches the engine"
 
 
+async def test_the_disabled_switch_is_honoured_across_the_tailoring_surfaces(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The documented contract on every NEW-work surface: zero backend calls, zero rows.
+
+    A listing is scored and a valid patch is captured while the switch is on, so the
+    only variable is the switch. The page, the generate route and the compile route
+    must all refuse with the same vocabulary and perform no work.
+    """
+    listing_id = await _seed_scored_listing(session_factory, title="Disabled Surfaces Role")
+    fields = _hidden_fields(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+    _BACKEND.calls.clear()  # isolate the disabled-surface calls below
+
+    monkeypatch.setattr(settings, "tailoring_enabled", False)
+
+    page = await tailoring_client.get(f"/listings/{listing_id}/cv")
+    assert page.status_code == 200
+    assert 'data-state="tailoring_disabled"' in page.text
+    assert tailor_module.TAILOR_SKIP_LABELS[tailor_module.TAILOR_SKIP_DISABLED] in page.text
+    assert "Generate tailored CV" not in page.text, "no generate control while disabled"
+    assert f"/listings/{listing_id}/cv/pdf" not in page.text, "no download link while disabled"
+
+    generate = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    assert generate.status_code == 409
+    assert 'data-error="tailoring_disabled"' in generate.text
+    assert _BACKEND.calls == [], "a disabled generate precedes any LLM call"
+
+    compile_response = await tailoring_client.post(
+        f"/listings/{listing_id}/cv/compile", data=fields
+    )
+    assert compile_response.status_code == 409
+    assert 'data-error="tailoring_disabled"' in compile_response.text
+    assert await _artifact_rows(session_factory) == []
+
+
+async def test_the_disabled_switch_is_not_a_one_way_trip(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard reads the LIVE setting: re-enabling restores the route on the same fields."""
+    listing_id = await _seed_scored_listing(session_factory, title="Live Switch Role")
+    fields = _hidden_fields(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+
+    monkeypatch.setattr(settings, "tailoring_enabled", False)
+    refused = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+    assert refused.status_code == 409
+    assert 'data-error="tailoring_disabled"' in refused.text
+    assert await _artifact_rows(session_factory) == []
+
+    # The SAME round-tripped fields, with the switch restored: a real compile.
+    monkeypatch.setattr(settings, "tailoring_enabled", True)
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+
+    assert response.status_code == 200
+    rows = await _artifact_rows(session_factory)
+    assert len(rows) == 1
+    assert rows[0].compile_status == "ok"
+
+
 if __name__ == "__main__":  # pragma: no cover
     import pytest
 
