@@ -343,3 +343,68 @@ async def test_a_detail_surface_save_swaps_the_detail_actions_fragment(
     events = await _events(session_factory, listing_id)
     assert [event.event_type for event in events] == ["save"]
     assert events[0].context_json == {"surface": "detail"}
+
+
+async def test_an_unknown_surface_falls_back_to_the_queue_row(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """T-05-52: an unlisted surface must not select a template or reach the audit log."""
+    listing_id = await _seed(session_factory)
+
+    response = await client.post(
+        f"/listings/{listing_id}/events",
+        data={"event_type": "save", "surface": "evil"},
+    )
+
+    assert response.status_code == 200
+    assert f'id="listing-row-{listing_id}"' in response.text, (
+        "an unlisted surface falls back to the queue row fragment"
+    )
+    events = await _events(session_factory, listing_id)
+    assert events[0].context_json == {"surface": "queue"}
+
+
+async def test_the_detail_surface_fragment_keeps_the_active_predicate_set(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The detail fragment's forms keep the query string, so a second click preserves it."""
+    listing_id = await _seed(session_factory)
+
+    response = await client.post(
+        f"/listings/{listing_id}/events",
+        params={"excluded": "1"},
+        data={"event_type": "hide", "surface": "detail"},
+    )
+
+    assert response.status_code == 200
+    assert '<section id="detail-actions"' in response.text
+    assert f'hx-post="/listings/{listing_id}/events?excluded=1"' in response.text, (
+        "the detail fragment must keep the predicate set the user is looking at"
+    )
+    assert "Unhide" in response.text, "the control reads as a one-tap undo"
+
+
+async def test_a_detail_surface_save_is_visible_on_the_queue(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The detail surface writes the same event the queue surface writes.
+
+    It goes to the one append-only endpoint, so the queue projection shows it — and the
+    queue row's own target is unchanged by the shared-partial refactor.
+    """
+    listing_id = await _seed(session_factory)
+
+    posted = await client.post(
+        f"/listings/{listing_id}/events",
+        data={"event_type": "save", "surface": "detail"},
+    )
+    assert posted.status_code == 200
+
+    body = (await client.get("/")).text
+
+    assert f'id="listing-row-{listing_id}"' in body
+    assert 'data-saved="1"' in body
+    assert "badge-saved" in body
+    assert f'hx-target="#listing-row-{listing_id}"' in body, (
+        "the queue row still targets its own element"
+    )
