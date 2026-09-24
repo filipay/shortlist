@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-24T09:38:01Z
+updated: 2026-09-24T09:44:06Z
 ---
 
 ## Current Test
@@ -91,8 +91,32 @@ blocked: 0
   severity: major
   test: 8
   requirement: UI-02
-  artifacts: []
-  missing: []
+  root_cause: |
+    Two contributing causes. (1) No feedback: the detail page's Save/Hide forms set
+    hx-target="#listing-row-{{ row.id }}" — an element rendered only by the queue row
+    partial (_listing_row.html:30) and never by the detail template — so htmx raises
+    targetError and never swaps; the POST still appends the event server-side and returns
+    the row fragment with HTTP 200, so the button label only flips on manual reload.
+    (2) Discoverability: a saved view exists only as an unlabelled `Saved` checkbox in the
+    queue filter form; the detail page links to nothing, shows no saved count, and gives no
+    post-save affordance pointing at it.
+  artifacts:
+    - path: "app/web/templates/html/listing_detail.html"
+      issue: "Lines 103,114: forms target the queue-only #listing-row-{id} → htmx targetError, no swap, no feedback"
+    - path: "app/web/templates/html/_listing_row.html"
+      issue: "Line 30 defines <tr id=\"listing-row-{{ row.id }}\">; included only by queue_list.html:70-72, never by the detail page"
+    - path: "app/api/events.py"
+      issue: "Lines 76-156: write + row fragment on 200 are correct; no detail-surface target to swap into"
+    - path: "app/web/templates/html/queue.html"
+      issue: "Lines 86-97: the only discoverable saved view (Saved filter via routes.py:148 / queue_repo.py:509-510), unreferenced from the detail page"
+    - path: "tests/api/test_listing_detail.py"
+      issue: "No assertion on the detail action forms/target; tests/api/test_listing_events.py:95-130 only tests the server POST response — why it shipped"
+  missing:
+    - "Give the detail page a real swap target (detail-specific fragment, or point hx-target at #detail-actions/the button) so Save/Hide re-render in place with visible feedback"
+    - "Add a discoverability affordance on the detail page: link/hint to the queue's Saved filter and/or a saved indicator or count"
+    - "Add a regression test asserting the detail forms' target resolves within the rendered detail markup, plus a test for the saved affordance"
+    - "Decide the interaction posture deliberately (inline swap vs documented reload) rather than leaving the deferred-load behaviour"
+  debug_session: .planning/debug/uat-05-detail-action-feedback.md
 
 ## Deferred Follow-Ups
 
