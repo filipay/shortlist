@@ -1,21 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-23T16:50:49Z
+updated: 2026-09-24T09:38:01Z
 ---
 
 ## Current Test
 
-number: 7
-name: G-05-3 closure in a browser — two-way paging
-expected: |
-  Boot the app against a real DB, load a multi-page queue, click Next then Previous.
-  Each control swaps the page through `GET /queue/list`; the row set changes; the
-  position line ("Page X of Y (N per page)") tracks the slice; backward navigation
-  returns to the prior slice; the viewport lands somewhere readable.
-awaiting: user confirmation
+[testing complete]
 
 ## Tests
 
@@ -52,7 +45,8 @@ expected: |
   Decision also required: the round-3 UI audit flags that the swaps carry no
   `show:top` (no scroll reset after a page swap) and that boundary controls are
   omitted rather than rendered-disabled — decide whether those need fixing.
-result: pending
+result: pass
+note: "User: \"yup going back and forth works, pass\". The two embedded audit decisions were accepted as-is: no `show:top` scroll reset after a page swap, and boundary controls rendered-disabled-vs-omitted left at current behaviour."
 
 ### 8. Detail-page action feedback (UI-02 surface)
 expected: |
@@ -61,14 +55,16 @@ expected: |
   on-page swap never happens because the forms target `#listing-row-{id}`, which the
   detail page never renders — htmx raises `targetError`. Record a deliberate
   fix-vs-accept decision.
-result: pending
+result: issue
+reported: "Hmm there's no feedback, when i click save or hide nothing happens which makes it uninituative. Also where are the saved jobs going to ?"
+severity: major
 
 ## Summary
 
 total: 8
-passed: 6
-issues: 0
-pending: 2
+passed: 7
+issues: 1
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -87,6 +83,16 @@ blocked: 0
   requirement: UI-01
   closed_by: "05-11 (two-way pager) + b572f93 (WR-01 is_empty gate); code-verified 2026-09-23 in 05-VERIFICATION.md"
   note: "Closed in code: `QueuePage.has_prev/prev_offset/page_index/page_count` (queue_repo.py:283-301, 14-case tests/db/test_queue_page.py), the `#queue-pager` Previous / position / Next block in queue_list.html, zero `queue-load-more` matches anywhere, page size still server-fixed. Human in-browser confirmation is still outstanding — tracked as test 7 above."
+
+- gap_id: G-05-8
+  truth: "Clicking Save or Hide on a job detail page gives visible confirmation, and saved jobs are discoverable somewhere in the UI — the controls are not silent no-ops."
+  status: failed
+  reason: "User reported: \"Hmm there's no feedback, when i click save or hide nothing happens which makes it uninituative. Also where are the saved jobs going to ?\""
+  severity: major
+  test: 8
+  requirement: UI-02
+  artifacts: []
+  missing: []
 
 ## Deferred Follow-Ups
 
