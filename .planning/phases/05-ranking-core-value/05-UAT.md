@@ -3,7 +3,7 @@ status: complete
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-24T12:33:31Z
+updated: 2026-09-24T12:43:15Z
 ---
 
 ## Current Test
@@ -55,10 +55,11 @@ expected: |
   on-page swap never happens because the forms target `#listing-row-{id}`, which the
   detail page never renders — htmx raises `targetError`. Record a deliberate
   fix-vs-accept decision.
-result: issue
+result: pass
 reported: "Hmm there's no feedback, when i click save or hide nothing happens which makes it uninituative. Also where are the saved jobs going to ?"
 severity: major
-note: "Fix implemented by plan 05-12; re-test is test 9."
+resolved_by: "05-12 (38d7610, 9b47b14, d971a71); code-verified 55/55 in 05-VERIFICATION.md; re-tested as test 9 — pass 2026-09-24"
+note: "Originally recorded as `result: issue`; flipped to `pass` 2026-09-24 once the reported behaviour passed. The `reported`/`severity` lines above remain the historical record of the failure."
 
 ### 9. G-05-8 closure in a browser — detail Save/Hide feedback
 expected: |
@@ -72,8 +73,8 @@ result: pass
 ## Summary
 
 total: 9
-passed: 8
-issues: 1
+passed: 9
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0

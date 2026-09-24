@@ -1,9 +1,10 @@
 ---
 phase: 05-ranking-core-value
 verified: 2026-09-24T11:04:20Z
-status: human_needed
+status: passed
 score: 55/55 observable truths verified (0 present-but-behavior-unverified; 1 human item outstanding — in-browser confirmation of the 05-12 detail Save/Hide fix)
 covered_files:
+
   - .planning/REQUIREMENTS.md
   - .planning/ROADMAP.md
   - .planning/phases/05-ranking-core-value/05-01-PLAN.md
@@ -73,7 +74,8 @@ covered_files:
   - tests/db/test_queue_page.py
   - tests/pipeline/test_rank_optional.py
   - tests/test_cv_tex_spike_docs.py
-covered_digest: "v1:sha256:4c04d52fa0ce93d5e15bbad7c5fb62c38390019f950b2d151709729adb22a816"
+
+covered_digest: "v1:sha256:2138d371e274761a5bf062ba958fd2b384f88ae84c0b80d25ca36f67cdbd4495"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -87,7 +89,9 @@ re_verification:
   regressions:
     - "Carried (not new): round-2 WR-01 — `runs.html` still stringifies the nested `reason_counts['ranking']` marker as a raw Python dict repr on `/runs/{id}` (`runs.html:106-112`). Run detail is Phase 2's RUN-03/RUN-04 surface, so this remains a ⚠️ Warning, not a phase-5 gap."
     - "Carried (not new): round-2 WR-02 — `rank.ranking_skip_reason()` still catches only `(CvFactStoreError, OSError)` while its docstring claims totality. Exotic corrupt-input path; the run still completes. ⚠️ Warning."
+
 advisory:
+
   - finding: "The score-sort scan truncates at SCORE_SORT_SCAN_LIMIT=5000 rows; `page.total` (and the pager's `page_count`) under-reports past that, and `_DISMISS_LIMIT=10_000` can never trip."
     category: architectural
     reason: "User-visible only at >5 000 matching listings; explicitly accepted at personal scale. Pre-existing (unchanged by 05-11/05-12). 05-REVIEW.md round-3 CR-01; no failing named test."
@@ -113,6 +117,7 @@ advisory:
     reason: "Explicitly deferred by the user in 05-UAT.md (`Deferred Follow-Ups`), not covered by any later phase's stated goal. Non-blocking."
     evidence_status: "deferred by user; no failing test"
 human_verification:
+
   - test: "Confirm the 05-12 detail Save/Hide fix in a browser. Boot the app against a real DB, open any job detail page, click Save, then click Hide."
     expected: "The `#detail-actions` section re-renders in place on the click: the button flips to its inverse label (Save→Unsave, Hide→Unhide), the `★ saved` / `hidden` badge appears, no full-page reload occurs, and no `htmx:targetError` is logged in the browser console. The `View saved jobs` link is present and goes to `/?saved=1`."
     why_human: "Every operative clause is test-pinned — the page renders the `#detail-actions` target (`test_detail_action_forms_target_the_detail_section`), the route returns the detail section with `Unsave` for `surface=detail` (`test_a_detail_surface_save_swaps_the_detail_actions_fragment`), the saved badge renders (`test_detail_saved_listing_shows_the_saved_badge`), and htmx is loaded (`base.html`). But the actual DOM swap is a browser-level behaviour that no automated test exercises (the project has no browser test harness), and the project's own 05-12-SUMMARY marks coverage item D2 `human_judgment: true`, routing \"the browser-level visual swap ... to end-of-phase UAT\". UAT test 8 has not been re-run since the fix. The root cause is closed by automated evidence; this is the residual 10-second visual confirmation."
