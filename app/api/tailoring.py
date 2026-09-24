@@ -38,9 +38,21 @@ from app.api.searches import read_form
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
 from app.db.models import Listing
-from app.db.repositories import cv_artifact_repo, cv_repo, score_repo
+from app.db.repositories import cv_artifact_repo, cv_repo, score_repo, state_repo
+from app.db.repositories.queue_repo import QueueQuery, read_row
 from app.db.session import get_session
-from app.domain.cv import InvalidPatchError, TailoringPatch, UnknownIdError, apply_patch, facts_hash
+from app.domain.cv import (
+    CvFacts,
+    DropBullet,
+    InvalidPatchError,
+    RenderPlan,
+    TailoringPatch,
+    UnknownIdError,
+    apply_patch,
+    facts_hash,
+    iter_fact_ids,
+    verify_original_matches,
+)
 from app.domain.models import User
 from app.latex import get_latex_engine
 from app.llm import get_llm_backend
@@ -63,6 +75,16 @@ templates = make_templates(TEMPLATE_DIR)
 
 #: The dedicated page shell (D-116).
 PAGE_TEMPLATE = "html/tailoring.html"
+#: The generate response's swap target: the preview beside the change log (D-108).
+REVIEW_TEMPLATE = "html/_tailoring_review.html"
+
+#: The page's per-listing state vocabulary (D-110/D-116). `rank_first` is the D-110
+#: precondition; the other four describe the newest artifact (or its absence).
+TAILORING_STATE_RANK_FIRST = "rank_first"
+TAILORING_STATE_READY = "ready"
+TAILORING_STATE_GENERATED = "generated"
+TAILORING_STATE_COMPILED_OK = "compiled_ok"
+TAILORING_STATE_BLOCKED = "blocked"
 
 
 def _flag(value: str | None) -> bool:
@@ -86,6 +108,78 @@ def _not_found() -> HTMLResponse:
         '<div class="tailoring-empty" data-error="unknown-listing">Unknown listing.</div>',
         status_code=404,
     )
+
+
+def _tailoring_state(has_score: bool, latest: Any) -> str:
+    """The page's per-listing state (D-110/D-116), computed here, never in the template.
+
+    ``rank_first`` when the listing has no stored score (the D-110 precondition);
+    otherwise the newest artifact decides: absent → ``ready``, ``ok`` → ``compiled_ok``,
+    ``blocked`` → ``blocked``, and a ``failed`` compile → ``generated`` (an attempt
+    exists with no usable artifact, so generating again is the affordance).
+    """
+    if not has_score:
+        return TAILORING_STATE_RANK_FIRST
+    if latest is None:
+        return TAILORING_STATE_READY
+    if latest.compile_status == "ok":
+        return TAILORING_STATE_COMPILED_OK
+    if latest.compile_status == "blocked":
+        return TAILORING_STATE_BLOCKED
+    return TAILORING_STATE_GENERATED
+
+
+def _dropped_bullets(
+    facts: CvFacts, plan: RenderPlan, patch: TailoringPatch
+) -> dict[str, list[dict[str, str]]]:
+    """``{entry id: [{id, text, reason}]}`` for every declared drop (TAIL-08).
+
+    The RenderPlan omits a dropped bullet, so the preview cannot show it from the plan
+    alone. This pairs the fact store's bullet text with the patch's declared reason so
+    the template can render it struck and annotated rather than silently absent.
+    """
+    reasons = {op.bullet_id: op.reason for op in patch.ops if isinstance(op, DropBullet)}
+    if not reasons:
+        return {}
+    removed: dict[str, list[dict[str, str]]] = {}
+    for section in plan.sections:
+        for entry in section.entries:
+            source = facts.entry_by_id(entry.id)
+            if source is None:
+                continue
+            present = {bullet.id for bullet in entry.bullets}
+            gone = [
+                {"id": bullet.id, "text": bullet.text, "reason": reasons[bullet.id]}
+                for bullet in source.bullets
+                if bullet.id in reasons and bullet.id not in present
+            ]
+            if gone:
+                removed[entry.id] = gone
+    return removed
+
+
+def _gap_bands(facts: CvFacts, patch: TailoringPatch) -> list[str | None]:
+    """The advisory grounding band per ``GapFinding``, parallel to ``patch.gaps``.
+
+    ``None`` for a ``gap`` or an unresolvable citation — the band is a confidence
+    label, never a block (A1/D-70).
+    """
+    known = set(iter_fact_ids(facts))
+    bands: list[str | None] = []
+    for finding in patch.gaps:
+        resolvable = [item for item in finding.evidence_ids if item in known]
+        if finding.status == "gap" or not resolvable:
+            bands.append(None)
+            continue
+        bands.append(
+            band_for(
+                finding.requirement,
+                evidence_text_for(facts, finding),
+                grounded_at=settings.tailoring_grounding_threshold,
+                review_at=settings.tailoring_grounding_review_threshold,
+            )
+        )
+    return bands
 
 
 def _error_fragment(reason: str, message: str, status_code: int) -> HTMLResponse:
@@ -167,12 +261,24 @@ async def tailoring_page(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
-    """The tailoring page shell, or the 404 fragment for an unknown id."""
-    listing = await session.get(Listing, listing_id)
-    if listing is None:
+    """The tailoring page shell, or the 404 fragment for an unknown id.
+
+    The listing is resolved through the queue read model the detail page uses, so the
+    two surfaces cannot drift. Every state is precomputed here: the template does no
+    lookup, no date arithmetic and no settings read.
+    """
+    row = await read_row(
+        session,
+        listing_id=listing_id,
+        query=QueueQuery(),
+        now=datetime.now(UTC),
+        stale_after_days=settings.stale_after_days,
+        watermark=await state_repo.get_watermark(session),
+    )
+    if row is None:
         return _not_found()
 
-    score = await score_repo.read_score_for_listing(session, listing_id)
+    score = await score_repo.read_score_for_listing(session, listing_id=listing_id)
     skip_reason = tailoring_skip_reason()
     latest = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=False)
 
@@ -180,9 +286,9 @@ async def tailoring_page(
         request,
         PAGE_TEMPLATE,
         {
-            "listing_id": listing_id,
-            "listing_title": listing.title,
-            "has_score": score is not None,
+            "listing_id": row.id,
+            "listing_title": row.title,
+            "tailoring_state": _tailoring_state(score is not None, latest),
             "skip_reason": skip_reason,
             "skip_label": TAILOR_SKIP_LABELS.get(skip_reason or "", ""),
             "latest": latest,

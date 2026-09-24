@@ -37,6 +37,11 @@
   {% for link in row.source_links %}{% if link.url %}<a class="source-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.source }}</a>{% else %}{{ link.source }}{% endif %}{% if link.employer_url %} <a class="source-apply" href="{{ link.employer_url }}" target="_blank" rel="noopener noreferrer">Apply</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
 </p>
 
+{# Opens the dedicated tailoring page, GET /listings/{listing_id}/cv (D-116): generate,
+   review and download a tailored CV for this listing. The class token already exists, so
+   no new stylesheet rule is required. #}
+<p><a class="listing-detail-link" href="/listings/{{ row.id }}/cv">Tailor my CV for this job</a></p>
+
 {% if row.total_score is not none %}
 <section>
   <h3>Fit score</h3>

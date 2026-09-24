@@ -1,11 +1,14 @@
 {% extends "html/base.html" %}
 
-{# The dedicated tailoring page (D-116). Jinja autoescape is the ONLY escaping here:
-   the listing title derives from untrusted listing text and no value is ever marked
-   safe. Every flag — has_score, skip_reason, skip_label, latest — is PRECOMPUTED by
-   the route, so this template does no date arithmetic, no settings read and no
-   lookup. The `#tailoring-review` region is what the generate/compile responses
-   target; a worked change-log/preview fragment is 06-03. #}
+{# The dedicated tailoring page (D-116). This surface OWNS generate → review → preview
+   → download, and nothing here produces a PDF before the user approves: the generate
+   control swaps the review fragment into `#tailoring-review`; the compile button inside
+   that fragment is the only thing that can produce a PDF.
+
+   Jinja autoescape is the ONLY escaping here: the listing title derives from untrusted
+   listing text and no value is ever marked safe. Every flag — tailoring_state,
+   skip_reason, skip_label, latest — is PRECOMPUTED by the route, so this template does
+   no date arithmetic, no settings read and no lookup. #}
 
 {% block title %}Tailored CV — {{ listing_title }} — Job Search Copilot{% endblock %}
 
@@ -14,19 +17,21 @@
 
 <p><a href="/listings/{{ listing_id }}">Back to the listing</a></p>
 
-{% if not has_score %}
-<p class="tailoring-empty" data-state="no_score">
+{% if tailoring_state == 'rank_first' %}
+<p class="tailoring-empty" data-state="rank_first">
   Rank this listing first — tailoring works from the stored requirement list.
 </p>
 {% elif skip_reason %}
 <p class="tailoring-empty" data-state="{{ skip_reason }}">{{ skip_label }}</p>
 {% else %}
+{% if tailoring_state != 'compiled_ok' %}
 <button
   class="cv-generate"
   hx-post="/listings/{{ listing_id }}/cv/generate"
   hx-target="#tailoring-review"
   hx-swap="innerHTML"
 >Generate tailored CV</button>
+{% endif %}
 <div id="tailoring-review" class="tailoring-review"></div>
 {% endif %}
 
