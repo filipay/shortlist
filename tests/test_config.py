@@ -79,6 +79,9 @@ REQUIRED_SETTINGS_FIELDS = (
     "ranking_max_calls_per_run",
     "ranking_max_calls_per_day",
     "ranking_enabled",
+    # Phase 6 (D-119): the tailoring operator off switch. Like `ranking_enabled` it
+    # is a switch, not a ceiling, so it is guarded by the surface tier only.
+    "tailoring_enabled",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -275,6 +278,28 @@ def test_ranking_enabled_is_environment_tunable(
     monkeypatch.setenv("RANKING_ENABLED", "false")
 
     assert Settings().ranking_enabled is False
+
+
+def test_tailoring_enabled_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-119's off switch is configuration, not a code change or a call-site edit."""
+    assert Settings.model_fields["tailoring_enabled"].default is True
+
+    monkeypatch.setenv("TAILORING_ENABLED", "false")
+
+    assert Settings().tailoring_enabled is False
+
+
+def test_the_tailoring_switch_is_not_a_ceiling() -> None:
+    """The written-down asymmetry: a boolean switch is not a numeric ceiling.
+
+    Guarded explicitly (the Phase-5 asymmetry pattern) so a later edit cannot pull
+    `tailoring_enabled` into LIMIT_FIELDS, where its boolean default would fail
+    `test_every_limit_field_is_a_required_numeric_ceiling`.
+    """
+    assert "tailoring_enabled" in REQUIRED_SETTINGS_FIELDS
+    assert "tailoring_enabled" not in LIMIT_FIELDS
 
 
 def test_every_limit_field_is_a_required_numeric_ceiling() -> None:

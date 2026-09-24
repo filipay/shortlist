@@ -218,27 +218,46 @@ def _naive(value: datetime) -> datetime:
     return value.replace(tzinfo=None) if value.tzinfo else value
 
 
-async def rank_calls_since(session: AsyncSession, *, now: datetime | None = None) -> int:
-    """The number of `purpose="rank"` calls in the trailing 24 hours (D-91).
+async def calls_since(
+    session: AsyncSession, *, purpose: str, now: datetime | None = None
+) -> int:
+    """The number of `purpose` calls in the trailing 24 hours (D-91 / D-119).
 
-    One aggregate read over the `llm_calls` ledger: the count of `rank` rows whose
-    `created_at` is at or after `now - 24h`. The cutoff is built **naive** because
-    SQLite stores naive datetimes — a tz-aware cutoff compared against a naive
-    column would silently match nothing.
+    One purpose-aware aggregate read over the `llm_calls` ledger. It is
+    purpose-aware because tailoring MUST read the SAME rolling window the ranking
+    cap does: reusing `rank_calls_since` verbatim would filter `purpose == "rank"`
+    and let a tailoring call escape the ceiling (the research O1 bug). The cutoff is
+    built **naive** because SQLite stores naive datetimes — a tz-aware cutoff
+    compared against a naive column would silently match nothing.
+
+    `purpose` is validated against `PURPOSES` before any SQL, mirroring the CHECK
+    constraint but raising a clear `ValueError`.
 
     `llm_calls.created_at` is NOT indexed, so this is a full table scan. That is
     accepted deliberately at this row count (T-05-08): do **not** add an index
     migration for it, and do not build a second aggregate elsewhere — this is the
     per-day cap's single source. Never commits, never raises.
     """
+    if purpose not in PURPOSES:
+        raise ValueError(f"unknown purpose {purpose!r}; expected one of {sorted(PURPOSES)}")
     moment = now if now is not None else datetime.now(UTC)
     cutoff = _naive(moment) - RANK_CALL_WINDOW
     count = await session.scalar(
         select(func.count())
         .select_from(LlmCall)
-        .where(LlmCall.purpose == "rank", LlmCall.created_at >= cutoff)
+        .where(LlmCall.purpose == purpose, LlmCall.created_at >= cutoff)
     )
     return int(count or 0)
+
+
+async def rank_calls_since(session: AsyncSession, *, now: datetime | None = None) -> int:
+    """The number of `purpose="rank"` calls in the trailing 24 hours (D-91).
+
+    A thin delegation to `calls_since`: the per-day cap's single aggregate lives
+    there, so ranking and tailoring share one window definition and cannot drift.
+    The Phase-5 tests and the ranking cap path keep their exact behaviour.
+    """
+    return await calls_since(session, purpose="rank", now=now)
 
 
 async def rank_cap_reason_for_run(session: AsyncSession, *, run_id: int) -> str | None:
@@ -274,6 +293,7 @@ __all__ = [
     "RANK_CALL_WINDOW",
     "STATUSES",
     "LlmCallRecord",
+    "calls_since",
     "latest_probe",
     "llm_totals_for_run",
     "rank_calls_since",

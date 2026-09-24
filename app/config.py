@@ -190,5 +190,15 @@ class Settings(BaseSettings):
     #: is guarded by the surface tier only.
     ranking_enabled: bool = True
 
+    # --- Phase 6 tailoring (D-119) --------------------------------------------
+    #: D-119's operator off switch, mirroring `ranking_enabled`. `False` makes the
+    #: tailoring surface refuse before any model call or filesystem read — zero
+    #: `llm_calls` rows, zero `cv_artifacts` rows. Deliberately NOT in LIMIT_FIELDS:
+    #: it is a boolean, and that tuple requires a numeric default, so the switch is
+    #: guarded by the surface tier only. There is deliberately NO per-run tailoring
+    #: ceiling and NO new numeric ceiling (O1, pinned): an interactive tailor has no
+    #: run, so the rolling-24h `ranking_max_calls_per_day` value is shared.
+    tailoring_enabled: bool = True
+
 
 settings = Settings()
