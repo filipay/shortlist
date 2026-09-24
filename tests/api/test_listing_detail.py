@@ -323,3 +323,57 @@ async def test_unscored_detail_is_honest_when_no_pass_has_completed(
 
     assert "The ranking pass has not completed — refresh once it finishes." in body
     assert "A ranking pass is running right now" not in body
+
+
+# --- the action section: inline swap + saved discoverability (G-05-8) ----------
+
+
+async def test_detail_action_forms_target_the_detail_section(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The detail page's controls must target an element the detail page renders.
+
+    The queue row's `#listing-row-{id}` exists only on the queue, so the detail page
+    copying it made htmx raise `targetError`. This is the regression gate that was
+    missing when the mismatch shipped.
+    """
+    listing_id = await _seed_scored_listing(session_factory)
+
+    body = (await client.get(f"/listings/{listing_id}")).text
+
+    assert 'id="detail-actions"' in body
+    assert body.count('hx-target="#detail-actions"') == 2, "both forms target the section"
+    assert 'name="surface" value="detail"' in body, "the surface is the allow-listed detail"
+    assert f"#listing-row-{listing_id}" not in body, (
+        "the queue-row target must not appear on the detail page"
+    )
+
+
+async def test_detail_offers_the_saved_jobs_affordance(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The page where Save is clicked names where saved jobs go."""
+    listing_id = await _seed_scored_listing(session_factory)
+
+    body = (await client.get(f"/listings/{listing_id}")).text
+
+    assert 'id="detail-saved-link"' in body
+    assert 'href="/?saved=1"' in body
+    assert "View saved jobs" in body
+
+
+async def test_detail_saved_listing_shows_the_saved_badge(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The page reads the projected state the swap will produce."""
+    listing_id = await _seed_scored_listing(session_factory)
+
+    posted = await client.post(
+        f"/listings/{listing_id}/events", data={"event_type": "save"}
+    )
+    assert posted.status_code == 200
+
+    body = (await client.get(f"/listings/{listing_id}")).text
+
+    assert 'id="detail-saved-badge"' in body
+    assert "badge-saved" in body

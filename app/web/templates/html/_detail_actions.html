@@ -8,12 +8,22 @@
 
    `_action_forms.html` is the ONE definition of the two controls, shared with the queue
    row. The includer variables are set here: `action_url` (the events URL plus the active
-   predicate set), `target_id` (this section's id) and `surface` (`detail`). Jinja
-   autoescape is the only escaping in play. #}
+   predicate set), `target_id` (this section's id) and `surface` (`detail`).
+
+   The section also carries the projected saved/hidden state (the same `badge` classes the
+   queue row uses, so the swapped fragment reflects the new state in the same visual
+   language) and a link to the EXISTING saved view — the queue filter `GET /?saved=1`, not
+   a second saved-jobs surface. Because the route re-renders this whole section for a
+   detail-originated action, both the indicators and the link update in place on the same
+   swap. No safe-marking filter is used and no class token beyond the existing badge
+   classes is added. Jinja autoescape is the only escaping in play. #}
 <section id="detail-actions" aria-live="polite">
   <h3>Track this job</h3>
+  {% if row.saved %}<span class="badge badge-saved" id="detail-saved-badge">&#9733; saved</span>{% endif %}
+  {% if row.hidden %}<span class="badge badge-hidden" id="detail-hidden-badge">hidden</span>{% endif %}
   {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
   {% set target_id = "detail-actions" %}
   {% set surface = "detail" %}
   {% include "html/_action_forms.html" %}
+  <p><a id="detail-saved-link" href="/?saved=1">View saved jobs</a></p>
 </section>
