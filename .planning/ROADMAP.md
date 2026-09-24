@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 3/4 plans executed created
+**Plans:** 4/4 plans executed created
 
 Plans:
 **Wave 1**
@@ -282,7 +282,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-04-PLAN.md — Blocked artifacts are unreachable: the `ok`-only repository selection, inline preview and `?download=1` attachment, the PITFALLS-P14 failure-path suite, and the blocked-findings surface with no repair affordance
+- [x] 06-04-PLAN.md — Blocked artifacts are unreachable: the `ok`-only repository selection, inline preview and `?download=1` attachment, the PITFALLS-P14 failure-path suite, and the blocked-findings surface with no repair affordance
 
 **UI hint**: yes
 
@@ -335,7 +335,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
-| 6. Tailoring + Verification | 3/4 | In Progress|  |
+| 6. Tailoring + Verification | 4/4 | In Progress|  |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
 

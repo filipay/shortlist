@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: Tailoring + Verification
-status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-09-24T17:18:19.622Z"
+status: verifying
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-09-24T17:35:04.368Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 06 execution started
-state_head: 9e29cb8aabbe1246943abf2cbfeaff26236577e1
+state_head: 53f00d5483738772ca8fdee9ceeb36f142c9b79c
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 49
-  completed_plans: 48
+  completed_plans: 49
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 06 (Tailoring + Verification) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-24 — Phase 06 execution started
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
@@ -83,6 +83,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 06 P01 | 47 min | 3 tasks | 22 files |
 | Phase 06 P02 | 19min | 3 tasks | 21 files |
 | Phase 06 P03 | 18min | 3 tasks | 6 files |
+| Phase 06 P04 | 15min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Recent decisions affecting current work:
 - [Phase 06]: The review fragment is a Jinja template (_tailoring_review.html), not a Python-built HTML string, so bullet text and reasons use the one autoescape choke point; drops render struck with their reason via <s> and a precomputed dropped_bullets mapping
 - [Phase 06]: Compile is an optimistic-concurrency check: verify_original_matches recomputes the semantic facts hash from the loaded store and reads cv_repo.current_version fresh; a mismatch is a 409 data-error=stale-patch fragment that writes no artifact and offers no retry control
 - [Phase 06]: The tailoring page's state vocabulary is five values computed in the route (rank_first/ready/generated/compiled_ok/blocked); the template does no lookup, date arithmetic or settings read, and a failed compile maps to generated
+- [Phase 06]: read_for_download mirrors latest_for_listing: the compile_status='ok' predicate is applied IN SQL, so a blocked or failed artifact is unreachable even by id — the D-118 contract Phase 7's attach path consumes
+- [Phase 06]: A verification failure is a block, not a dead end: the page renders the persisted VerificationResult findings (warn visibly non-blocking) with no corrective control, and recovery is the page's own fresh-tailor generate control
+- [Phase 06]: The cv/pdf route serves inline by default and attachment with ?download=1, builds the filename from the two integer ids, and returns a 404 (data-error=no-ok-artifact) for any non-ok or absent artifact; recency never beats the ok-only selection
 
 ### Pending Todos
 
@@ -167,6 +171,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T17:18:19.504Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-09-24T17:35:04.249Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
