@@ -66,6 +66,7 @@ from app.pipeline.tailor import (
     tailor_listing,
     tailoring_skip_reason,
 )
+from app.verify.grounding import band_for, evidence_text_for
 from app.web.template_env import make_templates
 
 router = APIRouter()
@@ -191,38 +192,34 @@ def _error_fragment(reason: str, message: str, status_code: int) -> HTMLResponse
     )
 
 
-def _review_fragment(
+def _review_response(
+    request: Request,
     *,
     listing_id: int,
     patch: TailoringPatch,
-    plan: Any,
+    plan: RenderPlan,
+    facts: CvFacts,
     base_cv_version_id: int | None,
-    fact_store_hash: str,
 ) -> HTMLResponse:
-    """The review fragment: the proposed change log plus the round-trip hidden fields.
+    """The review fragment: the tailored preview beside the change log (D-108/TAIL-08).
 
-    The patch is HTML-escaped into the attribute; the browser restores it verbatim.
-    The route never renders a reason as text — it is audit-only (D-108).
+    The patch is re-serialised into the round-trip hidden field; the browser restores
+    it verbatim. Nothing is marked safe — Jinja autoescape is the only escaping, and the
+    band labels ride alongside the gap panel without ever blocking.
     """
-    patch_json = html.escape(patch.model_dump_json())
-    version_value = "" if base_cv_version_id is None else str(base_cv_version_id)
-    items = "".join(
-        f"<li><code>{html.escape(change.op)}</code> "
-        f"<code>{html.escape(change.target_id)}</code></li>"
-        for change in plan.changes
-    )
-    return HTMLResponse(
-        '<div id="tailoring-review" class="tailoring-review">'
-        f'<p class="tailoring-review-summary">Proposed changes: {len(plan.changes)}.</p>'
-        f'<ul class="change-log">{items}</ul>'
-        f'<form method="post" action="/listings/{listing_id}/cv/compile" '
-        f'hx-post="/listings/{listing_id}/cv/compile" hx-target="#tailoring-review">'
-        f'<input type="hidden" name="patch_json" value="{patch_json}">'
-        f'<input type="hidden" name="base_cv_version_id" value="{version_value}">'
-        f'<input type="hidden" name="fact_store_hash" value="{html.escape(fact_store_hash)}">'
-        '<button type="submit" class="cv-compile">Compile PDF</button>'
-        "</form>"
-        "</div>"
+    return templates.TemplateResponse(
+        request,
+        REVIEW_TEMPLATE,
+        {
+            "listing_id": listing_id,
+            "plan": plan,
+            "patch": patch,
+            "dropped_bullets": _dropped_bullets(facts, plan, patch),
+            "gap_bands": _gap_bands(facts, patch),
+            "patch_json": patch.model_dump_json(),
+            "version_value": "" if base_cv_version_id is None else str(base_cv_version_id),
+            "fact_store_hash": facts_hash(facts),
+        },
     )
 
 
@@ -313,15 +310,11 @@ async def generate_tailored_cv(
     if listing is None:
         return _not_found()
     if not settings.tailoring_enabled:
-        return _error_fragment(
-            TAILOR_SKIP_DISABLED, TAILOR_SKIP_LABELS[TAILOR_SKIP_DISABLED], 409
-        )
+        return _error_fragment(TAILOR_SKIP_DISABLED, TAILOR_SKIP_LABELS[TAILOR_SKIP_DISABLED], 409)
 
     score = await score_repo.read_score_for_listing(session, listing_id)
     if score is None:
-        return _error_fragment(
-            TAILOR_SKIP_NO_SCORE, TAILOR_SKIP_LABELS[TAILOR_SKIP_NO_SCORE], 422
-        )
+        return _error_fragment(TAILOR_SKIP_NO_SCORE, TAILOR_SKIP_LABELS[TAILOR_SKIP_NO_SCORE], 422)
 
     try:
         facts = load_facts(Path(settings.cv_dir) / CV_FILENAME)
@@ -356,12 +349,13 @@ async def generate_tailored_cv(
         )
 
     version = await cv_repo.current_version(session)
-    return _review_fragment(
+    return _review_response(
+        request,
         listing_id=listing_id,
         patch=patch,
         plan=plan,
+        facts=facts,
         base_cv_version_id=version.id if version is not None else None,
-        fact_store_hash=facts_hash(facts),
     )
 
 

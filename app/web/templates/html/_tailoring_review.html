@@ -1,0 +1,78 @@
+{# The generate response's swap target (D-108 / TAIL-07 / TAIL-08).
+
+   This is a self-contained fragment (`#tailoring-review`, the `_detail_actions.html`
+   contract): the generate action swaps it into the page, and the compile action swaps
+   its result back into the same id. It is NOT a page and does not extend `base.html`.
+
+   It shows the tailored CV as an HTML preview (final section/bullet order) BESIDE the
+   change log. A dropped bullet is rendered STRUCK with its reason, never omitted, so
+   the user sees what left and why (TAIL-08). The requirement-coverage panel carries the
+   advisory grounding band (a label only, never a block); the suggestions panel is marked
+   not-applied. The three hidden guard fields round-trip the patch and the concurrency
+   capture to the compile route (D-109).
+
+   Jinja autoescape is the ONLY escaping: bullet text, reasons, requirement strings and
+   suggestion rationales all render as text and nothing is marked safe. Every class token
+   used here already has a rule in `static/vendor/app.css`. #}
+<section id="tailoring-review" class="tailoring-review" aria-live="polite">
+  <h3>Review the tailored CV</h3>
+  <p>No PDF exists yet. Read the changes below, then compile when you are happy with them.</p>
+
+  <h4>Tailored CV preview</h4>
+  {% for section in plan.sections %}
+  <h5>{{ section.title }}</h5>
+  {% for entry in section.entries %}
+  <p>
+    <strong>{{ entry.org }}</strong> — <em>{{ entry.title }}</em> — {{ entry.dates }}{% if entry.location %} — {{ entry.location }}{% endif %}
+  </p>
+  <ul class="requirement-list">
+    {% for bullet in entry.bullets %}
+    <li>{{ bullet.text }}</li>
+    {% endfor %}
+    {% for removed in dropped_bullets.get(entry.id, []) %}
+    <li><s>{{ removed.text }}</s> — dropped: {{ removed.reason }}</li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+  {% endfor %}
+
+  <h4>Change log</h4>
+  <ul class="requirement-list">
+    {% for change in plan.changes %}
+    <li><code>{{ change.op }}</code> <code>{{ change.target_id }}</code> — {{ change.detail }}</li>
+    {% endfor %}
+  </ul>
+
+  <h4>Requirement coverage</h4>
+  <ul class="requirement-list">
+    {% for finding in patch.gaps %}
+    <li class="{% if finding.status == 'gap' %}req-gap{% elif finding.status == 'direct' %}req-met{% else %}req-partial{% endif %}">
+      <strong>{{ finding.status }}</strong> — {{ finding.requirement }}
+      {% if gap_bands[loop.index0] %}<span class="badge">{{ gap_bands[loop.index0] }}</span>{% endif %}
+      {% for evidence in finding.evidence_ids %}<code>{{ evidence }}</code> {% endfor %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if patch.suggestions %}
+  <h4>Suggestions (not applied to the render)</h4>
+  <ul class="requirement-list">
+    {% for suggestion in patch.suggestions %}
+    <li>{{ suggestion.rationale }} <code>{{ suggestion.bullet_id }}</code></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <form
+    method="post"
+    action="/listings/{{ listing_id }}/cv/compile"
+    hx-post="/listings/{{ listing_id }}/cv/compile"
+    hx-target="#tailoring-review"
+    hx-swap="innerHTML"
+  >
+    <input type="hidden" name="patch_json" value="{{ patch_json }}">
+    <input type="hidden" name="base_cv_version_id" value="{{ version_value }}">
+    <input type="hidden" name="fact_store_hash" value="{{ fact_store_hash }}">
+    <button type="submit">Compile PDF</button>
+  </form>
+</section>
