@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 7/7 plans executed (4 executed, 3 gap-closure planned 2026-09-24)
+**Plans:** 9/9 plans (7 executed; 2 gap-closure planned 2026-09-24)
 
 Plans:
 **Wave 1**
@@ -289,6 +289,11 @@ Plans:
 - [x] 06-05-PLAN.md — CR-01/WR-03: check 4's region and allow-set construction is corrected (region-local date, page-number and non-entry-structured exclusion), so a valid CV whose trailing structured content carries a digit is verifiable and downloadable again and one entry's dates can no longer excuse a token in another region; `VERIFIER_VERSION` records the change
 - [x] 06-06-PLAN.md — WR-02: bullet ops are grounded on the bullet-id set (and `reorder_section` on the section-id set) at the validation boundary, so a non-bullet id raises `UnknownIdError` instead of no-opping and emitting a phantom change-log entry
 - [x] 06-07-PLAN.md — WR-01: `POST /listings/{id}/cv/compile` honours `tailoring_enabled`, refusing with the shared skip vocabulary before any filesystem read, render, compile or artifact row
+
+**Gap closure (round 2)** *(planned 2026-09-24 from `06-VERIFICATION.md` (`human_needed`) + `06-REVIEW.md` (2 critical, 1 warning); wave 1 — all prerequisites above are executed)*
+
+- [ ] 06-08-PLAN.md — CR-01/CR-02: check 4 grounds an entry's digit-bearing location in its own region and anchors each region on its own entry header line (org AND title), so an ordinary CV whose location carries a digit, or whose bullet names a later employer, verifies and is previewable/downloadable again; `VERIFIER_VERSION` recorded once for the combined change
+- [ ] 06-09-PLAN.md — WR-01: a raised `complete_structured` transport error still writes exactly one `llm_calls` audit row (exception class only) and surfaces as the generate route's typed 502 `tailoring_failed` refusal instead of a bare 500, with the shared in-flight slot released
 
 **UI hint**: yes
 
