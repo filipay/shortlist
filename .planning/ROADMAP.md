@@ -271,9 +271,17 @@ Plans:
 **Plans:** 4/4 plans created
 
 Plans:
+**Wave 1**
+
 - [ ] 06-01-PLAN.md — Tracer: the real five-operation typed patch engine over enumerated IDs, the Layer-1 verification pre-check, the one `TailoringPatch` call with its shared 24h spend ceiling, the `cv_artifacts` writer, and the dedicated tailoring page's generate/compile/pdf path
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 06-02-PLAN.md — The verification gate complete: all ten §10.3 checks, region-scoped metric containment with date-like and page-number exclusion, the advisory grounding band, warn-not-block for checks 8/9, the block-don't-repair blocked-row contract, and the canary pin for the "no field becomes text in the PDF" guarantee
 - [ ] 06-03-PLAN.md — Review before compile: the tailored CV's HTML preview beside the change log with every drop and demotion explicit, the rank-first precondition, and the stale-patch optimistic-concurrency guard
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 06-04-PLAN.md — Blocked artifacts are unreachable: the `ok`-only repository selection, inline preview and `?download=1` attachment, the PITFALLS-P14 failure-path suite, and the blocked-findings surface with no repair affordance
 
 **UI hint**: yes
