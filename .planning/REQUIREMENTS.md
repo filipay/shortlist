@@ -70,9 +70,9 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **TAIL-01**: User can generate a CV tailored to a specific listing
 - [x] **TAIL-02**: Tailoring is expressed as a typed patch (move / reweight / demote / drop / reorder) over enumerated IDs, with no free-text field on the path to the PDF
 - [x] **TAIL-03**: The tool never rewrites or invents CV claims — bullet text is immutable
-- [ ] **TAIL-04**: A verification gate checks the compiled PDF for any unsupported content
+- [x] **TAIL-04**: A verification gate checks the compiled PDF for any unsupported content
 - [ ] **TAIL-05**: A CV that fails verification is blocked and cannot be downloaded or attached
-- [ ] **TAIL-06**: Verification never auto-repairs content — it blocks
+- [x] **TAIL-06**: Verification never auto-repairs content — it blocks
 - [ ] **TAIL-07**: User can review the tailored CV and its change log before compiling
 - [ ] **TAIL-08**: Anything dropped from the CV is listed explicitly with a reason
 
@@ -216,9 +216,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TAIL-01 | Phase 6 | Complete |
 | TAIL-02 | Phase 6 | Complete |
 | TAIL-03 | Phase 6 | Complete |
-| TAIL-04 | Phase 6 | Pending |
+| TAIL-04 | Phase 6 | Complete |
 | TAIL-05 | Phase 6 | Pending |
-| TAIL-06 | Phase 6 | Pending |
+| TAIL-06 | Phase 6 | Complete |
 | TAIL-07 | Phase 6 | Pending |
 | TAIL-08 | Phase 6 | Pending |
 | APPLY-01 | Phase 7 | Pending |

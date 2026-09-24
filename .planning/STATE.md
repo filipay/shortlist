@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-09-24T16:26:19.876Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-09-24T16:55:56.128Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 06 execution started
-state_head: 404d9951f757e8954232a630d3aaef51894a79a8
+state_head: 89b251514249cc626f0580e894864b7919cbb6b6
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 49
-  completed_plans: 46
+  completed_plans: 47
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 06 (Tailoring + Verification) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 06 execution started
 
@@ -81,6 +81,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 05 P11 | 10min | 3 tasks | 6 files |
 | Phase 05 P12 | 11 min | 3 tasks | 8 files |
 | Phase 06 P01 | 47 min | 3 tasks | 22 files |
+| Phase 06 P02 | 19min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Phase 06: reweight is within-entry ordering (declaration-order stable sort by weight DESC, unreweighted default 1.0), demote is lowest prominence in declaration order, move is the explicit positional override applied after base ordering
 - [Phase 06]: Phase 06: the tailoring call shares the rolling-24h ceiling through a purpose-aware calls_since and the rank reserve-then-call lock; no per-run tailoring ceiling and no new numeric ceiling (O1)
 - [Phase 06]: Phase 06: a Layer-1 fail short-circuits before the engine and writes a blocked cv_artifacts row with NULL paths; the ok-only repository selection is the artifact-access control (D-115/D-118)
+- [Phase 06]: Region segmentation is line-based (not squash-substring): squashing fuses '2021-03' into '202103' and would defeat the date-like exclusion; squash remains the substrate for entity_present and verbatim_integrity only
+- [Phase 06]: The persisted verification_json is one merged VerificationResult (11 checks, passed = both layers); a Layer-2 fail retains the PDF but the ok-only repository selection keeps it unreachable, and no branch ever repairs
+- [Phase 06]: The grounding band is advisory only (token_set_ratio, thresholds from Settings 80/55): it rides requirement_evidence's passing detail and can never flip passed (A1/D-70)
 
 ### Pending Todos
 
@@ -159,6 +163,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T16:26:19.740Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-09-24T16:55:56.002Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
