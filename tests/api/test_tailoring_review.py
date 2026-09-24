@@ -456,6 +456,37 @@ async def test_an_intact_guard_compiles_and_writes_exactly_one_row(
     assert rows[0].base_cv_version_id is None
 
 
+# --- WR-01: the compile route honours the operator off switch -------------------
+
+
+async def test_the_compile_route_refuses_when_tailoring_is_disabled(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """WR-01: a round-tripped patch POSTed at compile cannot render/compile/persist while off.
+
+    The switch is turned off AFTER a valid generate captured the guard fields, so this
+    is exactly the bypass the verifier reported: the fields are genuine, the route is
+    the only thing that must refuse. The refusal must precede ``load_facts``, the
+    render, the engine call and the insert.
+    """
+    listing_id = await _seed_scored_listing(session_factory, title="Disabled Compile Role")
+    fields = _hidden_fields(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+
+    monkeypatch.setattr(settings, "tailoring_enabled", False)
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+
+    assert response.status_code == 409
+    assert 'data-error="tailoring_disabled"' in response.text
+    assert await _artifact_rows(session_factory) == []
+    assert list((tmp_path / "artifacts").rglob("*")) == [], "no file is written while disabled"
+    assert _ENGINE.calls == [], "a disabled refusal never reaches the engine"
+
+
 if __name__ == "__main__":  # pragma: no cover
     import pytest
 

@@ -411,12 +411,21 @@ async def compile_tailored_cv(
     session: AsyncSession = Depends(get_session),
     engine: Any = Depends(get_latex_engine),
 ) -> HTMLResponse:
-    """Re-parse the client's patch, refuse a stale one, compile, persist one row."""
+    """Re-parse the client's patch, refuse a stale one, compile, persist one row.
+
+    The operator off switch (``Settings.tailoring_enabled``, the D-119 contract in
+    ``app/config.py``) is honoured BEFORE any filesystem read or compile, consistently
+    with the page and the generate route: with tailoring off this returns the disabled
+    refusal and touches no fact store, engine or row. The guard reads the LIVE setting,
+    so re-enabling tailoring restores the route.
+    """
     form = await read_form(request)
 
     listing = await session.get(Listing, listing_id)
     if listing is None:
         return _not_found()
+    if not settings.tailoring_enabled:
+        return _error_fragment(TAILOR_SKIP_DISABLED, TAILOR_SKIP_LABELS[TAILOR_SKIP_DISABLED], 409)
 
     # The round-tripped patch is CLIENT-CONTROLLED. It is re-parsed with Pydantic
     # (`extra="forbid"`) and, because the schema has no text field, a forged patch can
@@ -482,6 +491,10 @@ async def tailored_cv_pdf(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Serve the latest `ok` artifact's PDF: inline by default, attachment on `?download=1`.
+
+    Deliberately NOT gated by ``Settings.tailoring_enabled``: this route serves an
+    already-verified stored artifact, and the switch gates NEW work (generate/compile).
+    Gating it would strand a verified download when the operator pauses tailoring.
 
     The selection is `ok_only=True`, so a blocked or failed row is never reachable; a
     `None` selection is a 404 (no artifact, or only a non-`ok` one). The served path is
