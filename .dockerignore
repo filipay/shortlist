@@ -1,0 +1,22 @@
+# Build-context exclusions (Dockerfile build). Every path here is either large,
+# regenerated, a mounted volume, or a secret — none of it belongs in the image.
+# Leading "/" anchors to the context root on purpose: a bare `cv` would also
+# exclude app/cv/, tests/cv/ and tests/fixtures/cv/, which the image needs.
+/.git
+/.planning
+/.gsd
+/.superpowers
+/.venv
+/.venv-host
+/node_modules
+/data
+/cv
+/artifacts
+/.pytest_cache
+/.ruff_cache
+/.env
+/jobsearch.db
+/pytest-of-unknown
+/job_search_copilot.egg-info
+**/__pycache__
+**/*.pyc

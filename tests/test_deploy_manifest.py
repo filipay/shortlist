@@ -144,6 +144,23 @@ def test_dockerfile_asserts_pinned_jobspy_revision() -> None:
     assert "python-jobspy" in text
 
 
+def test_dockerignore_anchors_every_path_pattern() -> None:
+    """An unanchored pattern also matches at depth.
+
+    A bare `cv` in .dockerignore would exclude app/cv/, tests/cv/ and
+    tests/fixtures/cv/ — the last of which the build's LaTeX cache prime needs.
+    Root-anchoring every non-`**` entry keeps the exclusion at the context root.
+    """
+    lines = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    unanchored = [
+        line.strip()
+        for line in lines
+        if line.strip() and not line.startswith("#")
+        and not line.strip().startswith(("/", "**"))
+    ]
+    assert unanchored == [], f"unanchored .dockerignore patterns: {unanchored}"
+
+
 def test_dockerfile_has_no_heredoc_operator() -> None:
     text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "<<" not in text, "BuildKit-only heredocs break the classic builder"

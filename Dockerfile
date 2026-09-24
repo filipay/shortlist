@@ -85,10 +85,10 @@ ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache \
 # The `latex` lane (D-69) must be literally runnable inside the image:
 # `docker compose run --rm app pytest -m latex`. The runtime stage deliberately
 # installs no dev tooling from requirements.txt, so the two test-only pins are
-# added explicitly here, and the test tree (with the fixture) must be present
-# before the cache prime below.
+# added explicitly here. They need only pyproject.toml, NOT the test tree — so the
+# test tree is copied at the very bottom of this file, where an edit to a test
+# invalidates one cheap layer instead of re-priming the LaTeX cache below.
 COPY pyproject.toml ./
-COPY tests ./tests
 RUN pip install --no-cache-dir pytest==9.1.1 pytest-asyncio==1.4.0
 
 # Prime the package cache AND prove the engine works, at build time (D-74). This
@@ -98,6 +98,9 @@ RUN pip install --no-cache-dir pytest==9.1.1 pytest-asyncio==1.4.0
 # artefact"; the primed set is exactly this fixture's package set. Tectonic does
 # NOT create its --outdir (it fails with "output directory does not exist"), and
 # the runtime path never hits this because the caller stages a real workdir.
+# Only this fixture is copied ahead of the prime — not the whole test tree. It is
+# self-contained (no \input/\include), so the prime does not need its siblings.
+COPY tests/fixtures/cv/awesomecv_standin.tex ./tests/fixtures/cv/
 RUN mkdir -p /tmp/prime \
     && tectonic --outdir /tmp/prime tests/fixtures/cv/awesomecv_standin.tex \
     && test -f /tmp/prime/awesomecv_standin.pdf \
@@ -116,6 +119,10 @@ COPY --from=assets /app/static/vendor ./static/vendor
 # the migration is proven to apply to a clean database at image build time.
 RUN DATABASE_URL_SYNC=sqlite:////tmp/migration-smoke.db alembic upgrade head \
     && rm -f /tmp/migration-smoke.db /tmp/migration-smoke.db-wal /tmp/migration-smoke.db-shm
+
+# The full test tree, deliberately last: an edit to any test then invalidates only
+# this layer. `docker compose run --rm app pytest` needs it; nothing above does.
+COPY tests ./tests
 
 EXPOSE 8000
 
