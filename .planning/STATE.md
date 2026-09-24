@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 05
 current_phase_name: Ranking — CORE VALUE
 status: executing
-stopped_at: Completed 05-11-PLAN.md
-last_updated: "2026-09-23T15:55:18.938Z"
-last_activity: 2026-09-23
+stopped_at: Completed 05-12-PLAN.md
+last_updated: "2026-09-24T10:41:13.870Z"
+last_activity: 2026-09-24
 last_activity_desc: Phase 05 execution started
-state_head: c083082c37641dd44a250a80fd9d62531c74009f
+state_head: d971a71e0583781a6dd71bb1597b23bc2443caef
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 44
-  completed_plans: 44
+  total_plans: 45
+  completed_plans: 45
   percent: 0
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-21)
 ## Current Position
 
 Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 2 of 11
-Status: Ready to execute
-Last activity: 2026-09-23 — Phase 05 execution started
+Plan: 12 of 12
+Status: Phase complete, ready for verification
+Last activity: 2026-09-24 — Completed 05-12-PLAN.md (G-05-8 gap closure)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -79,6 +79,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P09 | 7min | 2 tasks | 3 files |
 | Phase 05 P10 | 20 | 3 tasks | 13 files |
 | Phase 05 P11 | 10min | 3 tasks | 6 files |
+| Phase 05 P12 | 11 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,10 @@ Recent decisions affecting current work:
 - [Phase 05]: The pager renders on every non-empty queue page, not gated on has_more, so the position line shows the server-fixed page size even for a single-page queue
 - [Phase 05]: No htmx history/URL-push for paging: a fragment URL in browser history reloads as a bare fragment, so the in-page Previous control is the backward affordance
 - [Phase 05]: QueuePage's four page accessors are pure derivations of offset/limit/total with max(1, limit) guards, so a degenerate instance cannot 500 the queue
+- [Phase 05]: 05-12: the action surface is an allow-listed hidden field (ACTION_SURFACES = queue|detail), not the htmx HX-Target header — explicit, travels with event_type, pinnable from the test client
+- [Phase 05]: 05-12: one shared _action_forms.html defines the Save/Hide controls for both the queue row and the detail section, so the target drift that shipped G-05-8 is structurally impossible
+- [Phase 05]: 05-12: the same POST /listings/{id}/events returns a surface-aware fragment (row or detail section); no second route, so the write and the re-render cannot drift
+- [Phase 05]: 05-12: saved discoverability is a link to the existing saved view (?saved=1) plus a projected state indicator, never a recomputed count that could disagree with read_queue
 
 ### Pending Todos
 
@@ -149,6 +154,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T15:55:18.826Z
-Stopped at: Completed 05-11-PLAN.md
+Last session: 2026-09-24T10:41:02.603Z
+Stopped at: Completed 05-12-PLAN.md
 Resume file: None
