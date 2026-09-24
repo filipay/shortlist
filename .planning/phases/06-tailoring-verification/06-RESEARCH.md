@@ -996,7 +996,9 @@ Phase 6 has `nyquist_validation` enabled (absent in `.planning/config.json` ⇒ 
 them explicitly in the plan.** A2/A3/A5/A7 are implementation decisions the planner can
 lock.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four are settled by the plans: **O1** is pinned in `06-01-PLAN.md`'s `<design_decision>` and implemented in 06-01 Task 2 (purpose-aware `calls_since`, `run_id=None`, per-run ceiling dropped, no new ceiling key); **O2** adopts the no-migration recommendation (the hash rides `verification_json`); **O3** adopts `settings.opencode_model` for v1 with `result.model` recorded on the artifact; **O4** adopts the page-number heuristic and leaves the template — and therefore the golden bytes — unchanged. The original recommendations are retained below for provenance.
 
 1. **O1 — Does the tailoring call share the ranking spend ceilings?** D-119 says "the same
    per-run / rolling-24h ceilings … no new counters — plus one new `tailoring_enabled`
