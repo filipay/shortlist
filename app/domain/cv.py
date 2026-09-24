@@ -601,15 +601,28 @@ def _patch_is_empty(patch: TailoringPatch) -> bool:
 def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
     """All-or-nothing validation (D-106): raise on the FIRST violation, never repair.
 
-    IDs are compared BYTE-EXACT against ``set(iter_fact_ids(facts))`` — no casefold,
-    no Unicode normalisation, no fuzzy ratio. The ASCII slug ids ARE the identity.
+    IDs are compared BYTE-EXACT against the grounding set of the op's own family — a
+    bullet-targeting op resolves against the bullet-id set, a gap/suggestion
+    reference against the full fact-id set. No casefold, no Unicode normalisation,
+    no fuzzy ratio. The ASCII slug ids ARE the identity. Grounding a bullet op
+    against the full fact-id set would let a skill/section/entry/org/title/gap id
+    validate, no-op in ``_build_plan`` and still emit a ``ChangeRecord`` — the
+    phantom change WR-02.
     """
     known_ids = set(iter_fact_ids(facts))
+    #: A bullet-targeting op must resolve against the bullet-id set, not the full
+    #: fact-id set (WR-02).
+    bullet_ids = {bullet.id for entry in facts.all_entries() for bullet in entry.bullets}
 
-    # 1. Unknown id — every id named by ops, gaps and suggestions.
+    # 1. Unknown id — per op family, against that family's own id set. A bullet op
+    #    must not be satisfied by an id of another kind.
     for op in patch.ops:
-        for referenced in _referenced_ids(op):
-            if referenced not in known_ids:
+        if isinstance(op, (BulletMove, BulletWeight, DemoteBullet, DropBullet)):
+            grounding = bullet_ids
+        else:
+            grounding = known_ids
+        for referenced in sorted(set(_referenced_ids(op))):
+            if referenced not in grounding:
                 raise UnknownIdError(
                     f"patch operation references unknown id {referenced!r}: {op!r}"
                 )

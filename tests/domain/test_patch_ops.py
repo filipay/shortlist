@@ -254,6 +254,50 @@ def test_an_unknown_id_raises_unknown_id_error() -> None:
         )
 
 
+def test_a_bullet_op_on_a_non_bullet_fact_id_raises() -> None:
+    """WR-02: a bullet op must resolve its bullet ids against the BULLET-id set only.
+
+    A skill, section, entry, org, title or gap id used to satisfy the full fact-id
+    grounding, no-op in ``_build_plan`` and still emit a ``ChangeRecord`` — a phantom
+    change-log entry for a drop/reweight/demote/move that never happened.
+    """
+    facts = _facts()
+
+    with pytest.raises(UnknownIdError):
+        apply_patch(
+            facts,
+            _patch(DropBullet(op="drop_bullet", bullet_id="skill.python", reason="r")),
+        )
+    with pytest.raises(UnknownIdError):
+        apply_patch(
+            facts,
+            _patch(BulletWeight(op="reweight_bullet", bullet_id="sec.skills", weight=1.5)),
+        )
+    with pytest.raises(UnknownIdError):
+        apply_patch(
+            facts,
+            _patch(DemoteBullet(op="demote_bullet", bullet_id="sec.experience", reason="r")),
+        )
+    with pytest.raises(UnknownIdError):
+        apply_patch(
+            facts,
+            _patch(
+                BulletMove(
+                    op="move_bullet",
+                    bullet_id="bul/acme-ltd-2021/1",
+                    before_id="skill.python",
+                )
+            ),
+        )
+
+    # Positive control: a real bullet id still validates and applies.
+    plan = apply_patch(
+        facts,
+        _patch(DropBullet(op="drop_bullet", bullet_id="bul/acme-ltd-2021/1", reason="r")),
+    )
+    assert _texts(plan, ENTRY) == ["Second", "Third"]
+
+
 def test_a_duplicate_target_raises_invalid_patch_error() -> None:
     facts = _facts()
     patch = _patch(
