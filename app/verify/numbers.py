@@ -22,6 +22,26 @@ by matching ``squash(org)`` against each line's squash (the template emits the
 org verbatim on the entry header line) and is then read from the ORIGINAL lines,
 which preserve the date hyphen. ``squash`` remains the substrate for the
 membership checks that genuinely need it (``entity_present``, ``verbatim_integrity``).
+
+**Three region-LOCAL exclusions (GAP 1 / CR-01 and WR-03).** Region ``i``'s
+candidate set is its digit cores minus:
+
+1. **That entry's OWN date-like cores** — never a union of every entry's dates.
+   A document-wide date union (the pre-GAP-1 behaviour, WR-03) silently excused a
+   token in a region that does not contain that entry, a false negative in the
+   exact check whose job is to catch a number the renderer introduced.
+2. **Page-number lines inside the region** — a lone integer excuses that value
+   only where the line physically is, never document-wide.
+3. **The non-entry structured strings that physically appear in the region** —
+   section titles, skill groups, skill labels and the identity block
+   (``non_entry_structured_strings``). The template renders a section's skills
+   table AFTER that section's last entry, so those strings land in the last
+   entry's region and their digits would otherwise be surplus candidates for
+   ordinary content (``AWS S3``, ``Python 3``). Excluding them **only where they
+   appear** — rather than unioning them into every region or bounding the last
+   region at a heading — keeps a genuinely novel metric inside an entry's own
+   region a candidate. The accepted tradeoff: a digit that appears in a source
+   skill label is treated as grounded content, not a fabrication.
 """
 
 from __future__ import annotations
@@ -132,31 +152,77 @@ def _allowed_for_entry(entry: RenderedEntry) -> set[str]:
     return allowed
 
 
+def non_entry_structured_strings(plan: RenderPlan) -> list[str]:
+    """Every structured string the plan carries that no entry owns (GAP 1 / CR-01).
+
+    The identity block (``name`` / ``contact_email`` / ``contact_links``), each
+    section ``title``, and each ``skill.group`` / ``skill.label``. ``_allowed_for_entry``
+    enumerates only an entry's own fields, so a digit in one of these strings would
+    otherwise be a surplus candidate in the region the template renders it into
+    (a section's skills table is emitted after its last entry). Empty values are
+    skipped, so a ``None`` name or an empty label contributes nothing.
+    """
+    strings: list[str] = []
+    if plan.name:
+        strings.append(plan.name)
+    if plan.contact_email:
+        strings.append(plan.contact_email)
+    strings.extend(link for link in plan.contact_links if link)
+    for section in plan.sections:
+        if section.title:
+            strings.append(section.title)
+        for skill in section.skills:
+            if skill.group:
+                strings.append(skill.group)
+            if skill.label:
+                strings.append(skill.label)
+    return strings
+
+
+def _region_structured_cores(plan: RenderPlan, region_text: str) -> set[str]:
+    """The digit cores of the non-entry structured strings present in ``region_text``.
+
+    Region-LOCAL on purpose (GAP 1 / CR-01 and WR-03): a structured token is
+    excused only in the region whose extracted text physically CONTAINS that
+    string, never document-wide. A global union would silence check 4 for a
+    fabricated digit that happens to equal a skill label's digit — the same
+    false-negative class WR-03 removes. A string absent from the region
+    contributes nothing.
+    """
+    squashed = squash(region_text)
+    if not squashed:
+        return set()
+    cores: set[str] = set()
+    for value in non_entry_structured_strings(plan):
+        needle = squash(value)
+        if needle and needle in squashed:
+            cores |= set(digit_cores(value))
+    return cores
+
+
 def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list[RegionReport]:
     """Per-entry region reports over the extracted ``text`` (D-113).
 
     Region ``i`` runs from entry ``i``'s org line to the next entry's org line (the
     last to end-of-text). Candidate tokens are the region's digit cores minus the
-    excluded set (that entry's date-like cores and any lone-integer page-number
-    line). An org absent from the text is reported ``found=False`` — that is an
-    ``entity_present`` failure, never a metric failure.
+    excluded set: that entry's OWN date-like cores, any lone-integer page-number
+    line inside the region, and the digit cores of the non-entry structured strings
+    that physically appear in the region. Nothing is excluded document-wide
+    (WR-03): a token equal to another entry's year remains a candidate here. An org
+    absent from the text is reported ``found=False`` — that is an ``entity_present``
+    failure, never a metric failure.
     """
     entries = [entry for section in plan.sections for entry in section.entries]
     lines = text.splitlines()
     positions = _entry_lines(entries, lines)
 
-    excluded: set[str] = set()
-    for entry in entries:
-        excluded |= date_like_cores_for_entry(entry)
-    for line in lines:
-        if is_page_number_line(line, page_count=page_count):
-            excluded.add(line.strip())
-
     reports: list[RegionReport] = []
     for index, entry in enumerate(entries):
-        allowed = _allowed_for_entry(entry)
         position = positions[index]
         if position < 0:
+            # No region to locate; there is no region text to scope structured
+            # content to, so that operand is empty (region-local still holds).
+            allowed = _allowed_for_entry(entry) | _region_structured_cores(plan, "")
             reports.append(
                 RegionReport(
                     entry_id=entry.id,
@@ -169,7 +235,14 @@ def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list
             continue
         later = [candidate for candidate in positions if candidate > position]
         end = min(later) if later else len(lines)
-        region_text = "\n".join(lines[position:end])
+        region_lines = lines[position:end]
+        region_text = "\n".join(region_lines)
+        structured_cores = _region_structured_cores(plan, region_text)
+        excluded = date_like_cores_for_entry(entry) | structured_cores
+        for line in region_lines:
+            if is_page_number_line(line, page_count=page_count):
+                excluded.add(line.strip())
+        allowed = _allowed_for_entry(entry) | structured_cores
         candidates = [core for core in digit_cores(region_text) if core not in excluded]
         reports.append(
             RegionReport(
@@ -188,5 +261,6 @@ __all__ = [
     "date_like_cores_for_entry",
     "digit_cores",
     "is_page_number_line",
+    "non_entry_structured_strings",
     "region_token_report",
 ]

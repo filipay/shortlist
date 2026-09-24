@@ -9,6 +9,13 @@ enforced rather than assumed.
 
 from __future__ import annotations
 
+from app.domain.cv import (
+    Bullet,
+    RenderPlan,
+    RenderedEntry,
+    RenderedSection,
+    Skill,
+)
 from app.verify.numbers import (
     date_like_cores_for_entry,
     digit_cores,
@@ -134,6 +141,82 @@ def test_an_absent_org_is_reported_not_found() -> None:
 
     assert report.found is False
     assert report.candidates == []
+
+
+# --- GAP 1 / WR-03: region-local exclusion -------------------------------------
+
+
+def test_a_foreign_date_core_is_not_excluded_in_another_region() -> None:
+    """WR-03: entry B's year must NOT excuse that token inside entry A's region."""
+    entry_a = RenderedEntry(
+        id="exp/alpha-2019",
+        org="Alpha Corp",
+        title="Engineer",
+        dates="2019-01 -- 2020-12",
+        bullets=[Bullet(id="bul/alpha-2019/1", text="Launched the 2022 campaign")],
+    )
+    entry_b = RenderedEntry(
+        id="exp/beta-2022",
+        org="Beta Inc",
+        title="Analyst",
+        dates="2022-05 -- present",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry_a, entry_b],
+            )
+        ]
+    )
+    text = (
+        "Alpha Corp --- Engineer\n"
+        "2019-01 -- 2020-12\n"
+        "Launched the 2022 campaign\n"
+        "Beta Inc --- Analyst\n"
+        "2022-05 -- present\n"
+    )
+
+    reports = region_token_report(plan, text, page_count=1)
+
+    # The token is a candidate in A's region (A does not carry the year 2022) ...
+    assert "2022" in reports[0].candidates
+    # ... and B's own date still excuses it inside B's region.
+    assert "2022" not in reports[1].candidates
+
+
+def test_a_digit_in_a_skill_label_appearing_in_the_region_is_not_a_candidate() -> None:
+    """CR-01: a digit-bearing skill label rendered in the region is grounded, not surplus."""
+    entry = RenderedEntry(
+        id="exp/acme-2020",
+        org="Acme",
+        title="Dev",
+        dates="2020-01 -- 2021-01",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry],
+                skills=[Skill(id="skill.aws", label="AWS S3", group="infrastructure")],
+            )
+        ]
+    )
+    text = (
+        "Acme --- Dev\n"
+        "2020-01 -- 2021-01\n"
+        "Did things\n"
+        "infrastructure AWS S3\n"
+    )
+
+    report = region_token_report(plan, text, page_count=1)[0]
+
+    assert "3" not in report.candidates
+    assert "3" in report.allowed
 
 
 if __name__ == "__main__":  # pragma: no cover
