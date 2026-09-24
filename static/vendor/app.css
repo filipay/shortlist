@@ -28,3 +28,7 @@
 .weight-field{flex-direction:column;gap:.25rem;display:flex}
 .weight-field input{margin:0}
 .weights-note{margin-bottom:1rem}
+.tailoring-review{border:1px solid var(--color-border);border-radius:var(--radius-lg);background-color:var(--color-surface);margin-top:1rem;padding:1rem}
+.tailoring-empty{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);padding:1rem}
+.cv-generate{align-self:flex-start}
+.cv-download{font-weight:500}

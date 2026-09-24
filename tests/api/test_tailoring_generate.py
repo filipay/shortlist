@@ -1,0 +1,291 @@
+"""TAIL-01 / TAIL-02 / TAIL-03 / D-108 / D-111 / D-115 / D-118 — the tailoring path.
+
+Observable truths a verifier should check:
+
+1. `POST .../generate` on a scored listing returns a fragment containing a
+   `patch_json` hidden field and writes zero `cv_artifacts` rows and zero `.tex` files.
+2. The page on an unscored listing renders the `rank first` state and no generate control.
+3. A Layer-1 fail at compile writes exactly one `blocked` row with NULL paths.
+4. A passing compile writes exactly one `ok` row with non-null paths and page count.
+5. `GET .../pdf` returns 200 bytes for the `ok` row and 404 when only a blocked row exists.
+"""
+
+from __future__ import annotations
+
+import html
+import re
+from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
+from typing import Any
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.config import settings
+from app.db.models import CvArtifact
+from app.domain.cv import BulletWeight, GapFinding, TailoringPatch
+from app.latex.base import CompileResult, EngineProbe
+from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
+from tests.api.test_listing_detail import _register_sources, _seed_listing, _seed_scored_listing
+from tests.verify.fixtures import FACTS_YAML
+
+PATCH_RE = re.compile(r'name="patch_json" value="([^"]*)"')
+
+
+class TailoringStubBackend:
+    """Returns one fixed valid patch and records the calls it received."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.patch = TailoringPatch(
+            listing_id=1,
+            ops=[
+                BulletWeight(
+                    op="reweight_bullet",
+                    bullet_id="bul/northwind-labs-2021/1",
+                    weight=2.0,
+                )
+            ],
+        )
+
+    async def health(self) -> ProbeOutcome:
+        return ProbeOutcome(reachable=True)
+
+    async def discover_models(self) -> DiscoveryResult:
+        return DiscoveryResult(reachable=True)
+
+    async def complete_structured(
+        self,
+        *,
+        schema: type,
+        system: str,
+        parts: Sequence[str],
+        model: str | None = None,
+        agent: str | None = None,
+        tools: Sequence[str] = (),
+        retries: int | None = None,
+    ) -> StructuredCallResult:
+        self.calls.append({"system": system, "text": "\n".join(parts)})
+        return StructuredCallResult(
+            ok=True, status="ok", data=self.patch, provider="opencode", model="minimax-m3"
+        )
+
+
+class StubEngine:
+    """Writes a canned PDF and records the compiles it received."""
+
+    def __init__(self, *, ok: bool = True) -> None:
+        self.calls: list[str] = []
+        self._ok = ok
+
+    async def compile(self, *, tex: str, workdir: Path) -> CompileResult:
+        self.calls.append(tex)
+        workdir.mkdir(parents=True, exist_ok=True)
+        if not self._ok:
+            return CompileResult(ok=False, engine="stub", error="boom", error_kind="compile_error")
+        pdf = workdir / "cv.pdf"
+        pdf.write_bytes(b"%PDF-1.4 stub\n")
+        return CompileResult(
+            ok=True,
+            engine="stub",
+            pdf_path=str(pdf),
+            page_count=1,
+            tex_hash="a" * 64,
+            pdf_hash="b" * 64,
+            compile_log="ok",
+        )
+
+    async def health(self) -> EngineProbe:
+        return EngineProbe(available=True)
+
+
+_BACKEND = TailoringStubBackend()
+_ENGINE = StubEngine()
+
+
+@pytest.fixture(autouse=True)
+def _reset_stubs() -> None:
+    _BACKEND.calls.clear()
+    _ENGINE.calls.clear()
+
+
+@pytest_asyncio.fixture
+async def tailoring_client(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> AsyncIterator[AsyncClient]:
+    from app.db.session import get_session, get_session_factory
+    from app.latex import get_latex_engine
+    from app.llm import get_llm_backend
+    from app.main import create_app
+
+    cv_dir = tmp_path / "cv"
+    cv_dir.mkdir(parents=True, exist_ok=True)
+    (cv_dir / "cv.yaml").write_text(FACTS_YAML.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(cv_dir))
+    monkeypatch.setattr(settings, "artifacts_dir", str(tmp_path / "artifacts"))
+
+    app = create_app()
+
+    async def _override_get_session() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
+    app.dependency_overrides[get_llm_backend] = lambda: _BACKEND
+    app.dependency_overrides[get_latex_engine] = lambda: _ENGINE
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as http:
+        yield http
+
+    app.dependency_overrides.clear()
+
+
+async def _artifact_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[CvArtifact]:
+    async with session_factory() as session:
+        return list((await session.execute(select(CvArtifact))).scalars().all())
+
+
+def _extract_patch(body: str) -> str:
+    match = PATCH_RE.search(body)
+    assert match is not None, "the review fragment must carry a patch_json hidden field"
+    return html.unescape(match.group(1))
+
+
+# --- truth 2: the unscored page offers no generate control ---------------------
+
+
+async def test_page_renders_rank_first_for_an_unscored_listing(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _register_sources(session_factory, "linkedin")
+    listing_id = await _seed_listing(session_factory, index=9, title="Unscored Role")
+
+    response = await tailoring_client.get(f"/listings/{listing_id}/cv")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Rank this listing first" in body
+    assert "Generate tailored CV" not in body, "no generate control on an unscored listing"
+
+
+# --- truth 1: generate returns the review fragment and writes nothing ----------
+
+
+async def test_generate_returns_the_review_fragment_and_writes_nothing(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Tailoring Role")
+
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="tailoring-review"' in body
+    assert 'name="patch_json"' in body
+    assert _extract_patch(body)
+    assert await _artifact_rows(session_factory) == [], "generate persists no artifact row"
+    assert list((tmp_path / "artifacts").rglob("*.tex")) == [], "generate writes no .tex"
+    assert len(_BACKEND.calls) == 1, "exactly one tailoring call per generate"
+
+
+# --- truth 4: a passing compile writes one ok row ------------------------------
+
+
+async def test_compile_writes_one_ok_row_and_returns_a_download_link(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Compiling Role")
+
+    generated = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    patch_json = _extract_patch(generated.text)
+
+    response = await tailoring_client.post(
+        f"/listings/{listing_id}/cv/compile", data={"patch_json": patch_json}
+    )
+
+    assert response.status_code == 200
+    assert f"/listings/{listing_id}/cv/pdf" in response.text, "a download link is returned"
+
+    rows = await _artifact_rows(session_factory)
+    assert len(rows) == 1
+    assert rows[0].compile_status == "ok"
+    assert rows[0].tex_path is not None
+    assert rows[0].pdf_path is not None
+    assert rows[0].page_count == 1
+    assert len(list((tmp_path / "artifacts").rglob("*.tex"))) == 1
+    assert len(_ENGINE.calls) == 1
+
+
+# --- truth 3 + 5: a Layer-1 fail blocks, writes no PDF and is unreachable -------
+
+
+async def test_compile_short_circuits_a_layer_one_fail_to_a_blocked_row(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Blocked Role")
+    # A `direct` finding with no evidence id fails requirement_evidence at Layer 1.
+    blocked_patch = TailoringPatch(
+        listing_id=listing_id,
+        gaps=[GapFinding(requirement="Rust", status="direct", evidence_ids=[])],
+    )
+
+    response = await tailoring_client.post(
+        f"/listings/{listing_id}/cv/compile",
+        data={"patch_json": blocked_patch.model_dump_json()},
+    )
+
+    assert response.status_code == 200
+    assert 'data-status="blocked"' in response.text
+
+    rows = await _artifact_rows(session_factory)
+    assert len(rows) == 1
+    assert rows[0].compile_status == "blocked"
+    assert rows[0].tex_path is None
+    assert rows[0].pdf_path is None
+    assert rows[0].verification_json, "a blocked row carries its findings"
+    assert _ENGINE.calls == [], "a Layer-1 fail must never reach the engine"
+
+    # Truth 5: the PDF route cannot serve a blocked artifact (D-118).
+    pdf = await tailoring_client.get(f"/listings/{listing_id}/cv/pdf")
+    assert pdf.status_code == 404
+
+
+# --- truth 5: the ok artifact is served as bytes -------------------------------
+
+
+async def test_the_pdf_route_serves_the_ok_artifact(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Served Role")
+    patch_json = _extract_patch(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+    await tailoring_client.post(
+        f"/listings/{listing_id}/cv/compile", data={"patch_json": patch_json}
+    )
+
+    response = await tailoring_client.get(f"/listings/{listing_id}/cv/pdf")
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
+    assert response.headers["content-type"] == "application/pdf"
+
+
+if __name__ == "__main__":  # pragma: no cover
+    pytest.main([__file__])

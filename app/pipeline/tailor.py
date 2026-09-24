@@ -22,6 +22,7 @@ with no interpolation of any request-derived value. ``tools=()`` is passed expli
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -32,8 +33,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
-from app.db.repositories import llm_call_repo
-from app.domain.cv import CvFacts, TailoringPatch
+from app.db.repositories import cv_artifact_repo, llm_call_repo
+from app.db.repositories.cv_artifact_repo import CvArtifactRecord
+from app.domain.cv import (
+    CvFacts,
+    InvalidPatchError,
+    TailoringPatch,
+    UnknownIdError,
+    apply_patch,
+    facts_hash,
+)
+from app.latex.base import LatexEngine
+from app.latex.render import render_plan_to_tex, write_rendered
 from app.llm.base import LLMBackend
 
 # The shared rolling-window read, the reserve-then-call lock and the id-bearing CV
@@ -44,6 +55,7 @@ from app.llm.base import LLMBackend
 # different window, a per-purpose budget), hoist `_reserve`/`_release`/`_cv_facts_text`
 # into a shared `app/pipeline/spend.py` rather than copying them.
 from app.pipeline.rank import CV_FILENAME, _cv_facts_text, _release, _reserve
+from app.verify import verify_plan
 
 log = structlog.get_logger(__name__)
 
@@ -228,6 +240,126 @@ async def tailor_listing(
     return result.data
 
 
+async def compile_tailored(
+    session: AsyncSession,
+    *,
+    listing: Any,
+    facts: CvFacts,
+    patch: TailoringPatch,
+    base_cv_version_id: int | None,
+    engine: LatexEngine,
+    artifacts_dir: Path,
+    now: datetime,
+) -> CvArtifactRecord:
+    """Prove the end-to-end path at thin depth: re-ground, verify L1, render, compile.
+
+    Never raises to the route. Every failure is one of the three `compile_status`
+    values, written as a `cv_artifacts` row:
+
+    - a re-grounding failure (``UnknownIdError`` / ``InvalidPatchError``) → ``blocked``;
+    - a Layer-1 ``fail`` → ``blocked``, BEFORE the engine is reached (D-111);
+    - an engine failure → ``failed`` (Layer-2 verification never ran);
+    - success → ``ok`` with the PDF paths and hashes.
+
+    Every call inserts a NEW row (D-117); older rows are never overwritten.
+    """
+    listing_id = int(listing.id)
+    patch_payload = patch.model_dump(mode="json")
+    store_hash = facts_hash(facts)
+
+    # Re-ground the patch server-side: an invalid patch is a value, never an
+    # exception to the route. Re-parsing the client form is 06-03's concern.
+    try:
+        plan = apply_patch(facts, patch)
+    except (UnknownIdError, InvalidPatchError) as exc:
+        return await cv_artifact_repo.insert_artifact(
+            session,
+            listing_id=listing_id,
+            base_cv_version_id=base_cv_version_id,
+            patch_json=patch_payload,
+            change_log_json=[],
+            compile_status="blocked",
+            verification_json={
+                "passed": False,
+                "error": type(exc).__name__,
+                "fact_store_hash": store_hash,
+            },
+            page_count=None,
+            now=now,
+        )
+
+    change_log = [change.model_dump(mode="json") for change in plan.changes]
+
+    # Layer 1: short-circuit BEFORE compiling on a fail (D-111 / D-115). A blocked
+    # row is never downloadable — the repository's `ok`-only selection is the control.
+    verification = verify_plan(facts, plan, patch, now=now)
+    verification_json = {
+        **verification.model_dump(mode="json"),
+        "fact_store_hash": store_hash,
+    }
+    if not verification.passed:
+        return await cv_artifact_repo.insert_artifact(
+            session,
+            listing_id=listing_id,
+            base_cv_version_id=base_cv_version_id,
+            patch_json=patch_payload,
+            change_log_json=change_log,
+            compile_status="blocked",
+            verification_json=verification_json,
+            page_count=None,
+            now=now,
+        )
+
+    # --- Layer-2 hook (06-02): the extracted-PDF-text post-checks land here. Any
+    # blocking extraction (`pypdf`) MUST go through `asyncio.to_thread`, as
+    # `app/latex/compile.py` already does. ---
+    tex = render_plan_to_tex(plan)
+    tex_hash = hashlib.sha256(tex.encode("utf-8")).hexdigest()
+    base = Path(artifacts_dir) / str(listing_id)
+    tex_path = write_rendered(tex, base / f"cv-{tex_hash[:12]}.tex")
+    # A per-hash workdir keeps each compile's produced `cv.pdf` distinct, so an
+    # older artifact row's `pdf_path` is never overwritten (D-117).
+    workdir = base / tex_hash[:12]
+    compile_result = await engine.compile(tex=tex, workdir=workdir)
+
+    if not compile_result.ok:
+        return await cv_artifact_repo.insert_artifact(
+            session,
+            listing_id=listing_id,
+            base_cv_version_id=base_cv_version_id,
+            patch_json=patch_payload,
+            change_log_json=change_log,
+            compile_status="failed",
+            verification_json=verification_json,
+            page_count=None,
+            tex_path=str(tex_path),
+            tex_hash=compile_result.tex_hash or tex_hash,
+            compile_log=compile_result.compile_log,
+            backend="opencode_server",
+            model=settings.opencode_model,
+            now=now,
+        )
+
+    return await cv_artifact_repo.insert_artifact(
+        session,
+        listing_id=listing_id,
+        base_cv_version_id=base_cv_version_id,
+        patch_json=patch_payload,
+        change_log_json=change_log,
+        compile_status="ok",
+        verification_json=verification_json,
+        page_count=compile_result.page_count,
+        tex_path=str(tex_path),
+        pdf_path=compile_result.pdf_path,
+        tex_hash=compile_result.tex_hash or tex_hash,
+        pdf_hash=compile_result.pdf_hash,
+        compile_log=compile_result.compile_log,
+        backend="opencode_server",
+        model=settings.opencode_model,
+        now=now,
+    )
+
+
 __all__ = [
     "TAILOR_SKIP_DISABLED",
     "TAILOR_SKIP_FACT_STORE",
@@ -235,6 +367,7 @@ __all__ = [
     "TAILOR_SKIP_NO_SCORE",
     "TAILOR_SYSTEM_PROMPT",
     "build_tailoring_parts",
+    "compile_tailored",
     "tailor_listing",
     "tailoring_skip_reason",
 ]

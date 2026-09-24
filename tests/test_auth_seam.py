@@ -40,6 +40,12 @@ EXPECTED_SEAM_ROUTES = frozenset(
         # Phase 3's on-demand LLM backend selftest (D-48): it spends tokens, so it
         # must go through the identity seam like every other route.
         "/settings/llm-test",
+        # Phase 6's dedicated tailoring page and actions (D-116). It generates,
+        # compiles and serves a private artefact, so every route carries the seam.
+        "/listings/{listing_id}/cv",
+        "/listings/{listing_id}/cv/generate",
+        "/listings/{listing_id}/cv/compile",
+        "/listings/{listing_id}/cv/pdf",
     }
 )
 

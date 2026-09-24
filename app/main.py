@@ -21,6 +21,7 @@ from app.api import listings as listing_routes
 from app.api import runs as run_routes
 from app.api import searches as search_routes
 from app.api import settings as settings_routes
+from app.api import tailoring as tailoring_routes
 from app.db.repositories import source_repo
 from app.db.session import async_session_maker
 from app.web import routes as web_routes
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_routes.router)
     app.include_router(event_routes.router)
     app.include_router(listing_routes.router)
+    app.include_router(tailoring_routes.router)
     app.include_router(health_routes.router)
     return app
 
