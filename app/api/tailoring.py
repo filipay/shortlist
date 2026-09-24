@@ -137,6 +137,36 @@ def _tailoring_state(has_score: bool, latest: Any) -> str:
     return TAILORING_STATE_GENERATED
 
 
+def _parse_findings(verification_json: Any) -> list[dict[str, Any]]:
+    """The persisted `VerificationResult` checks as render-ready rows.
+
+    Degrades to an empty list for an unparseable blob rather than raising — a page must
+    still render (T-06-20). Each row carries ids, status, a short detail and the
+    offending ids only; the extracted text is never persisted, so nothing here can leak.
+    """
+    if not isinstance(verification_json, dict):
+        return []
+    checks = verification_json.get("checks")
+    if not isinstance(checks, list):
+        return []
+    findings: list[dict[str, Any]] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        offending = check.get("offending")
+        findings.append(
+            {
+                "id": str(check.get("id", "")),
+                "status": str(check.get("status", "")),
+                "detail": str(check.get("detail", "")),
+                "offending": [str(item) for item in offending]
+                if isinstance(offending, list)
+                else [],
+            }
+        )
+    return findings
+
+
 def _dropped_bullets(
     facts: CvFacts, plan: RenderPlan, patch: TailoringPatch
 ) -> dict[str, list[dict[str, str]]]:
@@ -285,6 +315,11 @@ async def tailoring_page(
     score = await score_repo.read_score_for_listing(session, listing_id=listing_id)
     skip_reason = tailoring_skip_reason()
     latest = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=False)
+    # The retained history (D-117): every compile, blocked and failed included, so a
+    # blocked attempt is explained rather than silently hidden. The findings are parsed
+    # from the newest row's persisted verification, degrading to [] on an odd blob.
+    history = await cv_artifact_repo.history_for_listing(session, listing_id)
+    findings = _parse_findings(latest.verification_json) if latest is not None else []
 
     return templates.TemplateResponse(
         request,
@@ -296,6 +331,8 @@ async def tailoring_page(
             "skip_reason": skip_reason,
             "skip_label": TAILOR_SKIP_LABELS.get(skip_reason or "", ""),
             "latest": latest,
+            "findings": findings,
+            "history": history,
         },
     )
 

@@ -1,0 +1,28 @@
+{# The blocked artifact's persisted verification findings (TAIL-05 / D-118).
+
+   Shown on the tailoring page when the newest artifact is `blocked`: the user sees
+   WHICH checks failed, so a block is a reviewable outcome rather than a dead end.
+   `warn` findings are visibly non-blocking (`req-partial`, the warning colour) while a
+   failing check is `req-gap`; a warn-only artifact is `ok` and downloadable (D-114).
+
+   There is deliberately no corrective control. Recovery is a fresh tailoring — the page's
+   own generate control — and the tool never rewrites, truncates or regenerates a CV in
+   response to a finding. Jinja autoescape is the only escaping; a finding's detail and
+   offending ids render as text and nothing is marked safe. #}
+<section id="cv-findings" class="tailoring-review">
+  <h3>Why this CV was blocked</h3>
+  <p>
+    Verification failed, so this CV cannot be downloaded or attached.
+    The only recovery is to generate a fresh tailoring and review it again.
+  </p>
+  <ul class="requirement-list">
+    {% for finding in findings %}
+    <li class="{% if finding.status == 'fail' %}req-gap{% elif finding.status == 'warn' %}req-partial{% else %}req-met{% endif %}">
+      <span class="badge">{{ finding.status }}</span>
+      <code>{{ finding.id }}</code> — {{ finding.detail }}
+      {% if finding.offending %}<span>offending: {{ finding.offending | join(", ") }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p>Warnings never block a download; only a failing check does.</p>
+</section>

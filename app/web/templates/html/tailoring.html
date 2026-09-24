@@ -44,4 +44,28 @@
   {% endif %}
 </section>
 {% endif %}
+
+{% if tailoring_state == 'blocked' %}
+{% include "html/_cv_findings.html" %}
+{% endif %}
+
+{# The retained history (D-117): every past compile, newest first, with a download
+   affordance ONLY on `ok` entries. Retention/pruning is deliberately Phase 8; a blocked
+   entry is shown here, never silently hidden away. #}
+{% if history %}
+<section>
+  <h3>Previous compiles</h3>
+  <ul class="requirement-list">
+    {% for entry in history %}
+    <li>
+      <span class="badge">{{ entry.compile_status }}</span>
+      {{ entry.created_at | format_datetime }}
+      {% if entry.compile_status == 'ok' %}
+      <a class="cv-download" href="/listings/{{ listing_id }}/cv/pdf">Download PDF</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}
