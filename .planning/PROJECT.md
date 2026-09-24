@@ -35,6 +35,25 @@ can act on. Every other feature is downstream of that.
       fails loudly on an upgrade (Phase 3). The `@pytest.mark.live` lane diffs the
       live `/doc` spec against the pinned fixture, so a wire-shape change surfaces
       immediately rather than silently corrupting structured output.
+- ✓ **RANK-01, RANK-02, RANK-03** — Every surviving listing is scored against the CV
+      using named, inspectable factors; the per-factor sub-scores are stored and the
+      total is computed in code under the current weights (Phase 5). The queue's
+      displayed total is derived on read, so a weight change re-derives the ranking
+      with zero LLM calls.
+- ✓ **RANK-04** — The user can adjust factor weights from the UI and see rankings
+      re-derive without a new LLM call (Phase 5). Weights persist as one
+      `ranking_config` document (migration 0004).
+- ✓ **RANK-05, RANK-06** — Each ranked listing carries a rationale grounded in stored
+      evidence, and the job detail view shows a requirement-by-requirement fit
+      breakdown with named gaps (Phase 5).
+- ✓ **RANK-07** — Scoring is absolute per listing and stable across repeated runs —
+      one `complete_structured` call per listing, never a relative ranking of a batch
+      (Phase 5); confirmed against the live model at UAT.
+- ✓ **RANK-08** — LLM spend is capped per run and per rolling 24 h, refused *before*
+      the call is made, measured from the single `llm_calls` ledger (Phase 5).
+- ✓ **UI-01, UI-02, UI-03** — The web UI browses the ranked queue, opens a job detail
+      showing the fit breakdown and ranking rationale, and edits search criteria and
+      ranking weights (Phase 5).
 
 ### Active
 
@@ -44,18 +63,11 @@ can act on. Every other feature is downstream of that.
 - [ ] User-defined search criteria (role/keywords, location, remote, salary floor,
       seniority, excluded terms) stored and editable
 - [ ] Deterministic hard-rule filtering applied before any LLM spend
-- [ ] LLM ranking of surviving listings against the user's CV and preferences,
-      with a per-listing score and a human-readable rationale
-- [ ] Fit breakdown for a listing: requirement-by-requirement match and explicit
-      gaps between the user's CV and the role
 - [ ] LaTeX-CV tailoring per listing: reorder and re-weight existing content,
       suggest adjustments, and flag gaps — never fabricate experience, employers,
       dates, or skills
 - [ ] Assisted apply: generate the tailored CV PDF and pre-fill application
       material for the user to review and submit themselves
-- [ ] Web UI: browse ranked jobs
-- [ ] Web UI: job detail with fit breakdown and ranking rationale
-- [ ] Web UI: edit search criteria and ranking weights
 - [ ] Web UI: application tracker (applied / interviewing / rejected / etc.)
 - [ ] Web UI: preview the tailored CV and download the compiled PDF
 - [ ] Manual "run search now" trigger plus scheduled runs (e.g. daily)
@@ -137,6 +149,9 @@ can act on. Every other feature is downstream of that.
 | Never fabricate CV content | Ethical hard line; tailoring is reorder/re-weight/suggest/flag only | — Pending |
 | Model the CV as structured data (enumerated IDs), never free-text `.tex` from the LLM | Makes fabrication structurally impossible — the model can only reorder and re-weight real bullet IDs, so it cannot invent an employer or skill the schema does not have; the renderer stays deterministic and testable | ✓ Good — shipped in Phase 4: `app/domain/cv.py` carries stable enumerated IDs, escaping is centralised at one non-bypassable Jinja `finalize` choke point, and the committed golden baseline renders byte-identically |
 | Tectonic as the LaTeX engine, pinned by version and SHA256, with the package cache primed at image build | ~124 MB vs multi-GB TeX Live, auto-fetches packages, and a pinned digest makes a swapped binary fail the build rather than silently change output | ✓ Good — validated in Phase 4: the container's offline compile of the committed fixture passed 10/10 and the installed binary's own `--help` confirmed the argv flags (D-75) |
+| Ranking is one `complete_structured` call per listing, with requirement extraction co-located in that same call | Batching would make each score relative to its batch and break the absolute-score/stability requirement; folding extraction in removes a second call per listing | ✓ Good — validated in Phase 5: RANK-07 stability held across repeated live-model runs |
+| Ranking spend caps are reserve-then-call, measured from the single `llm_calls` ledger, with two independent `Settings` ceilings (per-run and rolling-24 h) | The ledger is already the D-12 audit record, so the caps cannot drift from actual spend; refusing *before* the request is what makes a cap a cap | ✓ Good — shipped in Phase 5 (RANK-08): a refusal writes one `budget_exceeded` row and no request is made |
+| The queue's displayed total is computed on read under the current weights; `scores.total_score` stays an audit snapshot | A weight edit re-derives the whole ranking with zero LLM calls (success criterion 3), while the stored score remains the record of what the model actually produced | ✓ Good — shipped in Phase 5 (D-100); the score sort is a Python-side bounded scan, with a materialised total column as the upgrade path |
 
 ## Evolution
 
@@ -156,4 +171,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-21 after Phase 4 (CV Fact Store + LaTeX Compile Spike) — CV-as-data and the pinned Tectonic compile spine validated; the real-document `.tex → cv.yaml` measurement remains open*
+*Last updated: 2026-09-24 after Phase 5 (Ranking — CORE VALUE) — the ranked, explained queue is real: absolute per-listing scores with stored sub-scores, a grounded rationale and named gaps, and spend caps refused before the call*

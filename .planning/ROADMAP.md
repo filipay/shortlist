@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Clean, Filtered, Queryable Queue** - No duplicates; hard rules applied with recorded reasons; runs observable (completed 2026-09-17)
 - [x] **Phase 3: LLM Port + Structured Output** - Any schema-constrained call works end to end through opencode, with the contract pinned (completed 2026-09-21)
 - [x] **Phase 4: CV Fact Store + LaTeX Compile Spike** - The structured CV reproduces the base CV and Tectonic compiles the real `.tex` (runs in parallel with Phases 2–3) (completed 2026-09-21)
-- [ ] **Phase 5: Ranking — CORE VALUE** - One ranked, explained queue with per-factor breakdown and named gaps
+- [x] **Phase 5: Ranking — CORE VALUE** - One ranked, explained queue with per-factor breakdown and named gaps (completed 2026-09-24)
 - [ ] **Phase 6: Tailoring + Verification** - A tailored, verified CV PDF, previewable and downloadable
 - [ ] **Phase 7: Assisted Apply + Tracker** - Apply package plus application tracking linked to the exact verified artefact
 - [ ] **Phase 8: Operations + Polish** - Scheduled runs, source health in the UI, responsive interface
@@ -211,7 +211,7 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 7/7 executed + 4 gap-closure plans executed (05-08, 05-09, 05-10, 05-11) + 1 gap-closure plan planned, awaiting execution (05-12)
+**Plans:** 12/12 plans complete
 **UI hint**: yes
 
 Plans:
@@ -319,7 +319,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 2. Clean, Filtered, Queryable Queue | 11/11 | Complete    | 2026-09-17 |
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
-| 5. Ranking — CORE VALUE | 12/12 | In Progress|  |
+| 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 0/0 | Not started | - |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |

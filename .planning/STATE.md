@@ -1,38 +1,38 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 05
-current_phase_name: Ranking — CORE VALUE
-status: executing
-stopped_at: Completed 05-12-PLAN.md
-last_updated: "2026-09-24T10:41:13.870Z"
+current_phase: 6
+current_phase_name: Tailoring + Verification
+status: planning
+stopped_at: Phase 05 complete, ready to plan Phase 6
+last_updated: "2026-09-24T12:48:08.989Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 05 execution started
-state_head: d971a71e0583781a6dd71bb1597b23bc2443caef
+last_activity_desc: Phase 05 complete, transitioned to Phase 6
+state_head: bd175e1eaabb1693e6a50223ddd3c62202b403ef
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 45
   completed_plans: 45
-  percent: 0
+  percent: 13
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-21)
+See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 05 — Ranking — CORE VALUE
+**Current focus:** Phase 06 — Tailoring + Verification
 
 ## Current Position
 
-Phase: 05 (Ranking — CORE VALUE) — EXECUTING
-Plan: 12 of 12
-Status: Phase complete, ready for verification
-Last activity: 2026-09-24 — Completed 05-12-PLAN.md (G-05-8 gap closure)
+Phase: 6 — Tailoring + Verification
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-24 — Phase 05 complete, transitioned to Phase 6
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████████████████] 45/45 plans (100%)
 
 ## Performance Metrics
 
@@ -138,11 +138,10 @@ None yet.
 
 - [Phase 1] Blocking unknown #2 — scrape survival at personal scale is unmeasured; the Phase 1 probe answers it and re-ranks Adzuna from hedge to primary if LinkedIn/Indeed fail.
 - [Phase 4] Blocking unknown #1 — the real `.tex` is **not in this repo**; `.tex → cv.yaml` import cost and Tectonic bundle coverage remain unmeasured **for the real document**. Stays **open**, now with a named trigger: place the document at `cv/base.tex`, run `bash scripts/cv-tex-spike.sh`, and record the counts in `docs/probes/2026-09-21-cv-tex-spike.md` (`cv-tex-spike`), whose `UNRESOLVED` section names the exact checks (real-document decomposition, per-package bundle search, the engine's own flag names). Hard gate before Phase 6 is estimated.
-- [Phase 3] RESOLVED by 03-10: the `format` vs `outputFormat` contract is pinned in `app/llm/contract.py` (`format` / `info.structured`, no adaptive fallback) and confirmed by the live schema-constrained call; the deny-ruleset half needed a carve-out for the server-internal `StructuredOutput` tool, now shipped and guarded.
-- [Phase 3] Advisory, non-blocking — resolve before Phase 5 routes CV content through the port: session-handshake failures report `attempts=0` and drop the resolved D-12 identity; the generic failure handler persists a raw exception class name as `error_kind`, outside the D-52 taxonomy; the differential cause can over-attribute on an empty `parts` list. Code review 03: 0 Critical / 3 Warning / 5 Info (`/gsd-code-review 03 --fix`).
+- [Phase 3] Advisory, non-blocking — session-handshake failures report `attempts=0` and drop the resolved D-12 identity; the generic failure handler persists a raw exception class name as `error_kind`, outside the D-52 taxonomy; the differential cause can over-attribute on an empty `parts` list. Code review 03: 0 Critical / 3 Warning / 5 Info (`/gsd-code-review 03 --fix`).
 - [Phase 3] Security enforcement is enabled but no `03-SECURITY.md` exists — run `/gsd-secure-phase 03` before advancing if the threat model matters here.
-- [Phase 5] Ranking batching (one call per listing vs per K) and budget-cap semantics are unresolved; decide in the plan.
-- [Phase 2] RESOLVED at the end-of-phase UAT (2026-09-17): θ=88 was assessed against the real corpus and retained, and the research 10–15% merge-rate band was judged non-transferable to this market — the blocking key plus the grade guard do the discriminating, which the cross-source-only merge rule then hardened. No longer a blocker for planning.
+- [Phase 5] No real CV fact store exists yet, so a ranking pass takes the documented `fact_store_absent` skip — the ranking path is exercised end-to-end only once a `cv.yaml` is supplied. The skip and the exact loader path are now disclosed on `/settings`, the queue and `/health` (05-10), so this reads as a missing prerequisite, not a silent failure.
+- [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 6 reuses the action-surface pattern.
 
 ## Deferred Items
 
@@ -154,6 +153,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T10:41:02.603Z
-Stopped at: Completed 05-12-PLAN.md
+Last session: 2026-09-24
+Stopped at: Phase 05 complete, ready to plan Phase 6
 Resume file: None
