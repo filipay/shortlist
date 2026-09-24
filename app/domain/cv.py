@@ -47,10 +47,11 @@ Both deviations are reversible behind a ``schema_version`` bump.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
-from collections.abc import Iterable, Iterator
-from typing import Annotated
+from collections.abc import Iterator
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -381,20 +382,65 @@ class RenderPlan(_Forbid):
 
 
 # --- the declared patch types (CV-R4/R5/R6, D-65) -----------------------------
+#
+# ``extra="forbid"`` (pinned A4) deliberately diverges from ``RankingResponse``'s
+# ``extra="ignore"``: ``forbid`` emits ``additionalProperties: false`` into
+# ``model_json_schema()`` and so constrains the model AT THE WIRE — the stronger
+# fabrication-safety posture. A malformed extra key must fail the call (bounded
+# retry), never be silently dropped from a stored contract.
+#
+# NO field on any op becomes text in the PDF. Every field is an enumerated id, a
+# closed enum, a bounded number, or UI/audit-only text (``reason``,
+# ``requirement``, ``rationale``). The renderer consumes only a ``RenderPlan``,
+# whose strings all derive from the fact store.
+
+
+class BulletMove(_Forbid):
+    """Move a bullet within its entry. ``before_id=None`` means first."""
+
+    op: Literal["move_bullet"] = "move_bullet"
+    bullet_id: str
+    #: The bullet it is placed before within the SAME entry, or ``None`` for the
+    #: first position. A ``before_id`` resolving into another entry is an
+    #: ``InvalidPatchError`` (A5, locked): a cross-entry move would silently change
+    #: the facts an entry states.
+    before_id: str | None = None
 
 
 class BulletWeight(_Forbid):
-    """Re-weight a bullet within its entry."""
+    """Re-weight a bullet within its entry. The weight is never printed."""
 
+    op: Literal["reweight_bullet"] = "reweight_bullet"
     bullet_id: str
     weight: Annotated[float, Field(ge=0.0, le=2.0)]
 
 
-class DropBullet(_Forbid):
-    """Drop a bullet. The reason is REQUIRED so a structural drop is loud."""
+class DemoteBullet(_Forbid):
+    """Demote a bullet to the lowest prominence in its entry (D-104).
 
+    ``reason`` is REQUIRED and non-empty (``min_length=1``), so a demotion cannot be
+    recorded without a stated cause. The reason is audit/UI-only and never rendered.
+    """
+
+    op: Literal["demote_bullet"] = "demote_bullet"
     bullet_id: str
-    reason: str
+    reason: Annotated[str, Field(min_length=1)]
+
+
+class DropBullet(_Forbid):
+    """Drop a bullet. The reason is REQUIRED and non-empty so a drop is loud."""
+
+    op: Literal["drop_bullet"] = "drop_bullet"
+    bullet_id: str
+    reason: Annotated[str, Field(min_length=1)]
+
+
+class ReorderSection(_Forbid):
+    """Re-order a section. Ties keep declaration order (mirrors ``ordered_sections``)."""
+
+    op: Literal["reorder_section"] = "reorder_section"
+    section_id: str
+    order: int
 
 
 class Suggestion(_Forbid):
@@ -409,18 +455,66 @@ class Suggestion(_Forbid):
     rationale: str
 
 
-class UnsupportedPatchOp(Exception):
-    """A mutating patch operation this phase deliberately does not implement."""
+class GapFinding(_Forbid):
+    """One requirement the listing states and the CV's honest relationship to it.
+
+    ``requirement`` is UI/audit-only and NEVER reaches a render. ``status`` is a
+    closed enum; a non-``gap`` finding must name the real facts that support it (the
+    structural half of Layer-1 check 6), and a ``gap`` must not.
+    """
+
+    requirement: str
+    status: Literal["direct", "transferable", "adjacent", "gap"] = "gap"
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+#: The patch operation union, discriminated on ``op``. New operations are added by
+#: adding a member here and a branch in ``_build_plan`` — never by widening an
+#: existing member with a field that becomes PDF text.
+PatchOp = Annotated[
+    BulletMove | BulletWeight | DemoteBullet | DropBullet | ReorderSection,
+    Field(discriminator="op"),
+]
+
+
+class TailoringPatch(_Forbid):
+    """The typed tailoring patch: an operation set over enumerated fact IDs.
+
+    Carries NO free-text field that can become PDF text. ``ops`` reorder, re-weight,
+    demote, drop and re-order EXISTING facts; ``gaps`` and ``suggestions`` are
+    UI/audit-only. ``listing_id`` binds the patch to the listing it was generated
+    for. An empty patch (all three lists empty) is valid and is the identity plan.
+    """
+
+    listing_id: int
+    ops: list[PatchOp] = Field(default_factory=list)
+    gaps: list[GapFinding] = Field(default_factory=list)
+    suggestions: list[Suggestion] = Field(default_factory=list)
 
 
 class UnknownIdError(Exception):
     """A patch operation references an ID the fact store does not carry."""
 
 
+class InvalidPatchError(Exception):
+    """A patch is structurally invalid (duplicate target, emptied section, cross-entry move)."""
+
+
 def _referenced_ids(op: object) -> list[str]:
-    """Every fact ID an operation names, whatever its shape."""
+    """Every fact ID an operation names, whatever its shape.
+
+    ``before_id`` is included: it names a bullet and must be grounded exactly like
+    ``bullet_id``. A ``None`` ``before_id`` is skipped (it is not a string).
+    """
     ids: list[str] = []
-    for attribute in ("bullet_id", "section_id", "entry_id", "org_id", "title_id"):
+    for attribute in (
+        "bullet_id",
+        "section_id",
+        "entry_id",
+        "org_id",
+        "title_id",
+        "before_id",
+    ):
         value = getattr(op, attribute, None)
         if isinstance(value, str):
             ids.append(value)
@@ -428,6 +522,43 @@ def _referenced_ids(op: object) -> list[str]:
     if isinstance(evidence_ids, list):
         ids.extend(item for item in evidence_ids if isinstance(item, str))
     return ids
+
+
+def facts_hash(facts: CvFacts) -> str:
+    """The SEMANTIC hash of a fact store: sha256 over its canonical JSON.
+
+    ``hashlib`` is stdlib, so the ``app/domain`` purity contract holds. The hash is
+    semantic because it is taken over the VALIDATED model, not the raw file: a
+    whitespace-only ``cv.yaml`` edit cannot invalidate a patch.
+    """
+    return hashlib.sha256(facts.model_dump_json().encode("utf-8")).hexdigest()
+
+
+class GuardResult(_Forbid):
+    """The optimistic-concurrency guard's outcome — a value, never an exception."""
+
+    ok: bool
+    reason: str | None = None
+
+
+def verify_original_matches(
+    facts: CvFacts,
+    *,
+    captured_hash: str | None,
+    captured_version_id: int | None,
+    current_version_id: int | None,
+) -> GuardResult:
+    """D-109's guard: has the fact store moved since the patch was captured?
+
+    Returns a value that NAMES which check failed rather than raising, so the route
+    can render the stale-patch fragment. The fact-store check runs first: a changed
+    store invalidates the patch regardless of which revision it was captured against.
+    """
+    if facts_hash(facts) != captured_hash:
+        return GuardResult(ok=False, reason="fact_store_changed")
+    if current_version_id != captured_version_id:
+        return GuardResult(ok=False, reason="cv_version_changed")
+    return GuardResult(ok=True)
 
 
 def _identity_plan(facts: CvFacts) -> RenderPlan:
@@ -462,63 +593,258 @@ def _identity_plan(facts: CvFacts) -> RenderPlan:
     )
 
 
-def apply_patch(facts: CvFacts, ops: Iterable[object] = ()) -> RenderPlan:
-    """Project ``facts`` to a :class:`RenderPlan`, applying ``ops``.
+def _patch_is_empty(patch: TailoringPatch) -> bool:
+    """An empty patch is the identity plan — never an error, never an invented change."""
+    return not patch.ops and not patch.gaps and not patch.suggestions
 
-    Every ID an operation names must exist in the fact store. Only *identity* and
-    ordering are implemented today.
 
-    Silently ignoring a drop or a re-weight would be a fabrication path, so each
-    declared mutating operation raises :class:`UnsupportedPatchOp` naming itself.
-    That loud refusal is deliberate: Phase 6 replaces it with a real
-    implementation rather than this plan guessing one.
+def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
+    """All-or-nothing validation (D-106): raise on the FIRST violation, never repair.
+
+    IDs are compared BYTE-EXACT against ``set(iter_fact_ids(facts))`` — no casefold,
+    no Unicode normalisation, no fuzzy ratio. The ASCII slug ids ARE the identity.
     """
-    operations = list(ops) if ops is not None else []
     known_ids = set(iter_fact_ids(facts))
 
-    for op in operations:
+    # 1. Unknown id — every id named by ops, gaps and suggestions.
+    for op in patch.ops:
         for referenced in _referenced_ids(op):
             if referenced not in known_ids:
                 raise UnknownIdError(
                     f"patch operation references unknown id {referenced!r}: {op!r}"
                 )
+    for gap in patch.gaps:
+        for referenced in gap.evidence_ids:
+            if referenced not in known_ids:
+                raise UnknownIdError(
+                    f"gap finding references unknown evidence id {referenced!r}"
+                )
+    for suggestion in patch.suggestions:
+        for referenced in _referenced_ids(suggestion):
+            if referenced not in known_ids:
+                raise UnknownIdError(
+                    f"suggestion references unknown id {referenced!r}: {suggestion!r}"
+                )
 
-    for op in operations:
-        raise UnsupportedPatchOp(
-            f"{type(op).__name__} is declared but not implemented in this phase;"
-            f" a silent no-op would be a fabrication path: {op!r}"
+    # 2. Duplicate target — no bullet_id/section_id named by two mutating ops. A
+    #    reweight + a demote on the same bullet is a conflict, not a silent merge.
+    seen_bullets: set[str] = set()
+    seen_sections: set[str] = set()
+    for op in patch.ops:
+        bullet_id = getattr(op, "bullet_id", None)
+        if isinstance(bullet_id, str):
+            if bullet_id in seen_bullets:
+                raise InvalidPatchError(f"two operations target bullet {bullet_id!r}")
+            seen_bullets.add(bullet_id)
+        section_id = getattr(op, "section_id", None)
+        if isinstance(section_id, str):
+            if section_id in seen_sections:
+                raise InvalidPatchError(f"two operations target section {section_id!r}")
+            seen_sections.add(section_id)
+
+    # 3. Cross-entry move (A5, locked): a move_bullet whose before_id resolves into a
+    #    different entry than its bullet_id is rejected rather than re-ordered.
+    entry_of_bullet = {
+        bullet.id: entry.id
+        for entry in facts.all_entries()
+        for bullet in entry.bullets
+    }
+    for op in patch.ops:
+        if isinstance(op, BulletMove) and op.before_id is not None:
+            source = entry_of_bullet.get(op.bullet_id)
+            destination = entry_of_bullet.get(op.before_id)
+            if source is not None and destination is not None and source != destination:
+                raise InvalidPatchError(
+                    f"move_bullet {op.bullet_id!r} before {op.before_id!r} crosses "
+                    f"entries ({source!r} != {destination!r})"
+                )
+
+    # 4. A drop/demote without a reason is IMPOSSIBLE by type (`min_length=1`), so the
+    #    invariant is asserted here rather than re-checked.
+    # 5. A section losing all its entries is checked against the BUILT plan below.
+    #    Dropping an entry is not a supported op, so it can only fire via a future
+    #    op — the guard is kept so the invariant is enforced where it is decided.
+
+
+def _ordered_bullets(
+    entry: Entry,
+    *,
+    weights: dict[str, float],
+    demoted: set[str],
+    dropped: set[str],
+    moves: list[tuple[str, str | None]],
+) -> list[Bullet]:
+    """The bullets of one entry, dropped-filtered and ordered (D-103/D-104).
+
+    Every returned ``Bullet`` is a carried-through source object: this never rebuilds
+    ``Bullet.text``, it only re-sequences.
+    """
+    survivors = [bullet for bullet in entry.bullets if bullet.id not in dropped]
+    # Base within-entry order: declaration order, stable-sorted by reweight weight
+    # DESCENDING. A bullet with no reweight keeps the neutral default 1.0 (the same
+    # default `Skill.weight` uses), so an unreweighted bullet sits between one
+    # reweighted up and one reweighted down; ties keep declaration order.
+    ordered = sorted(survivors, key=lambda bullet: weights.get(bullet.id, 1.0), reverse=True)
+
+    # Demote (D-104): every demoted bullet falls after every non-demoted bullet of
+    # its OWN entry, and the demoted bullets keep DECLARATION order among themselves.
+    if demoted:
+        promoted = [bullet for bullet in ordered if bullet.id not in demoted]
+        tail = [
+            bullet
+            for bullet in entry.bullets
+            if bullet.id in demoted and bullet.id not in dropped
+        ]
+        ordered = promoted + tail
+
+    # Moves are the explicit positional override, applied AFTER base ordering, in
+    # patch order. A move for a bullet in another entry is skipped here (validation
+    # already rejected a cross-entry destination).
+    for bullet_id, before_id in moves:
+        if before_id == bullet_id:
+            continue  # a move before itself is a no-op
+        moving = next((bullet for bullet in ordered if bullet.id == bullet_id), None)
+        if moving is None:
+            continue
+        ordered = [bullet for bullet in ordered if bullet.id != bullet_id]
+        if before_id is None:
+            ordered.insert(0, moving)
+        else:
+            index = next(
+                (i for i, bullet in enumerate(ordered) if bullet.id == before_id),
+                len(ordered),
+            )
+            ordered.insert(index, moving)
+    return ordered
+
+
+def _change_for(op: PatchOp) -> ChangeRecord:
+    """One ChangeRecord per applied op — the change log D-108/TAIL-08 persists.
+
+    ``detail`` carries the model's reason for a drop/demote, the weight for a
+    reweight, the destination for a move and the new order for a section reorder.
+    It is audit/UI-only and is never rendered.
+    """
+    if isinstance(op, (DropBullet, DemoteBullet)):
+        return ChangeRecord(op=op.op, target_id=op.bullet_id, detail=op.reason)
+    if isinstance(op, BulletWeight):
+        return ChangeRecord(op=op.op, target_id=op.bullet_id, detail=f"{op.weight}")
+    if isinstance(op, BulletMove):
+        return ChangeRecord(op=op.op, target_id=op.bullet_id, detail=op.before_id or "first")
+    return ChangeRecord(op=op.op, target_id=op.section_id, detail=str(op.order))
+
+
+def _build_plan(facts: CvFacts, patch: TailoringPatch) -> RenderPlan:
+    """Project ``facts`` through the validated ``patch``. Pure and deterministic."""
+    weights = {op.bullet_id: op.weight for op in patch.ops if isinstance(op, BulletWeight)}
+    demoted = {op.bullet_id for op in patch.ops if isinstance(op, DemoteBullet)}
+    dropped = {op.bullet_id for op in patch.ops if isinstance(op, DropBullet)}
+    moves = [
+        (op.bullet_id, op.before_id) for op in patch.ops if isinstance(op, BulletMove)
+    ]
+    section_orders = {
+        op.section_id: op.order for op in patch.ops if isinstance(op, ReorderSection)
+    }
+
+    org_names = {org.id: org.name for org in facts.orgs}
+    title_names = {title.id: title.name for title in facts.titles}
+
+    # Sections stable-sorted by the effective order (a reorder overrides the stored
+    # order); declaration order is the tie-break, mirroring `CvFacts.ordered_sections`.
+    sections: list[RenderedSection] = []
+    for section in sorted(
+        facts.sections, key=lambda item: section_orders.get(item.id, item.order)
+    ):
+        entries = [
+            RenderedEntry(
+                id=entry.id,
+                org=org_names.get(entry.org_id, entry.org_id),
+                title=title_names.get(entry.title_id, entry.title_id),
+                dates=entry.date_range_label,
+                location=entry.location,
+                bullets=_ordered_bullets(
+                    entry,
+                    weights=weights,
+                    demoted=demoted,
+                    dropped=dropped,
+                    moves=moves,
+                ),
+            )
+            for entry in section.entries
+        ]
+        if section.entries and not entries:  # pragma: no cover — see _validate_patch
+            raise InvalidPatchError(f"section {section.id!r} lost all its entries")
+        sections.append(
+            RenderedSection(
+                id=section.id,
+                title=section.resolved_title,
+                entries=entries,
+                skills=list(section.skills),
+            )
         )
 
-    return _identity_plan(facts)
+    contact = facts.meta.contact
+    return RenderPlan(
+        sections=sections,
+        changes=[_change_for(op) for op in patch.ops],
+        name=facts.meta.name,
+        contact_email=contact.email if contact else None,
+        contact_links=list(contact.links) if contact else [],
+    )
+
+
+def apply_patch(facts: CvFacts, patch: TailoringPatch | None = None) -> RenderPlan:
+    """Project ``facts`` to a :class:`RenderPlan`, applying the typed ``patch``.
+
+    ``patch=None`` (and an empty patch) returns the identity plan with an empty
+    ``changes`` list, so the shipped no-argument callers keep their exact behaviour.
+
+    Every ID the patch names must exist in the fact store, every validation is
+    all-or-nothing (D-106), and every emitted ``Bullet`` is a carried-through source
+    object: ``Bullet.text`` is never rebuilt.
+    """
+    if patch is None or _patch_is_empty(patch):
+        return _identity_plan(facts)
+    _validate_patch(facts, patch)
+    return _build_plan(facts, patch)
 
 
 __all__ = [
     "SECTION_TITLES",
     "SCHEMA_VERSION",
     "Bullet",
+    "BulletMove",
     "BulletWeight",
     "ChangeRecord",
     "Contact",
     "CvFacts",
+    "DemoteBullet",
     "DropBullet",
     "Entry",
     "Gap",
+    "GapFinding",
+    "GuardResult",
+    "InvalidPatchError",
     "Meta",
     "Org",
+    "PatchOp",
     "RenderPlan",
     "RenderedEntry",
     "RenderedSection",
+    "ReorderSection",
     "Section",
     "Skill",
     "Suggestion",
+    "TailoringPatch",
     "Title",
     "UnknownIdError",
-    "UnsupportedPatchOp",
     "apply_patch",
     "derive_bullet_id",
     "derive_entry_id",
+    "facts_hash",
     "find_duplicate_ids",
     "iter_fact_ids",
     "qualify_entry_ids",
     "slugify",
+    "verify_original_matches",
 ]

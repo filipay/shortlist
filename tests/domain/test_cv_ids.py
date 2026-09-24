@@ -14,8 +14,8 @@ from app.domain.cv import (
     CvFacts,
     DropBullet,
     Suggestion,
+    TailoringPatch,
     UnknownIdError,
-    UnsupportedPatchOp,
     apply_patch,
     derive_bullet_id,
     derive_entry_id,
@@ -182,7 +182,7 @@ def test_an_unknown_section_title_key_is_rejected_naming_the_key() -> None:
     assert "sec.unmapped" in str(excinfo.value)
 
 
-# --- Test 15: apply_patch is identity-or-refusal ------------------------------
+# --- Test 15: apply_patch is identity for no ops, real for the five ops -------
 
 
 def test_apply_patch_with_no_operations_is_an_exact_identity() -> None:
@@ -202,27 +202,70 @@ def test_apply_patch_with_no_operations_is_an_exact_identity() -> None:
     assert plan.changes == []
 
 
-def test_each_mutating_operation_raises_rather_than_being_ignored() -> None:
+def test_an_empty_patch_is_the_identity_plan_with_no_changes() -> None:
     facts = _facts()
 
-    with pytest.raises(UnsupportedPatchOp):
-        apply_patch(facts, [BulletWeight(bullet_id="bul/northwind-labs-2021/1", weight=1.5)])
-    with pytest.raises(UnsupportedPatchOp):
-        apply_patch(
-            facts, [DropBullet(bullet_id="bul/northwind-labs-2021/1", reason="irrelevant")]
-        )
-    with pytest.raises(UnsupportedPatchOp):
-        apply_patch(
-            facts,
-            [Suggestion(bullet_id="bul/northwind-labs-2021/1", rationale="try this")],
-        )
+    plan = apply_patch(facts, TailoringPatch(listing_id=7))
+
+    assert plan == apply_patch(facts)
+    assert plan.changes == []
+
+
+def test_real_mutating_operations_are_applied_rather_than_refused() -> None:
+    """The stub's UnsupportedPatchOp is gone: the five ops are implemented."""
+    facts = _facts()
+    patch = TailoringPatch(
+        listing_id=1,
+        ops=[
+            BulletWeight(
+                op="reweight_bullet", bullet_id="bul/northwind-labs-2021/1", weight=0.5
+            ),
+            DropBullet(
+                op="drop_bullet",
+                bullet_id="bul/northwind-labs-2021/2",
+                reason="irrelevant",
+            ),
+        ],
+    )
+
+    plan = apply_patch(facts, patch)
+
+    assert [bullet.text for bullet in plan.sections[0].entries[0].bullets] == [
+        "Led the migration"
+    ]
+    assert [change.op for change in plan.changes] == ["reweight_bullet", "drop_bullet"]
+
+
+def test_a_suggestion_is_validated_but_never_applied() -> None:
+    """A Suggestion rides in the patch but is kept off the road to the PDF."""
+    facts = _facts()
+    patch = TailoringPatch(
+        listing_id=1,
+        suggestions=[
+            Suggestion(bullet_id="bul/northwind-labs-2021/1", rationale="try this")
+        ],
+    )
+
+    assert apply_patch(facts, patch) == apply_patch(facts)
 
 
 def test_an_operation_referencing_an_unknown_id_raises() -> None:
     facts = _facts()
 
     with pytest.raises(UnknownIdError):
-        apply_patch(facts, [BulletWeight(bullet_id="bul/does-not-exist/1", weight=1.0)])
+        apply_patch(
+            facts,
+            TailoringPatch(
+                listing_id=1,
+                ops=[
+                    BulletWeight(
+                        op="reweight_bullet",
+                        bullet_id="bul/does-not-exist/1",
+                        weight=1.0,
+                    )
+                ],
+            ),
+        )
 
 
 # --- Test 16: the entries|skills alternation ----------------------------------
