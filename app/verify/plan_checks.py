@@ -16,15 +16,18 @@ The five checks (D-112) are:
    no start or end is in the future.
 5. ``requirement_evidence`` — the STRUCTURAL half of check 6 only: every non-``gap``
    ``GapFinding`` names at least one resolvable evidence id, and every ``gap`` names
-   none. No similarity ratio lives here — a fuzzy threshold must never be
-   load-bearing on a block decision (the same rule D-70 sets). The advisory
-   similarity band is 06-02's ``app/verify/grounding.py``.
+   none. The FAIL predicate is structural and unchanged by the advisory band: a
+   similarity ratio must never be load-bearing on a block decision (the rule D-70
+   sets). The band is attached to a passing result's ``detail`` (via
+   ``app/verify/grounding.py``) for the UI's per-requirement confidence label; it
+   never changes ``passed``.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
+from app.config import settings
 from app.domain.cv import (
     SECTION_TITLES,
     CvFacts,
@@ -34,6 +37,7 @@ from app.domain.cv import (
     iter_fact_ids,
 )
 from app.verify.base import CheckResult, VerificationResult
+from app.verify.grounding import band_for, evidence_text_for
 
 #: The month form an entry's ``start``/``end`` uses (``"YYYY-MM"``), which also makes
 #: a plain lexicographic comparison a chronological one.
@@ -147,17 +151,47 @@ def check_temporal_consistency(
     return _pass("temporal_consistency", "every entry's date range is consistent")
 
 
-def check_requirement_evidence(facts: CvFacts, patch: TailoringPatch) -> CheckResult:
-    """The structural half of check 6 (no similarity ratio)."""
+def check_requirement_evidence(
+    facts: CvFacts,
+    patch: TailoringPatch,
+    *,
+    grounded_at: int | None = None,
+    review_at: int | None = None,
+) -> CheckResult:
+    """The structural half of check 6, with the ADVISORY band attached (A1).
+
+    The fail predicate is exactly ``06-01``'s: a non-``gap`` finding with no resolvable
+    evidence, or a ``gap`` with resolvable evidence. The band is computed ONLY for a
+    non-``gap`` finding that already passes structurally and is emitted on a passing
+    ``detail`` as a machine-readable label. It cannot flip ``passed``.
+    """
     known = set(iter_fact_ids(facts))
     offending: list[str] = []
+    bands: list[str] = []
     for index, finding in enumerate(patch.gaps):
         resolvable = [item for item in finding.evidence_ids if item in known]
-        if finding.status != "gap" and not resolvable:
-            # Index, never the requirement text: verification_json is persisted and
-            # must not carry listing prose (T-06-07).
-            offending.append(f"gap[{index}]")
-        if finding.status == "gap" and resolvable:
+        if finding.status != "gap":
+            if not resolvable:
+                # Index, never the requirement text: verification_json is persisted
+                # and must not carry listing prose (T-06-07).
+                offending.append(f"gap[{index}]")
+                continue
+            band = band_for(
+                finding.requirement,
+                evidence_text_for(facts, finding),
+                grounded_at=(
+                    settings.tailoring_grounding_threshold
+                    if grounded_at is None
+                    else grounded_at
+                ),
+                review_at=(
+                    settings.tailoring_grounding_review_threshold
+                    if review_at is None
+                    else review_at
+                ),
+            )
+            bands.append(f"gap[{index}]:{band}")
+        elif resolvable:
             offending.append(f"gap[{index}]")
     if offending:
         return _fail(
@@ -165,7 +199,11 @@ def check_requirement_evidence(facts: CvFacts, patch: TailoringPatch) -> CheckRe
             f"{len(offending)} finding(s) have evidence inconsistent with their status",
             offending,
         )
-    return _pass("requirement_evidence", "requirement evidence is consistent with status")
+    detail = "requirement evidence is consistent with status"
+    if bands:
+        # The band LABEL only — never the requirement or the evidence text.
+        detail = f"{detail}; bands: {', '.join(bands)}"
+    return _pass("requirement_evidence", detail)
 
 
 def verify_plan(

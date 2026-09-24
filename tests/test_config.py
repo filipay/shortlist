@@ -82,6 +82,11 @@ REQUIRED_SETTINGS_FIELDS = (
     # Phase 6 (D-119): the tailoring operator off switch. Like `ranking_enabled` it
     # is a switch, not a ceiling, so it is guarded by the surface tier only.
     "tailoring_enabled",
+    # Phase 6 (A1): the advisory grounding band for verification check 6. Both are
+    # distinctive integers and both are also covered by LIMIT_FIELDS, so the absence
+    # scan over `app/verify` catches a hard-coded threshold there.
+    "tailoring_grounding_threshold",
+    "tailoring_grounding_review_threshold",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -124,6 +129,11 @@ LIMIT_FIELDS = (
     # default for every field in this tuple.
     "ranking_max_calls_per_run",
     "ranking_max_calls_per_day",
+    # Phase 6 (A1): the two advisory grounding-band thresholds. Distinctive integers
+    # above DISTINCTIVE_THRESHOLD_FLOOR, so listing them here is what makes the
+    # absence scan cover `app/verify` (A7).
+    "tailoring_grounding_threshold",
+    "tailoring_grounding_review_threshold",
 )
 
 #: The Phase-4 ceilings (PLAT-04 applied to the LaTeX lane), listed explicitly so a
@@ -157,6 +167,18 @@ PHASE_FIVE_CEILINGS = (
     "ranking_max_calls_per_day",
 )
 
+#: The Phase-6 ceilings (A1 / PLAT-04 applied to the advisory grounding band). Both
+#: are distinctive integers and both appear in the surface guard and LIMIT_FIELDS.
+#: They are ADVISORY thresholds, but they are still operator-tunable numeric knobs,
+#: so they belong in the same guards as every other ceiling. `tailoring_enabled` is
+#: deliberately NOT one of them: it is a switch, not a ceiling. `ranking_max_calls_per_day`
+#: is deliberately NOT one either: tailoring shares the Phase-5 rolling-24h value
+#: rather than minting a second ceiling (O1).
+PHASE_SIX_CEILINGS = (
+    "tailoring_grounding_threshold",
+    "tailoring_grounding_review_threshold",
+)
+
 #: The Phase-3 ceilings (PLAT-04 applied to PLAT-02), listed explicitly so a future
 #: edit that drops one from either guard below fails loudly rather than silently
 #: un-covering it.
@@ -184,7 +206,7 @@ DISTINCTIVE_THRESHOLD_FLOOR = 3
 #: Directories the absence check scans. `app/probe` arrives in plan 01-06;
 #: `app/latex` and `app/cv` arrive in plan 04-02/04-03 (PLAT-04 widened to the
 #: LaTeX lane, so a hard-coded engine ceiling there is caught too).
-SCANNED_DIRS = ("app/probe", "app/pipeline", "app/latex", "app/cv")
+SCANNED_DIRS = ("app/probe", "app/pipeline", "app/latex", "app/cv", "app/verify")
 
 
 # --- 1. surface ---------------------------------------------------------------
@@ -267,6 +289,45 @@ def test_the_phase_five_ceilings_are_environment_tunable(
 
     assert refreshed.ranking_max_calls_per_run == 7
     assert refreshed.ranking_max_calls_per_day == 70
+
+
+def test_the_phase_six_ceilings_are_guarded() -> None:
+    """Every Phase-6 ceiling must be asserted by BOTH guards (A1 / PLAT-04)."""
+    for field in PHASE_SIX_CEILINGS:
+        assert field in REQUIRED_SETTINGS_FIELDS, (
+            f"{field} is a Phase-6 ceiling but REQUIRED_SETTINGS_FIELDS omits it"
+        )
+        assert field in LIMIT_FIELDS, (
+            f"{field} is a distinctive numeric ceiling but LIMIT_FIELDS does not "
+            "cover it"
+        )
+    # The written-down asymmetry: D-119's off switch is not a ceiling.
+    assert "tailoring_enabled" not in LIMIT_FIELDS, (
+        "tailoring_enabled joined LIMIT_FIELDS — its boolean default would fail "
+        "test_every_limit_field_is_a_required_numeric_ceiling"
+    )
+    # Tailoring shares the Phase-5 rolling-24h ceiling rather than minting a second
+    # one (O1), so the Phase-6 ceilings are the advisory band only.
+    assert "ranking_max_calls_per_day" not in PHASE_SIX_CEILINGS, (
+        "ranking_max_calls_per_day joined PHASE_SIX_CEILINGS — tailoring reuses the "
+        "Phase-5 ceiling (O1); the Phase-6 band is not a spend ceiling"
+    )
+
+
+def test_the_phase_six_ceilings_are_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config threshold no test can override is only half a config threshold."""
+    assert Settings.model_fields["tailoring_grounding_threshold"].default == 80
+    assert Settings.model_fields["tailoring_grounding_review_threshold"].default == 55
+
+    monkeypatch.setenv("TAILORING_GROUNDING_THRESHOLD", "90")
+    monkeypatch.setenv("TAILORING_GROUNDING_REVIEW_THRESHOLD", "45")
+
+    refreshed = Settings()
+
+    assert refreshed.tailoring_grounding_threshold == 90
+    assert refreshed.tailoring_grounding_review_threshold == 45
 
 
 def test_ranking_enabled_is_environment_tunable(

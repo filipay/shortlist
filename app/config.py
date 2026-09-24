@@ -199,6 +199,16 @@ class Settings(BaseSettings):
     #: ceiling and NO new numeric ceiling (O1, pinned): an interactive tailor has no
     #: run, so the rolling-24h `ranking_max_calls_per_day` value is shared.
     tailoring_enabled: bool = True
+    #: The advisory grounding band for verification check 6 (A1). These are the
+    #: `rapidfuzz.fuzz.token_set_ratio` boundaries that label a resolvable-but-weak
+    #: requirement citation: `grounded` at/above the threshold, `borderline` between
+    #: the two, `ungrounded` below. UNCALIBRATED against a real CV/listing corpus —
+    #: they are ADVISORY only and never flip `VerificationResult.passed` (a fuzzy
+    #: threshold on a block is a false-positive machine, D-70). They are Settings so
+    #: calibration is a config change (PLAT-04), and they are deliberately NOT
+    #: presented as measured.
+    tailoring_grounding_threshold: int = 80
+    tailoring_grounding_review_threshold: int = 55
 
 
 settings = Settings()

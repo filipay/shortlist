@@ -9,7 +9,7 @@ caller, so the default lane stays clock-free.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.cv.factstore import load_facts
@@ -30,6 +30,9 @@ class VerifyFixture:
     text: str
     page_count: int
     expected: bool
+    #: Per-requirement grounding expectations (A1's advisory band): requirement text
+    #: -> the band the fixture expects. Empty unless the case exercises check 6.
+    bands: dict[str, str] = field(default_factory=dict)
 
 
 def load_standin_facts() -> CvFacts:
@@ -42,6 +45,7 @@ def build_fixture(
     extract_name: str = "base_extract.txt",
     page_count: int = 1,
     expected: bool = True,
+    bands: dict[str, str] | None = None,
 ) -> VerifyFixture:
     facts = load_standin_facts()
     resolved = patch or TailoringPatch(listing_id=1)
@@ -54,6 +58,7 @@ def build_fixture(
         text=text,
         page_count=page_count,
         expected=expected,
+        bands=dict(bands) if bands else {},
     )
 
 

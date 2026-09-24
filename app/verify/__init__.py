@@ -13,6 +13,7 @@ from app.verify.base import (
     CheckStatus,
     VerificationResult,
 )
+from app.verify.grounding import GroundingBand, band_for, evidence_text_for
 from app.verify.numbers import (
     RegionReport,
     date_like_cores_for_entry,
@@ -27,10 +28,13 @@ __all__ = [
     "VERIFIER_VERSION",
     "CheckResult",
     "CheckStatus",
+    "GroundingBand",
     "RegionReport",
     "VerificationResult",
+    "band_for",
     "date_like_cores_for_entry",
     "digit_cores",
+    "evidence_text_for",
     "is_page_number_line",
     "region_token_report",
     "verify_plan",
