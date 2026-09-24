@@ -602,24 +602,28 @@ def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
     """All-or-nothing validation (D-106): raise on the FIRST violation, never repair.
 
     IDs are compared BYTE-EXACT against the grounding set of the op's own family — a
-    bullet-targeting op resolves against the bullet-id set, a gap/suggestion
-    reference against the full fact-id set. No casefold, no Unicode normalisation,
-    no fuzzy ratio. The ASCII slug ids ARE the identity. Grounding a bullet op
-    against the full fact-id set would let a skill/section/entry/org/title/gap id
-    validate, no-op in ``_build_plan`` and still emit a ``ChangeRecord`` — the
-    phantom change WR-02.
+    bullet-targeting op resolves against the bullet-id set, a section-targeting op
+    against the section-id set, a gap/suggestion reference against the full fact-id
+    set. No casefold, no Unicode normalisation, no fuzzy ratio. The ASCII slug ids
+    ARE the identity. Grounding a bullet op against the full fact-id set would let a
+    skill/section/entry/org/title/gap id validate, no-op in ``_build_plan`` and still
+    emit a ``ChangeRecord`` — the phantom change WR-02.
     """
     known_ids = set(iter_fact_ids(facts))
     #: A bullet-targeting op must resolve against the bullet-id set, not the full
     #: fact-id set (WR-02).
     bullet_ids = {bullet.id for entry in facts.all_entries() for bullet in entry.bullets}
+    #: A section-targeting op must resolve against the section-id set (WR-02).
+    section_ids = {section.id for section in facts.sections}
 
     # 1. Unknown id — per op family, against that family's own id set. A bullet op
-    #    must not be satisfied by an id of another kind.
+    #    or a section op must not be satisfied by an id of another kind.
     for op in patch.ops:
         if isinstance(op, (BulletMove, BulletWeight, DemoteBullet, DropBullet)):
             grounding = bullet_ids
-        else:
+        elif isinstance(op, ReorderSection):
+            grounding = section_ids
+        else:  # pragma: no cover — every PatchOp member is covered above
             grounding = known_ids
         for referenced in sorted(set(_referenced_ids(op))):
             if referenced not in grounding:

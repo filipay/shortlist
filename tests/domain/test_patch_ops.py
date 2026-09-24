@@ -230,6 +230,74 @@ def test_reorder_section_moves_the_section_and_records_the_new_order() -> None:
     assert change.detail == "5"
 
 
+def test_a_reorder_section_on_a_non_section_id_raises() -> None:
+    """WR-02: a section op must resolve its section_id against the SECTION-id set only."""
+    facts = _facts()
+
+    with pytest.raises(UnknownIdError):
+        apply_patch(
+            facts,
+            _patch(
+                ReorderSection(
+                    op="reorder_section", section_id="bul/acme-ltd-2021/1", order=5
+                )
+            ),
+        )
+
+
+def test_every_change_record_describes_an_effect_at_the_right_locus() -> None:
+    """TAIL-08: every change-log entry names a real fact at its op family's own locus.
+
+    Per-op-locus, NOT "every record changed the output": a valid-id no-op (a move
+    before itself, a reweight to the current weight) legitimately still records. The
+    property pinned here is that a record's target is a real source fact of that op
+    family's kind — and, for a drop, one the built plan no longer carries.
+    """
+    facts = _facts()
+    patch = _patch(
+        BulletWeight(op="reweight_bullet", bullet_id="bul/acme-ltd-2021/2", weight=2.0),
+        DemoteBullet(op="demote_bullet", bullet_id="bul/acme-ltd-2021/3", reason="r"),
+        DropBullet(op="drop_bullet", bullet_id="bul/acme-ltd-2020/1", reason="r"),
+        BulletMove(op="move_bullet", bullet_id="bul/acme-ltd-2021/1"),
+        ReorderSection(op="reorder_section", section_id="sec.skills", order=5),
+    )
+
+    plan = apply_patch(facts, patch)
+
+    source_bullet_ids = {
+        bullet.id for entry in facts.all_entries() for bullet in entry.bullets
+    }
+    plan_bullet_ids = {
+        bullet.id
+        for section in plan.sections
+        for entry in section.entries
+        for bullet in entry.bullets
+    }
+    plan_section_ids = {section.id for section in plan.sections}
+
+    # Each op produced its record (asserted by content, not by a structural count).
+    assert {change.target_id for change in plan.changes} == {
+        "bul/acme-ltd-2021/2",
+        "bul/acme-ltd-2021/3",
+        "bul/acme-ltd-2020/1",
+        "bul/acme-ltd-2021/1",
+        "sec.skills",
+    }
+
+    for change in plan.changes:
+        if change.op == "drop_bullet":
+            # A drop names a source bullet the built plan no longer carries — the
+            # assertion a phantom drop (a non-source id) would violate.
+            assert change.target_id in source_bullet_ids
+            assert change.target_id not in plan_bullet_ids
+        elif change.op in {"reweight_bullet", "demote_bullet", "move_bullet"}:
+            assert change.target_id in plan_bullet_ids
+        elif change.op == "reorder_section":
+            assert change.target_id in plan_section_ids
+        else:  # pragma: no cover
+            raise AssertionError(f"unexpected op {change.op!r}")
+
+
 # --- D-106: all-or-nothing validation ------------------------------------------
 
 
