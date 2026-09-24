@@ -312,3 +312,34 @@ async def test_the_swapped_row_keeps_the_active_filter_set_on_its_action_url(
     assert 'class="listing-exclusion"' in response.text, (
         "the exclusion column must survive the swap under ?excluded=1"
     )
+
+
+# --- surfaces (G-05-8) ----------------------------------------------------------
+
+
+async def test_a_detail_surface_save_swaps_the_detail_actions_fragment(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """A detail-originated action returns the detail section, not the queue row.
+
+    The detail page renders `#detail-actions`, not `#listing-row-{id}`, so the response
+    must be the section the page can actually swap — and the origin must be recorded as
+    the allow-listed machine fact `surface="detail"`.
+    """
+    listing_id = await _seed(session_factory)
+
+    response = await client.post(
+        f"/listings/{listing_id}/events",
+        data={"event_type": "save", "surface": "detail"},
+    )
+
+    assert response.status_code == 200
+    assert '<section id="detail-actions"' in response.text
+    assert "Unsave" in response.text, "the control now offers the inverse action"
+    assert f'id="listing-row-{listing_id}"' not in response.text, (
+        "a detail swap must not return a queue-row element the detail page cannot target"
+    )
+
+    events = await _events(session_factory, listing_id)
+    assert [event.event_type for event in events] == ["save"]
+    assert events[0].context_json == {"surface": "detail"}

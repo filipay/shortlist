@@ -65,29 +65,12 @@
   <td class="listing-actions">
     {# The queue's current predicate set rides on the action URL so the swapped row keeps
        the exclusion column the user is looking at. `event_type` is the whole request body;
-       `occurred_at` is server-side and cannot be supplied here. #}
+       `occurred_at` is server-side and cannot be supplied here. The two controls come from
+       the ONE shared `_action_forms.html` (surface `queue`), so this row and the detail
+       action section cannot drift. #}
     {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
-    <form class="listing-action listing-action-save"
-          hx-post="{{ action_url }}"
-          hx-target="#listing-row-{{ row.id }}"
-          hx-swap="outerHTML">
-      <input type="hidden" name="event_type" value="{{ 'unsave' if row.saved else 'save' }}">
-      <button type="submit"
-              id="listing-save-{{ row.id }}"
-              class="listing-save-button{% if row.saved %} is-on{% endif %}">
-        {% if row.saved %}Unsave{% else %}Save{% endif %}
-      </button>
-    </form>
-    <form class="listing-action listing-action-hide"
-          hx-post="{{ action_url }}"
-          hx-target="#listing-row-{{ row.id }}"
-          hx-swap="outerHTML">
-      <input type="hidden" name="event_type" value="{{ 'unhide' if row.hidden else 'hide' }}">
-      <button type="submit"
-              id="listing-hide-{{ row.id }}"
-              class="listing-hide-button{% if row.hidden %} is-on{% endif %}">
-        {% if row.hidden %}Unhide{% else %}Hide{% endif %}
-      </button>
-    </form>
+    {% set target_id = "listing-row-" ~ row.id %}
+    {% set surface = "queue" %}
+    {% include "html/_action_forms.html" %}
   </td>
 </tr>

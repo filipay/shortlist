@@ -1,0 +1,42 @@
+{# The ONE definition of the Save/Hide controls (G-05-8).
+
+   Included by BOTH surfaces:
+
+   * `_listing_row.html` (the queue row) — target `listing-row-{id}`, surface `queue`;
+   * `_detail_actions.html` (the job detail section) — target `detail-actions`, surface
+     `detail`.
+
+   The detail page used to copy the queue row's two forms verbatim, including an htmx
+   target (`#listing-row-{id}`) that only the queue renders, so htmx raised
+   `htmx:targetError` and the click looked like a silent no-op. Sharing this one
+   definition makes that specific target/field/label drift structurally impossible.
+
+   The includer sets four variables: `row`, `action_url`, `target_id` and `surface`. The
+   `surface` value is an allow-listed machine fact the events route reads to pick the
+   returned fragment and to record the action's origin; it never influences hide/save
+   semantics. Jinja autoescape is the only escaping in play: every rendered value is
+   untrusted listing-derived text or a route-supplied literal, and nothing is marked safe. #}
+<form class="listing-action listing-action-save"
+      hx-post="{{ action_url }}"
+      hx-target="#{{ target_id }}"
+      hx-swap="outerHTML">
+  <input type="hidden" name="event_type" value="{{ 'unsave' if row.saved else 'save' }}">
+  <input type="hidden" name="surface" value="{{ surface }}">
+  <button type="submit"
+          id="listing-save-{{ row.id }}"
+          class="listing-save-button{% if row.saved %} is-on{% endif %}">
+    {% if row.saved %}Unsave{% else %}Save{% endif %}
+  </button>
+</form>
+<form class="listing-action listing-action-hide"
+      hx-post="{{ action_url }}"
+      hx-target="#{{ target_id }}"
+      hx-swap="outerHTML">
+  <input type="hidden" name="event_type" value="{{ 'unhide' if row.hidden else 'hide' }}">
+  <input type="hidden" name="surface" value="{{ surface }}">
+  <button type="submit"
+          id="listing-hide-{{ row.id }}"
+          class="listing-hide-button{% if row.hidden %} is-on{% endif %}">
+    {% if row.hidden %}Unhide{% else %}Hide{% endif %}
+  </button>
+</form>

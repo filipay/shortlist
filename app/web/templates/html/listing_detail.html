@@ -17,7 +17,12 @@
    G-05-2) — running / skipped (+ reason) / nothing-to-rank / not-this-listing / not
    completed — under the retained not-yet-ranked heading. The fact-store skip also
    names the exact path the loader reads. All of it is precomputed in the route: the
-   template never branches on a reason string and adds no polling, JS or `|safe`. #}
+   template never branches on a reason string and adds no polling, JS or `|safe`.
+
+   The action section is the deliberate inline-swap posture (G-05-8): its controls target
+   `#detail-actions` and re-render in place through the same endpoint the queue uses, so
+   no manual reload is needed. The controls come from the shared `_action_forms.html`, so
+   the queue row and this page cannot drift apart. #}
 
 {% block title %}{{ row.title }} — Job Search Copilot{% endblock %}
 
@@ -91,34 +96,5 @@
 </section>
 {% endif %}
 
-<section id="detail-actions">
-  <h3>Track this job</h3>
-  {# The exact two-form block the queue row uses, so both surfaces post the same event
-     types to the same append-only endpoint (T-05-16). The htmx swap target is the queue
-     row's id, which lives on the queue page; here the POST still appends the event and
-     the page reflects the new state on reload (Phase 5's documented posture, D-88). #}
-  {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
-  <form class="listing-action listing-action-save"
-        hx-post="{{ action_url }}"
-        hx-target="#listing-row-{{ row.id }}"
-        hx-swap="outerHTML">
-    <input type="hidden" name="event_type" value="{{ 'unsave' if row.saved else 'save' }}">
-    <button type="submit"
-            id="listing-save-{{ row.id }}"
-            class="listing-save-button{% if row.saved %} is-on{% endif %}">
-      {% if row.saved %}Unsave{% else %}Save{% endif %}
-    </button>
-  </form>
-  <form class="listing-action listing-action-hide"
-        hx-post="{{ action_url }}"
-        hx-target="#listing-row-{{ row.id }}"
-        hx-swap="outerHTML">
-    <input type="hidden" name="event_type" value="{{ 'unhide' if row.hidden else 'hide' }}">
-    <button type="submit"
-            id="listing-hide-{{ row.id }}"
-            class="listing-hide-button{% if row.hidden %} is-on{% endif %}">
-      {% if row.hidden %}Unhide{% else %}Hide{% endif %}
-    </button>
-  </form>
-</section>
+{% include "html/_detail_actions.html" %}
 {% endblock %}

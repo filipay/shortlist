@@ -63,10 +63,11 @@ LIST_TEMPLATE = "html/queue_list.html"
 _DISMISS_LIMIT = 10_000
 
 #: Which surface a bulk dismissal came from — a small MACHINE fact, never listing
-#: text (mirrors `app.api.events.ACTION_CONTEXT`, which tags a per-listing hide as
-#: `surface="queue"`). This is what keeps the two kinds of hide distinguishable in
-#: the append-only audit log even though both append the same event KIND. Frozen so a
-#: write path can never mutate the shared constant (`append_event` copies it anyway).
+#: text. A per-listing action records its own allow-listed surface in
+#: `app.api.events` (a queue action records `surface="queue"`); this is what keeps the
+#: two kinds of hide distinguishable in the append-only audit log even though both
+#: append the same event KIND. Frozen so a write path can never mutate the shared
+#: constant (`append_event` copies it anyway).
 _DISMISS_CONTEXT: Mapping[str, str] = MappingProxyType({"surface": "queue_dismiss"})
 
 

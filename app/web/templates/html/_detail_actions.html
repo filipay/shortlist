@@ -1,0 +1,19 @@
+{# The job detail page's action section (G-05-8).
+
+   This section is its OWN swap root: the detail page includes it, and the events route
+   returns it for a detail-originated action, so a Save/Hide clicked here re-renders in
+   place. The POST still appends exactly one event to the ONE append-only endpoint
+   (`POST /listings/{id}/events`) — no second route, no JavaScript, and deliberately not a
+   reload-only posture. This is deliberate inline feedback.
+
+   `_action_forms.html` is the ONE definition of the two controls, shared with the queue
+   row. The includer variables are set here: `action_url` (the events URL plus the active
+   predicate set), `target_id` (this section's id) and `surface` (`detail`). Jinja
+   autoescape is the only escaping in play. #}
+<section id="detail-actions" aria-live="polite">
+  <h3>Track this job</h3>
+  {% set action_url = "/listings/" ~ row.id ~ "/events" ~ ("?" ~ queue_query if queue_query else "") %}
+  {% set target_id = "detail-actions" %}
+  {% set surface = "detail" %}
+  {% include "html/_action_forms.html" %}
+</section>
