@@ -444,25 +444,35 @@ async def tailored_cv_pdf(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    """Serve the latest `ok` artifact's PDF. A blocked/failed artifact is unreachable."""
+    """Serve the latest `ok` artifact's PDF: inline by default, attachment on `?download=1`.
+
+    The selection is `ok_only=True`, so a blocked or failed row is never reachable; a
+    `None` selection is a 404 (no artifact, or only a non-`ok` one). The served path is
+    the STORED `pdf_path` — never built from request text — and the download filename is
+    derived from the two integer ids.
+    """
     record = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
     if record is None or not record.pdf_path:
-        return _error_fragment("no-artifact", "No compiled CV for this listing.", 404)
+        return _error_fragment("no-ok-artifact", "No compiled CV for this listing.", 404)
 
     root = Path(settings.artifacts_dir).resolve()
     path = Path(record.pdf_path).resolve()
     try:
         path.relative_to(root)
     except ValueError:  # pragma: no cover — the path was built from settings + ints
-        return _error_fragment("no-artifact", "No compiled CV for this listing.", 404)
+        return _error_fragment("no-ok-artifact", "No compiled CV for this listing.", 404)
     if not path.is_file():
-        return _error_fragment("no-artifact", "No compiled CV for this listing.", 404)
+        # A missing file is an honest 404, never a 500 (T-06-22).
+        return _error_fragment("no-ok-artifact", "No compiled CV for this listing.", 404)
 
     disposition = "attachment" if _flag(request.query_params.get("download")) else "inline"
+    # The filename is built from the two INTEGER ids, never from a stored name a request
+    # could influence (T-06-19).
+    filename = f"cv-{listing_id}-{record.id}.pdf"
     return FileResponse(
         path,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'{disposition}; filename="{path.name}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
     )
 
 
