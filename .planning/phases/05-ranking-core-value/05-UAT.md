@@ -1,14 +1,23 @@
 ---
-status: diagnosed
+status: testing
 phase: 05-ranking-core-value
 source: [05-VERIFICATION.md]
 started: 2026-09-22T17:37:33Z
-updated: 2026-09-24T09:44:06Z
+updated: 2026-09-24T11:23:15Z
 ---
 
 ## Current Test
 
-[testing complete]
+### 9. G-05-8 closure in a browser — detail Save/Hide feedback
+number: 9
+name: G-05-8 closure in a browser — detail Save/Hide feedback
+expected: |
+  Open a job detail, click Save then Hide. Expect the `#detail-actions` section to
+  re-render in place — the button flips Save→Unsave / Hide→Unhide and a `★ saved` /
+  `hidden` badge appears — with no page reload and no `htmx:targetError` in the console.
+  A `View saved jobs` link (→ `/?saved=1`) should be present on the detail page, and
+  following it should show the saved jobs.
+awaiting: user response
 
 ## Tests
 
@@ -58,13 +67,23 @@ expected: |
 result: issue
 reported: "Hmm there's no feedback, when i click save or hide nothing happens which makes it uninituative. Also where are the saved jobs going to ?"
 severity: major
+note: "Fix implemented by plan 05-12; re-test is test 9."
+
+### 9. G-05-8 closure in a browser — detail Save/Hide feedback
+expected: |
+  Open a job detail, click Save then Hide. Expect the `#detail-actions` section to
+  re-render in place — the button flips Save→Unsave / Hide→Unhide and a `★ saved` /
+  `hidden` badge appears — with no page reload and no `htmx:targetError` in the console.
+  A `View saved jobs` link (→ `/?saved=1`) should be present on the detail page, and
+  following it should show the saved jobs.
+result: [pending]
 
 ## Summary
 
-total: 8
+total: 9
 passed: 7
 issues: 1
-pending: 0
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -86,7 +105,7 @@ blocked: 0
 
 - gap_id: G-05-8
   truth: "Clicking Save or Hide on a job detail page gives visible confirmation, and saved jobs are discoverable somewhere in the UI — the controls are not silent no-ops."
-  status: failed
+  status: pending
   reason: "User reported: \"Hmm there's no feedback, when i click save or hide nothing happens which makes it uninituative. Also where are the saved jobs going to ?\""
   severity: major
   test: 8
@@ -117,6 +136,7 @@ blocked: 0
     - "Add a regression test asserting the detail forms' target resolves within the rendered detail markup, plus a test for the saved affordance"
     - "Decide the interaction posture deliberately (inline swap vs documented reload) rather than leaving the deferred-load behaviour"
   debug_session: .planning/debug/uat-05-detail-action-feedback.md
+  note: "Fix implemented by plan 05-12 (commits 38d7610, 9b47b14, d971a71) and code-verified in 05-VERIFICATION.md (55/55, 2026-09-24): the detail controls now share one definition (`_action_forms.html`), the detail section is its own swap root (`#detail-actions`), and the events route reads an allow-listed `surface` field. Human confirmation is tracked as test 9 above; the gap closes when test 9 passes."
 
 ## Deferred Follow-Ups
 
