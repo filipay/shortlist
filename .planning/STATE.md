@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 06
-current_phase_name: tailoring-verification
+current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-09-24T21:36:22.939Z"
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-09-24T22:41:04.983Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 06 execution started
-state_head: 006dbc11ef7db082f81fd01ad4f3603aae6bbedb
+state_head: 97c718d47035251a90106f4ab049e1f6b5cc16b4
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 52
-  completed_plans: 49
+  completed_plans: 50
   percent: 0
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 06 (tailoring-verification) — READY TO EXECUTE
-Plan: 4 of 4
+Phase: 06 (Tailoring + Verification) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 06 execution started
 
@@ -84,6 +84,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 06 P02 | 19min | 3 tasks | 21 files |
 | Phase 06 P03 | 18min | 3 tasks | 6 files |
 | Phase 06 P04 | 15min | 3 tasks | 7 files |
+| Phase 06 P05 | 9 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,9 @@ Recent decisions affecting current work:
 - [Phase 06]: read_for_download mirrors latest_for_listing: the compile_status='ok' predicate is applied IN SQL, so a blocked or failed artifact is unreachable even by id — the D-118 contract Phase 7's attach path consumes
 - [Phase 06]: A verification failure is a block, not a dead end: the page renders the persisted VerificationResult findings (warn visibly non-blocking) with no corrective control, and recovery is the page's own fresh-tailor generate control
 - [Phase 06]: The cv/pdf route serves inline by default and attachment with ?download=1, builds the filename from the two integer ids, and returns a 404 (data-error=no-ok-artifact) for any non-ok or absent artifact; recency never beats the ok-only selection
+- [Phase 06]: 06-05: check-4 metric containment is region-local — an entry's OWN date cores, page-number lines inside the region, and the non-entry structured strings that physically appear in it; the document-wide date union and page scan are deleted (GAP 1/CR-01 + WR-03)
+- [Phase 06]: 06-05: GAP 1 fixed with the stricter form — exclude non-entry structured content only where its string physically appears, never a global union (would silence a fabricated digit equal to a skill-label digit) and never a heading bound (the template renders a section's skills table AFTER its last entry)
+- [Phase 06]: 06-05: VERIFIER_VERSION bumped 1.0.0 -> 1.0.1 as provenance, not a migration; no column/table/Alembic change (head stays 0004) and persisted verification_json rows keep their written version
 
 ### Pending Todos
 
@@ -171,6 +175,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T17:35:04.249Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-09-24T22:40:41.289Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
