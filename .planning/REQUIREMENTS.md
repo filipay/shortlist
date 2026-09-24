@@ -73,8 +73,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **TAIL-04**: A verification gate checks the compiled PDF for any unsupported content
 - [ ] **TAIL-05**: A CV that fails verification is blocked and cannot be downloaded or attached
 - [x] **TAIL-06**: Verification never auto-repairs content — it blocks
-- [ ] **TAIL-07**: User can review the tailored CV and its change log before compiling
-- [ ] **TAIL-08**: Anything dropped from the CV is listed explicitly with a reason
+- [x] **TAIL-07**: User can review the tailored CV and its change log before compiling
+- [x] **TAIL-08**: Anything dropped from the CV is listed explicitly with a reason
 
 ### Apply (APPLY)
 
@@ -219,8 +219,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TAIL-04 | Phase 6 | Complete |
 | TAIL-05 | Phase 6 | Pending |
 | TAIL-06 | Phase 6 | Complete |
-| TAIL-07 | Phase 6 | Pending |
-| TAIL-08 | Phase 6 | Pending |
+| TAIL-07 | Phase 6 | Complete |
+| TAIL-08 | Phase 6 | Complete |
 | APPLY-01 | Phase 7 | Pending |
 | APPLY-02 | Phase 7 | Pending |
 | APPLY-03 | Phase 7 | Pending |

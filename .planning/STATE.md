@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-09-24T16:55:56.128Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-09-24T17:18:19.622Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 06 execution started
-state_head: 89b251514249cc626f0580e894864b7919cbb6b6
+state_head: 9e29cb8aabbe1246943abf2cbfeaff26236577e1
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 49
-  completed_plans: 47
+  completed_plans: 48
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 06 (Tailoring + Verification) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 06 execution started
 
@@ -82,6 +82,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 05 P12 | 11 min | 3 tasks | 8 files |
 | Phase 06 P01 | 47 min | 3 tasks | 22 files |
 | Phase 06 P02 | 19min | 3 tasks | 21 files |
+| Phase 06 P03 | 18min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Region segmentation is line-based (not squash-substring): squashing fuses '2021-03' into '202103' and would defeat the date-like exclusion; squash remains the substrate for entity_present and verbatim_integrity only
 - [Phase 06]: The persisted verification_json is one merged VerificationResult (11 checks, passed = both layers); a Layer-2 fail retains the PDF but the ok-only repository selection keeps it unreachable, and no branch ever repairs
 - [Phase 06]: The grounding band is advisory only (token_set_ratio, thresholds from Settings 80/55): it rides requirement_evidence's passing detail and can never flip passed (A1/D-70)
+- [Phase 06]: The review fragment is a Jinja template (_tailoring_review.html), not a Python-built HTML string, so bullet text and reasons use the one autoescape choke point; drops render struck with their reason via <s> and a precomputed dropped_bullets mapping
+- [Phase 06]: Compile is an optimistic-concurrency check: verify_original_matches recomputes the semantic facts hash from the loaded store and reads cv_repo.current_version fresh; a mismatch is a 409 data-error=stale-patch fragment that writes no artifact and offers no retry control
+- [Phase 06]: The tailoring page's state vocabulary is five values computed in the route (rank_first/ready/generated/compiled_ok/blocked); the template does no lookup, date arithmetic or settings read, and a failed compile maps to generated
 
 ### Pending Todos
 
@@ -163,6 +167,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T16:55:56.002Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-09-24T17:18:19.504Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
