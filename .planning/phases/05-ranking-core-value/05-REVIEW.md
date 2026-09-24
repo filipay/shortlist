@@ -1,5 +1,222 @@
 ---
 phase: 05-ranking-core-value
+reviewed: 2026-09-24T11:00:28Z
+depth: standard
+files_reviewed: 8
+files_reviewed_list:
+  - app/api/events.py
+  - app/web/routes.py
+  - app/web/templates/html/_action_forms.html
+  - app/web/templates/html/_detail_actions.html
+  - app/web/templates/html/_listing_row.html
+  - app/web/templates/html/listing_detail.html
+  - tests/api/test_listing_detail.py
+  - tests/api/test_listing_events.py
+findings:
+  critical: 0
+  warning: 1
+  info: 3
+  total: 4
+status: issues_found
+---
+
+# Phase 5: Code Review Report (round 4 — 05-12 detail-action delta)
+
+**Reviewed:** 2026-09-24T11:00:28Z
+**Depth:** standard
+**Files Reviewed:** 8
+**Status:** issues_found
+
+## Summary
+
+Round-4 review scoped to the 05-12 gap-closure delta (G-05-8 / UI-02; commits
+`38d7610`, `9b47b14`, `d971a71`; base `1cc6171`): the new shared
+`_action_forms.html`, the new `_detail_actions.html` swap root, the
+`listing_detail.html` / `_listing_row.html` extraction, the `ACTION_SURFACES`
+allow-list and surface-aware fragment in `app/api/events.py`, the corrected
+`routes.py` comment, and six new tests.
+
+**What is sound.** The core correctness question — does the detail page's
+Save/Hide resolve an htmx target its own markup contains? — holds.
+`listing_detail.html:99` includes `_detail_actions.html`, which renders
+`<section id="detail-actions">` (line 20); `_action_forms.html` renders
+`hx-target="#{{ target_id }}"` for both forms (lines 15 and 32), and the detail
+includer sets `target_id = "detail-actions"` (`_detail_actions.html:25`). The
+queue includer sets `target_id = "listing-row-" ~ row.id`
+(`_listing_row.html:72`), so the queue row still targets its own element. The
+rendered detail page contains `hx-target="#detail-actions"` exactly twice and no
+`#listing-row-{id}`; the queue page still contains `hx-target="#listing-row-{id}"`.
+No `htmx:targetError` path remains on either surface, and the POST is no longer a
+silent no-op.
+
+The `surface` field is a **strict allow-list**, not a pass-through:
+`surface = str(form.get("surface") or "").strip(); if surface not in
+ACTION_SURFACES: surface = DEFAULT_SURFACE` (`app/api/events.py:133-135`), where
+`ACTION_SURFACES = ("queue", "detail")` and `DEFAULT_SURFACE = "queue"` (lines
+64-65). An unlisted value can therefore select only one of two known templates
+and write only one of two known strings into `context_json`; it is normalised
+**before** the first error return, so it cannot reach `_error_row` or the audit
+log as an arbitrary string. `_UrlForm.__getitem__` returns the first occurrence
+of a repeated key, so a duplicated `surface` cannot widen the allow-list.
+
+The queue path is behaviourally unchanged: the shared partial renders the same
+`hx-post`, `#listing-row-{id}` target, button ids and labels; the only addition
+is the hidden `surface=queue` field, and `context={"surface": surface}` yields
+exactly the old `ACTION_CONTEXT = {"surface": "queue"}`. No dangling reference to
+the removed `ACTION_CONTEXT` remains (whole-repo grep: only `_error_row` in
+`events.py` plus a docstring mention in `routes.py`).
+
+**Prohibitions all hold.** No new route (`grep "def append_listing_event"` → 1);
+no JavaScript, no `hx-push-url`/`hx-history`/`hx-boost`, no polling/SSE, no CDN
+asset (no `https?://` in either new template — `tests/test_no_cdn.py` passes); no
+safe-marking filter (the only `|safe` literal in the delta is a pre-existing
+negative assertion — see Deviations); no schema/migration/setting (Alembic head
+stays `0004`); `static/vendor/app.css` and `app/db/repositories/*` are untouched
+(`git diff --stat 1cc6171..d971a71` lists exactly the 8 expected files). Every
+value rendered by the new templates is auto-escaped; `row.id` is an `int` and
+`target_id` is a fixed literal plus that int, so no user-controlled string
+reaches a selector.
+
+**Regression evidence.** The four relevant suites pass (`39 passed`), and the
+full default-lane suite passes (`1093 passed, 14 deselected, 2 xfailed`) —
+matching the SUMMARY's claim.
+
+**One warning, three info items.** The warning is an accessibility defect in the
+new swap: `aria-live="polite"` sits on the element htmx replaces via `outerHTML`,
+so the live region is destroyed on every swap and the announcement intent is not
+met (the project's other live regions use a stable container + `innerHTML`). The
+info items are: a detail-surface error fragment htmx will never swap (dead branch
++ a comment that overstates it), the `action_url` construction still duplicated
+across the two includers, and a header comment that says the includer "sets"
+`row` when it is inherited.
+
+## Verification of the two documented deviations
+
+Both are benign, confirmed against the base commit:
+
+1. **Pre-existing `|safe` guard.** `git show 1cc6171:tests/api/test_listing_events.py | grep '|safe'`
+   → `276:    assert "|safe" not in response.text`. The assertion predates the
+   delta, so the Task-3 acceptance grep
+   `grep -c "|safe" tests/api/test_listing_events.py → 0` was unsatisfiable
+   without deleting an existing escaping guard. No line added by this delta
+   contains a safe-marking filter. **Benign.**
+2. **Added header paragraph.** The plan's Task-1 step 3 named a file-header
+   sentence that did not exist in `listing_detail.html`; the implementer added
+   one paragraph stating the inline-swap posture (`listing_detail.html:22-25`).
+   It is a Jinja comment, so the rendered output is unchanged. **Benign.**
+
+## Narrative Findings (AI reviewer)
+
+### Warnings
+
+#### WR-01: `aria-live="polite"` is on the `outerHTML` swap root, so the live region is replaced on every Save/Hide and the announcement does not fire
+
+**File:** `app/web/templates/html/_detail_actions.html:20` (with
+`_action_forms.html:15,32` setting `hx-swap="outerHTML"`)
+
+**Issue:** The section is both the live region and the swap target, and the swap
+is `outerHTML`. htmx removes the `#detail-actions` node and inserts a fresh one;
+the region that existed before the click is gone, and content present at the
+moment a live region is inserted is not announced by assistive technology. So the
+`aria-live` attribute — added by this delta; the old section had none — gives no
+reliable feedback to a screen-reader user, which is the exact class of "I cannot
+tell whether my action registered" problem G-05-8 set out to fix.
+
+It is also inconsistent with the project's established pattern: every other live
+region is a **stable** container whose contents are swapped with `innerHTML` —
+`#queue-list` (`queue.html:164`, targeted with `hx-swap="innerHTML"` at lines
+44-125), `#run-status-slot` (`queue.html:14`), `#criteria-list`
+(`criteria.html:264`), `#merges-table` (`merges.html:17`). This delta is the
+first to put `aria-live` on an `outerHTML` root.
+
+This is an a11y/quality defect only: the visual swap, the button-label flip and
+the badge all work, and no test or behaviour regresses.
+
+**Fix:** keep the live region stable and swap its contents — e.g. wrap the
+section in a persistent `<div aria-live="polite">` and have the forms target the
+inner `#detail-actions` with `hx-swap="innerHTML"` (the route then returns the
+section's inner content) — or drop `aria-live` and rely on the visible state
+change. If the section stays the `outerHTML` root, add a browser-level UAT check
+that a screen reader actually announces the change.
+
+### Info
+
+#### IN-01: The detail-surface error fragment is a 4xx that htmx will not swap — the branch is effectively dead and its comment overstates it
+
+**File:** `app/api/events.py:90-94` (the `if surface == "detail"` branch of
+`_error_row`); comment at lines 85-88
+
+**Issue:** The comment says the `detail-empty` paragraph makes "the error land in
+the section the detail page actually swaps (`#detail-actions`)". htmx's default
+`responseHandling` does not swap `4xx`/`5xx` responses, so neither this fragment
+nor the queue's `<tr>` error fragment is ever inserted; the user still sees
+nothing on a rejected action. The branch is unreachable from the rendered UI in
+any case — the two controls can only submit the allow-listed
+`save`/`unsave`/`hide`/`unhide` event types, and the listing always exists because
+the page just rendered it. So it is dead-ish code with a rationale that does not
+hold, not a live defect. (The queue path has always had the same non-swap
+property; only the new comment claims otherwise.)
+
+**Fix:** either reword the comment to say the fragment is returned for API/test
+parity but htmx does not swap 4xx responses (and drop the `detail` branch if that
+parity is not wanted), or configure `htmx:responseError` handling if error
+feedback is actually desired.
+
+#### IN-02: The `hx-post` URL is still computed in two places, so the "one definition" guarantee does not cover it
+
+**File:** `app/web/templates/html/_listing_row.html:71` and
+`app/web/templates/html/_detail_actions.html:24` (identical expressions)
+
+**Issue:** The plan's must-have truth 3 states the two controls have "exactly ONE
+definition … so a target, field or label change can no longer drift". The target,
+field and label are indeed shared, but `action_url` (the `hx-post`) is built by
+each includer with a byte-identical copy of the same expression. A change to the
+events-URL shape must still be made in two files, and the shared partial cannot
+catch that drift. The plan chose this (the partial takes `action_url` as an
+includer variable), so it is a residual maintainability nit rather than a spec
+violation.
+
+**Fix:** move the `"/listings/" ~ row.id ~ "/events"` construction into
+`_action_forms.html` (it already receives `row` and `queue_query`), leaving only
+the queue-vs-detail surface and target to the includers.
+
+#### IN-03: `_action_forms.html` header says the includer "sets" `row`, which it does not
+
+**File:** `app/web/templates/html/_action_forms.html:12-14`
+
+**Issue:** "The includer sets four variables: `row`, `action_url`, `target_id` and
+`surface`." Only three are set by the includers; `row` is inherited from the
+outer context (`queue_list.html`'s loop / the events route / the detail route).
+Minor comment inaccuracy that could mislead a future reader into looking for a
+`{% set row = ... %}`.
+
+**Fix:** reword to "reads `row` from the inherited context and three variables its
+includer sets: `action_url`, `target_id` and `surface`."
+
+**Working-tree note.** Uncommitted changes present during this review
+(`M .planning/phases/05-ranking-core-value/05-VERIFICATION.md`,
+`M .planning/state.json`, untracked `.planning/debug/DEBUG-uat-05-*.md`,
+`jobsearch.db`, `.gsd/`, `.planning/milestone.lock`) are outside the committed
+05-12 delta and are not reviewed here.
+
+---
+
+_Reviewed: 2026-09-24T11:00:28Z_
+_Reviewer: the agent (gsd-code-reviewer)_
+_Depth: standard_
+
+---
+
+---
+
+# Phase 5: Code Review Report (round 3 — 05-11 two-way paging delta)
+
+> Archived verbatim from the round-3 review. Superseded as the active report by
+> round 4 above; retained for history. Its `reviewed` timestamp, file scope and
+> finding counts describe the 05-11 delta only.
+
+---
+phase: 05-ranking-core-value
 reviewed: 2026-09-23T16:21:39Z
 depth: standard
 files_reviewed: 6
@@ -17,8 +234,6 @@ findings:
   total: 5
 status: issues_found
 ---
-
-# Phase 5: Code Review Report (round 3 — 05-11 two-way paging delta)
 
 **Reviewed:** 2026-09-23T16:21:39Z
 **Depth:** standard
