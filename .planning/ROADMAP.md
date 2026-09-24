@@ -211,7 +211,7 @@ Plans:
   4. Opening a job detail shows a rationale grounded in stored evidence plus a requirement-by-requirement fit breakdown with named gaps.
   5. Once the per-run or per-day LLM spend cap is reached, further calls are refused before the call is made.
 
-**Plans:** 7/7 executed + 3 gap-closure plans executed (05-08, 05-09, 05-10) + 1 gap-closure plan awaiting execution (05-11)
+**Plans:** 7/7 executed + 4 gap-closure plans executed (05-08, 05-09, 05-10, 05-11) + 1 gap-closure plan planned, awaiting execution (05-12)
 **UI hint**: yes
 
 Plans:
@@ -248,6 +248,10 @@ Plans:
 **Gap closure — round 3** *(planned 2026-09-23 from the ad-hoc UAT finding; wave 1)*
 
 - [x] 05-11-PLAN.md — G-05-3: the queue's paging becomes two-way — `QueuePage` gains `has_prev`/`prev_offset`/`page_index`/`page_count`, the shared fragment renders a Previous / `Page X of Y (N per page)` / Next pager in place of the forward-only control, and the paging tests encode the two-way model (page size stays server-fixed, T-02-28)
+
+**Gap closure — round 4** *(planned 2026-09-24 from the UAT diagnosis; wave 1)*
+
+- [ ] 05-12-PLAN.md — G-05-8: the detail page's Save/Hide become a real inline swap — one shared `_action_forms.html` for both surfaces, a `#detail-actions` section the events route re-renders for an allow-listed `surface=detail` origin, a saved/hidden indicator plus a link to the existing `/?saved=1` saved view, and the target-resolution regression tests the diagnosis says were missing
 
 **Research flag — RESOLVED in the plans (2026-09-22):** batching is **one `complete_structured` call per listing, no sibling listings** (D-86), so scoring is absolute by construction rather than by prompt discipline; the budget cap is **reserve-then-call** with two independent `Settings` ceilings (per-run and rolling-24h over `SUM(llm_calls.created_at)`), refused *before* the request and released on completion (D-91/D-92); and requirement extraction is co-located **inside** the single ranking call (D-81), returning sub-scores and a structured requirement list in one response. Three CONTEXT claims were corrected against the tree and are carried into the plans: `llm_calls.created_at` is **not** indexed (a full scan is accepted, no index migration), `llm_calls` has **no `error_kind` column** (the cause is encoded in `error`), and `ix_scores_listing_total` is `(listing_id, total_score)` so it was never a cross-listing sort path. The blocking open question — where the live weights persist — is answered by **migration 0004 (`ranking_config`)**, which also updates the pinned Alembic head in `tests/db/test_migration_contract.py` and `tests/db/test_skeleton_boot.py`.
 
