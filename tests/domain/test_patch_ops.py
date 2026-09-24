@@ -239,7 +239,13 @@ def test_an_unknown_id_raises_unknown_id_error() -> None:
     with pytest.raises(UnknownIdError):
         apply_patch(
             facts,
-            _patch(BulletMove(op="move_bullet", bullet_id="bul/acme-ltd-2021/1", before_id="bul/nope/1")),
+            _patch(
+                BulletMove(
+                    op="move_bullet",
+                    bullet_id="bul/acme-ltd-2021/1",
+                    before_id="bul/nope/1",
+                )
+            ),
         )
     with pytest.raises(UnknownIdError):
         apply_patch(
