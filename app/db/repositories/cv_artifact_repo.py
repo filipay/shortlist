@@ -9,12 +9,18 @@ House rules, as everywhere in `app/db/repositories/`:
   cannot poison the caller's outer transaction;
 * `now` is injectable so a caller (or a test) can pin the clock.
 
-**`ok`-only is the artifact-access control (D-118).** `latest_for_listing(ok_only=True)`
-applies the `compile_status == "ok"` predicate IN SQL, so a blocked or failed row is
-unreachable even by id — the PDF route cannot serve a non-`ok` artifact.
+**`ok`-only is the artifact-access control (D-118).** Every download/link accessor —
+`latest_for_listing(ok_only=True)` and `read_for_download(ok_only=True)` — applies the
+`compile_status == "ok"` predicate **IN SQL** (never as a Python post-filter over every
+fetched row), so a `blocked` or `failed` row is unreachable even by artifact id. This is
+the contract Phase 7's application-attach path consumes: a CV that failed verification
+cannot be downloaded, linked or attached. The `ok_only=False` variants exist only for the
+status read the tailoring page performs, which must be able to SHOW a blocked row.
 
 **Every compile inserts a NEW row (D-117).** Older rows are never overwritten, so the
-history of what was generated stays answerable.
+history of what was generated stays answerable. `history_for_listing` therefore returns
+every row — blocked and failed included — because a blocked attempt is explained, never
+silently hidden. Retention/pruning is deliberately Phase 8 and is not implemented here.
 
 The `compile_status` vocabulary is validated against `COMPILE_STATUSES` before any SQL,
 mirroring `ck_cv_artifacts_compile_status`. The schema is created only by the Alembic
@@ -123,16 +129,13 @@ async def insert_artifact(
     """
     if compile_status not in COMPILE_STATUSES:
         raise ValueError(
-            f"unknown compile_status {compile_status!r}; expected one of "
-            f"{sorted(COMPILE_STATUSES)}"
+            f"unknown compile_status {compile_status!r}; expected one of {sorted(COMPILE_STATUSES)}"
         )
 
     moment = now if now is not None else datetime.now(UTC)
     row = CvArtifact(
         listing_id=int(listing_id) if listing_id is not None else None,
-        base_cv_version_id=(
-            int(base_cv_version_id) if base_cv_version_id is not None else None
-        ),
+        base_cv_version_id=(int(base_cv_version_id) if base_cv_version_id is not None else None),
         patch_json=patch_json,
         change_log_json=change_log_json,
         tex_path=tex_path,
@@ -174,9 +177,24 @@ async def latest_for_listing(
     return _to_record(row) if row is not None else None
 
 
-async def history_for_listing(
-    session: AsyncSession, listing_id: int
-) -> list[CvArtifactRecord]:
+async def read_for_download(
+    session: AsyncSession, artifact_id: int, *, ok_only: bool = True
+) -> CvArtifactRecord | None:
+    """One artifact by id, for a download/link/attach query, or `None`.
+
+    When `ok_only` is true (the default) the `compile_status == "ok"` predicate is
+    applied IN SQL, so a `blocked` or `failed` row is unreachable **even by id** —
+    D-118's access control, and the contract Phase 7's attach path consumes. Never
+    commits, never raises.
+    """
+    statement = select(CvArtifact).where(CvArtifact.id == int(artifact_id))
+    if ok_only:
+        statement = statement.where(CvArtifact.compile_status == "ok")
+    row = await session.scalar(statement)
+    return _to_record(row) if row is not None else None
+
+
+async def history_for_listing(session: AsyncSession, listing_id: int) -> list[CvArtifactRecord]:
     """Every artifact for one listing, newest first (D-117's retained history)."""
     rows = (
         (
@@ -198,4 +216,5 @@ __all__ = [
     "history_for_listing",
     "insert_artifact",
     "latest_for_listing",
+    "read_for_download",
 ]
