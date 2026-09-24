@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 6/7 plans executed (4 executed, 3 gap-closure planned 2026-09-24)
+**Plans:** 7/7 plans executed (4 executed, 3 gap-closure planned 2026-09-24)
 
 Plans:
 **Wave 1**
@@ -288,7 +288,7 @@ Plans:
 
 - [x] 06-05-PLAN.md — CR-01/WR-03: check 4's region and allow-set construction is corrected (region-local date, page-number and non-entry-structured exclusion), so a valid CV whose trailing structured content carries a digit is verifiable and downloadable again and one entry's dates can no longer excuse a token in another region; `VERIFIER_VERSION` records the change
 - [x] 06-06-PLAN.md — WR-02: bullet ops are grounded on the bullet-id set (and `reorder_section` on the section-id set) at the validation boundary, so a non-bullet id raises `UnknownIdError` instead of no-opping and emitting a phantom change-log entry
-- [ ] 06-07-PLAN.md — WR-01: `POST /listings/{id}/cv/compile` honours `tailoring_enabled`, refusing with the shared skip vocabulary before any filesystem read, render, compile or artifact row
+- [x] 06-07-PLAN.md — WR-01: `POST /listings/{id}/cv/compile` honours `tailoring_enabled`, refusing with the shared skip vocabulary before any filesystem read, render, compile or artifact row
 
 **UI hint**: yes
 
@@ -341,7 +341,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
-| 6. Tailoring + Verification | 6/7 | In Progress|  |
+| 6. Tailoring + Verification | 7/7 | In Progress|  |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
