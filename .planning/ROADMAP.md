@@ -268,7 +268,14 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans**: TBD
+**Plans:** 4/4 plans created
+
+Plans:
+- [ ] 06-01-PLAN.md — Tracer: the real five-operation typed patch engine over enumerated IDs, the Layer-1 verification pre-check, the one `TailoringPatch` call with its shared 24h spend ceiling, the `cv_artifacts` writer, and the dedicated tailoring page's generate/compile/pdf path
+- [ ] 06-02-PLAN.md — The verification gate complete: all ten §10.3 checks, region-scoped metric containment with date-like and page-number exclusion, the advisory grounding band, warn-not-block for checks 8/9, the block-don't-repair blocked-row contract, and the canary pin for the "no field becomes text in the PDF" guarantee
+- [ ] 06-03-PLAN.md — Review before compile: the tailored CV's HTML preview beside the change log with every drop and demotion explicit, the rank-first precondition, and the stale-patch optimistic-concurrency guard
+- [ ] 06-04-PLAN.md — Blocked artifacts are unreachable: the `ok`-only repository selection, inline preview and `?download=1` attachment, the PITFALLS-P14 failure-path suite, and the blocked-findings surface with no repair affordance
+
 **UI hint**: yes
 
 **Research flag:** the verifier's 10-check list is designed in research rather than sourced; the plan should design/validate the checks (no-new-entity, metric containment, bullet conservation) against fixtures before execution. Adopt `_GROUNDING_REVIEW_THRESHOLD`-style similarity banding to inform confidence tiers and verifier check 6. Adopt `_verify_original_matches`-style optimistic concurrency as the guard on `apply_patch` and artifact persistence.
