@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-09-24T15:28:57.921Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-09-24T16:26:19.876Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 05 complete, transitioned to Phase 6
-state_head: 6b8c1b004a437e33201c6c8229e020fb6293fdc8
+last_activity_desc: Phase 06 execution started
+state_head: 404d9951f757e8954232a630d3aaef51894a79a8
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 49
-  completed_plans: 45
+  completed_plans: 46
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 06 (Tailoring + Verification) — READY TO EXECUTE
-Plan: Not started
+Phase: 06 (Tailoring + Verification) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-09-24 — Phase 05 complete, transitioned to Phase 6
+Last activity: 2026-09-24 — Phase 06 execution started
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
 
@@ -80,6 +80,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 05 P10 | 20 | 3 tasks | 13 files |
 | Phase 05 P11 | 10min | 3 tasks | 6 files |
 | Phase 05 P12 | 11 min | 3 tasks | 8 files |
+| Phase 06 P01 | 47 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,11 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-12: one shared _action_forms.html defines the Save/Hide controls for both the queue row and the detail section, so the target drift that shipped G-05-8 is structurally impossible
 - [Phase 05]: 05-12: the same POST /listings/{id}/events returns a surface-aware fragment (row or detail section); no second route, so the write and the re-render cannot drift
 - [Phase 05]: 05-12: saved discoverability is a link to the existing saved view (?saved=1) plus a projected state indicator, never a recomputed count that could disagree with read_queue
+- [Phase 06]: Phase 06: the tailoring patch is a typed operation over enumerated fact IDs — no field of TailoringPatch becomes PDF text, so even a successful prompt injection cannot reach the renderer
+- [Phase 06]: Phase 06: an empty patch and patch=None are both the identity RenderPlan, preserving the three shipped no-argument apply_patch(facts) callers byte-for-byte
+- [Phase 06]: Phase 06: reweight is within-entry ordering (declaration-order stable sort by weight DESC, unreweighted default 1.0), demote is lowest prominence in declaration order, move is the explicit positional override applied after base ordering
+- [Phase 06]: Phase 06: the tailoring call shares the rolling-24h ceiling through a purpose-aware calls_since and the rank reserve-then-call lock; no per-run tailoring ceiling and no new numeric ceiling (O1)
+- [Phase 06]: Phase 06: a Layer-1 fail short-circuits before the engine and writes a blocked cv_artifacts row with NULL paths; the ok-only repository selection is the artifact-access control (D-115/D-118)
 
 ### Pending Todos
 
@@ -153,6 +159,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T14:13:48.415Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-tailoring-verification/06-CONTEXT.md
+Last session: 2026-09-24T16:26:19.740Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
