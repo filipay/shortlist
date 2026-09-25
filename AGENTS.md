@@ -497,7 +497,15 @@ can act on. Every other feature is downstream of that.
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+Full rules in `.planning/CONVENTIONS.md`. Binding highlights for checks that compare model-produced free text against structured project data (`app/verify/*`):
+
+1. **Anchor structurally, never lexically.** Region/section/entity boundaries come from a discriminator free text cannot accidentally satisfy (date-range token, separator, index into `app/domain/cv.py` entries) — never substring containment over extracted or LLM text.
+2. **Fail closed, visibly.** A check that cannot locate what it needs emits a `warn`; it must never degrade to empty candidates and a silent skip (a silent skip on a fabrication detector is a false negative).
+3. **Every gap-closure fix adds a fixture with the finding's literal repro string** and asserts the corrected behavior.
+4. **Test the failure class, not the instance.** Add a property/parametrized test that mutates text to embed other entities' identifiers and asserts the checker still passes.
+5. **The fix author does not certify closure.** A reviewer/verifier owns the "closed" verdict; run a scoped code review on changed files after each gap-closure fix.
+6. **No false guarantees in prose.** A docstring claiming a guarantee the code doesn't deliver suppresses scrutiny; surface known trade-offs as runtime-visible warnings instead.
+7. **Verification pressure is asymmetric by design** — explicitly budget test effort for "does it accept valid input?", not only "does it catch the bad thing?".
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
