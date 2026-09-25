@@ -34,7 +34,13 @@ NOW = datetime(2026, 9, 22, tzinfo=UTC)
 class StubBackend:
     """A fixed structured response that records the calls it received."""
 
-    def __init__(self, patch: TailoringPatch | None = None, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        patch: TailoringPatch | None = None,
+        *,
+        fail: bool = False,
+        raise_on_call: bool = False,
+    ) -> None:
         self.calls: list[dict[str, Any]] = []
         self._patch = patch or TailoringPatch(
             listing_id=1,
@@ -47,6 +53,7 @@ class StubBackend:
             ],
         )
         self._fail = fail
+        self._raise_on_call = raise_on_call
 
     async def health(self) -> ProbeOutcome:
         return ProbeOutcome(reachable=True)
@@ -73,6 +80,8 @@ class StubBackend:
                 "schema": schema,
             }
         )
+        if self._raise_on_call:
+            raise RuntimeError("transport down")
         if self._fail:
             return StructuredCallResult(ok=False, status="invalid", error="schema invalid")
         return StructuredCallResult(
@@ -181,6 +190,37 @@ async def test_a_failed_call_writes_one_tailor_row_and_returns_none(
     assert len(rows) == 1
     assert rows[0].purpose == "tailor"
     assert rows[0].run_id is None
+
+
+async def test_a_raised_backend_error_still_writes_one_tailor_row_and_returns_none(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-01: a raised transport error is a value — one class-only row, slot released."""
+    listing_id = await _add_listing(session_factory, title="Raising Role")
+
+    async with session_factory() as session:
+        listing = await session.get(Listing, listing_id)
+        result = await tailor_listing(
+            StubBackend(raise_on_call=True),
+            session,
+            listing=listing,
+            facts=_facts(),
+            requirements=[],
+            now=NOW,
+        )
+        await session.commit()
+
+    assert result is None, "a raised backend error must not escape the pipeline"
+
+    async with session_factory() as session:
+        rows = (await session.execute(select(LlmCall))).scalars().all()
+
+    assert len(rows) == 1
+    assert rows[0].purpose == "tailor"
+    assert rows[0].status == "error"
+    assert rows[0].run_id is None
+    assert rows[0].error == "RuntimeError", "the class only, never the message"
+    assert rank_module._in_flight == 0, "the shared in-flight slot was released on the raise path"
 
 
 # --- the skip vocabulary -------------------------------------------------------
