@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 10/10 plans executed (7 executed; 3 gap-closure)
+**Plans:** 11 plans (10 executed; 1 planned gap-closure)
 
 Plans:
 **Wave 1**
@@ -298,6 +298,10 @@ Plans:
 **Gap closure (round 3)** *(planned 2026-09-25 from `06-VERIFICATION.md` (`gaps_found`, 9/12) + the orchestrator's binding criteria A–E; wave 1 — all prerequisites above are executed)*
 
 - [x] 06-10-PLAN.md — CR-01 residual / ESC-06-A + WR-01 / ESC-06-B: check 4's region anchor is replaced by a structural date-adjacency discriminator a body bullet cannot satisfy, and an unanchorable region fails closed as a visible `warn` instead of a silent skip, so a valid CV whose earlier bullet names a later entry's org AND title verifies and a fabricated digit in an unscopeable region is no longer invisible; `VERIFIER_VERSION` recorded once at 1.0.3
+
+**Gap closure (round 4)** *(planned 2026-09-25 from `06-VERIFICATION.md` (`gaps_found`, 11/12) + `06-REVIEW.md` (1 warning, WR-02); wave 1 — all prerequisites above are executed)*
+
+- [ ] 06-11-PLAN.md — WR-02 residual / criterion E: check 4's region start must BEGIN with the entry's org (the template emits org first) and an anchored region's end is bounded at a later unanchored entry's lone date-range line, so a valid CV whose earlier bullet co-locates a later entry's org, title AND date-range no longer false-fails and an extractor line-merge yields a visible `warn` instead of a false fail; the false docstring absolute is replaced by an explicit residual; `VERIFIER_VERSION` recorded once at 1.0.4
 
 **UI hint**: yes
 
