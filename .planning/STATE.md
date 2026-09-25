@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 06
-current_phase_name: tailoring-verification
+current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-08-PLAN.md
-last_updated: "2026-09-25T11:19:35.073Z"
+stopped_at: Completed 06-10-PLAN.md
+last_updated: "2026-09-25T11:45:00.784Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 06 execution started
-state_head: 672ec8069e91d15f69b3bec63b8fc03b308b4139
+state_head: 165d6c2ccf7f9b52129848733cdf559ac268293d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 55
-  completed_plans: 53
+  completed_plans: 55
   percent: 0
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 06 (tailoring-verification) — READY TO EXECUTE
-Plan: 2 of 9
+Phase: 06 (Tailoring + Verification) — EXECUTING
+Plan: 2 of 10
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 06 execution started
 
@@ -88,6 +88,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 06 P06 | 12 | 2 tasks | 2 files |
 | Phase 06 P07 | 11 | 2 tasks | 2 files |
 | Phase 06 P08 | 8 min | 2 tasks | 6 files |
+| Phase 06 P10 | 10 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-08: the entry location digit core joins the region's allowed set ONLY (never excluded), so the digit stays a candidate and is grounded by membership (CR-01 closed)
 - [Phase 06]: 06-08: a region anchors on the entry header line carrying BOTH org AND title; a split header reports found=False rather than mis-locating at a bullet (CR-02 closed), pinned by test
 - [Phase 06]: 06-08: VERIFIER_VERSION bumped once to 1.0.2 for the combined CR-01 + CR-02 change; metric_containment stays a hard fail and the Python 3.12 negative control is untouched
+- [Phase 06]: 06-10: the region anchor is REPLACED, not tightened — a region starts only when the line carries org AND title AND the entry's date-range needle on that line or its immediate successor, so a bullet embedding a later entry's org+title cannot hijack its region
+- [Phase 06]: 06-10: an unanchorable region fails closed as a visible warn naming the entry; fail precedence is preserved so an anchored surplus digit still hard-fails metric_containment
+- [Phase 06]: 06-10: VERIFIER_VERSION bumped once to 1.0.3 for the combined anchor + fail-closed change; no schema/Alembic (head 0004) or dependency change
 
 ### Pending Todos
 
@@ -187,6 +191,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T09:08:56.323Z
-Stopped at: Completed 06-08-PLAN.md
+Last session: 2026-09-25T11:44:45.608Z
+Stopped at: Completed 06-10-PLAN.md
 Resume file: None

@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 10 planned (7 executed; 3 gap-closure)
+**Plans:** 10/10 plans executed (7 executed; 3 gap-closure)
 
 Plans:
 **Wave 1**
@@ -293,11 +293,11 @@ Plans:
 **Gap closure (round 2)** *(planned 2026-09-24 from `06-VERIFICATION.md` (`human_needed`) + `06-REVIEW.md` (2 critical, 1 warning); wave 1 — all prerequisites above are executed)*
 
 - [x] 06-08-PLAN.md — CR-01/CR-02: check 4 grounds an entry's digit-bearing location in its own region and anchors each region on its own entry header line (org AND title), so an ordinary CV whose location carries a digit, or whose bullet names a later employer, verifies and is previewable/downloadable again; `VERIFIER_VERSION` recorded once for the combined change
-- [ ] 06-09-PLAN.md — WR-01: a raised `complete_structured` transport error still writes exactly one `llm_calls` audit row (exception class only) and surfaces as the generate route's typed 502 `tailoring_failed` refusal instead of a bare 500, with the shared in-flight slot released
+- [x] 06-09-PLAN.md — WR-01: a raised `complete_structured` transport error still writes exactly one `llm_calls` audit row (exception class only) and surfaces as the generate route's typed 502 `tailoring_failed` refusal instead of a bare 500, with the shared in-flight slot released
 
 **Gap closure (round 3)** *(planned 2026-09-25 from `06-VERIFICATION.md` (`gaps_found`, 9/12) + the orchestrator's binding criteria A–E; wave 1 — all prerequisites above are executed)*
 
-- [ ] 06-10-PLAN.md — CR-01 residual / ESC-06-A + WR-01 / ESC-06-B: check 4's region anchor is replaced by a structural date-adjacency discriminator a body bullet cannot satisfy, and an unanchorable region fails closed as a visible `warn` instead of a silent skip, so a valid CV whose earlier bullet names a later entry's org AND title verifies and a fabricated digit in an unscopeable region is no longer invisible; `VERIFIER_VERSION` recorded once at 1.0.3
+- [x] 06-10-PLAN.md — CR-01 residual / ESC-06-A + WR-01 / ESC-06-B: check 4's region anchor is replaced by a structural date-adjacency discriminator a body bullet cannot satisfy, and an unanchorable region fails closed as a visible `warn` instead of a silent skip, so a valid CV whose earlier bullet names a later entry's org AND title verifies and a fabricated digit in an unscopeable region is no longer invisible; `VERIFIER_VERSION` recorded once at 1.0.3
 
 **UI hint**: yes
 
@@ -350,7 +350,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
-| 6. Tailoring + Verification | 8/9 | In Progress|  |
+| 6. Tailoring + Verification | 10/10 | In Progress|  |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
