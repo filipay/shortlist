@@ -187,15 +187,21 @@ async def tailor_listing(
     requirements: Sequence[Mapping[str, Any]],
     now: datetime,
 ) -> TailoringPatch | None:
-    """Make exactly ONE structured call and write exactly one audit row.
+    """Make exactly ONE structured call and write exactly one audit row per ATTEMPT.
 
-    Never commits (the caller owns the transaction) and never raises for a model
-    failure — a failed call is a value. Returns the patch, or `None` when the call
-    did not produce a valid `TailoringPatch` OR the rolling-24h ceiling refused it.
+    Never commits (the caller owns the transaction) and never raises — a model
+    failure, a `budget_exceeded` refusal AND a raised transport error are all
+    values. Every ATTEMPTED call writes exactly one row: a completed call records
+    `result.status`, while a raised `complete_structured` records `status="error"`
+    with the exception CLASS NAME only (never its message — T-06-07 forbids a
+    redaction-hostile field). Returns the patch, or `None` when the call did not
+    produce a valid `TailoringPatch`, the rolling-24h ceiling refused it, or the
+    transport raised.
 
     The spend guard runs BEFORE the request (RANK-08's shape, D-119): a refusal
     writes one `budget_exceeded` row and returns without calling. It reserves through
-    the ranking stage's lock so the whole process shares one in-flight budget.
+    the ranking stage's lock so the whole process shares one in-flight budget; the
+    `finally` releases that slot on BOTH the success and the exception path.
     """
     day_total = await llm_call_repo.calls_since(session, purpose="tailor", now=now)
     cap_day = int(settings.ranking_max_calls_per_day)
@@ -234,6 +240,20 @@ async def tailor_listing(
             run_id=None,
             now=now,
         )
+    except Exception as exc:  # noqa: BLE001 — a raised transport error is a value, not a crash
+        # The audit trail is the promise: an ATTEMPTED call is recorded even when
+        # the transport raises. Class name only — `str(exc)` may echo request
+        # context, and T-06-07 forbids a redaction-hostile field.
+        await llm_call_repo.record_llm_call(
+            session,
+            purpose="tailor",
+            status="error",
+            error=type(exc).__name__,
+            run_id=None,
+            now=now,
+        )
+        log.warning("pipeline.tailor_transport_error", error=type(exc).__name__)
+        return None
     finally:
         await _release()
 

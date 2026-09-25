@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.cv.factstore import load_facts
-from app.db.models import CvArtifact
+from app.db.models import CvArtifact, LlmCall
 from app.domain.cv import BulletWeight, GapFinding, TailoringPatch, facts_hash
 from app.latex.base import CompileResult, EngineProbe
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
@@ -43,6 +43,7 @@ class TailoringStubBackend:
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.raise_transport = False
         self.patch = TailoringPatch(
             listing_id=1,
             ops=[
@@ -72,6 +73,8 @@ class TailoringStubBackend:
         retries: int | None = None,
     ) -> StructuredCallResult:
         self.calls.append({"system": system, "text": "\n".join(parts)})
+        if self.raise_transport:
+            raise RuntimeError("backend transport down")
         return StructuredCallResult(
             ok=True, status="ok", data=self.patch, provider="opencode", model="minimax-m3"
         )
@@ -112,6 +115,7 @@ _ENGINE = StubEngine()
 @pytest.fixture(autouse=True)
 def _reset_stubs() -> None:
     _BACKEND.calls.clear()
+    _BACKEND.raise_transport = False
     _ENGINE.calls.clear()
 
 
@@ -165,6 +169,13 @@ async def _artifact_rows(
         return list((await session.execute(select(CvArtifact))).scalars().all())
 
 
+async def _llm_call_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[LlmCall]:
+    async with session_factory() as session:
+        return list((await session.execute(select(LlmCall))).scalars().all())
+
+
 def _extract_patch(body: str) -> str:
     match = PATCH_RE.search(body)
     assert match is not None, "the review fragment must carry a patch_json hidden field"
@@ -214,6 +225,28 @@ async def test_generate_returns_the_review_fragment_and_writes_nothing(
     assert await _artifact_rows(session_factory) == [], "generate persists no artifact row"
     assert list((tmp_path / "artifacts").rglob("*.tex")) == [], "generate writes no .tex"
     assert len(_BACKEND.calls) == 1, "exactly one tailoring call per generate"
+
+
+async def test_generate_returns_a_typed_error_and_one_audit_row_when_the_backend_raises(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-01: a raised transport error is a typed 502 refusal with one audit row, never a 500."""
+    listing_id = await _seed_scored_listing(session_factory, title="Raising Role")
+    _BACKEND.raise_transport = True
+
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    assert response.status_code == 502, "a raised backend error must not escape as a 500"
+    assert 'data-error="tailoring_failed"' in response.text
+    assert len(_BACKEND.calls) == 1, "the call was attempted and observable"
+
+    rows = await _llm_call_rows(session_factory)
+    assert len(rows) == 1, "exactly one audit row for the attempted call"
+    assert rows[0].purpose == "tailor"
+    assert rows[0].status == "error"
+    assert rows[0].run_id is None
+    assert rows[0].error == "RuntimeError", "the class only, never the message"
 
 
 # --- truth 4: a passing compile writes one ok row ------------------------------

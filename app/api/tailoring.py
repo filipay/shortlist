@@ -345,7 +345,15 @@ async def generate_tailored_cv(
     session: AsyncSession = Depends(get_session),
     backend: Any = Depends(get_llm_backend),
 ) -> HTMLResponse:
-    """Generate exactly one patch; return the review fragment. No artifact row (D-108)."""
+    """Generate exactly one patch; return the review fragment. No artifact row (D-108).
+
+    `tailor_listing` never lets a backend transport failure escape: it records the
+    attempt's audit row and returns `None`, so the `patch is None` branch below IS
+    the typed refusal — a 502 `data-error="tailoring_failed"` fragment from the
+    review region, with the attempt's row already written and committed by the
+    `await session.commit()` above. No second try/except belongs here: once the
+    pipeline stops raising it would be dead code.
+    """
     # Parse the body the standard way. The generate form carries no field this plan
     # consumes; it is parsed so a form POST is never left unread.
     await read_form(request)
