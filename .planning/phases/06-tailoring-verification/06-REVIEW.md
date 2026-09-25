@@ -1,199 +1,135 @@
 ---
 phase: 06-tailoring-verification
-reviewed: 2026-09-24T23:45:00Z
+reviewed: 2026-09-25T09:44:04Z
 depth: standard
-files_reviewed: 44
+files_reviewed: 10
 files_reviewed_list:
   - app/api/tailoring.py
-  - app/config.py
-  - app/db/repositories/cv_artifact_repo.py
-  - app/db/repositories/llm_call_repo.py
-  - app/domain/cv.py
-  - app/main.py
   - app/pipeline/tailor.py
-  - app/verify/__init__.py
   - app/verify/base.py
-  - app/verify/grounding.py
   - app/verify/numbers.py
-  - app/verify/plan_checks.py
-  - app/verify/text_checks.py
-  - app/web/templates/html/_cv_findings.html
-  - app/web/templates/html/_tailoring_review.html
-  - app/web/templates/html/listing_detail.html
-  - app/web/templates/html/tailoring.html
-  - static/vendor/app.css
-  - tests/api/test_cv_artifact_blocked.py
-  - tests/api/test_cv_pdf_route.py
   - tests/api/test_tailoring_generate.py
-  - tests/api/test_tailoring_review.py
-  - tests/db/test_cv_artifact_repo.py
-  - tests/domain/test_cv_ids.py
-  - tests/domain/test_patch_ops.py
-  - tests/fixtures/verify/base_extract.txt
-  - tests/fixtures/verify/digit_skill_extract.txt
-  - tests/fixtures/verify/injection_residue_extract.txt
-  - tests/fixtures/verify/missing_entity_extract.txt
-  - tests/fixtures/verify/missing_heading_extract.txt
-  - tests/fixtures/verify/novel_metric_extract.txt
-  - tests/fixtures/verify/reworded_verbatim_extract.txt
-  - tests/fixtures/verify/three_page_extract.txt
+  - tests/fixtures/verify/digit_location_extract.txt
   - tests/pipeline/test_tailor_stage.py
-  - tests/test_auth_seam.py
-  - tests/test_config.py
-  - tests/verify/__init__.py
   - tests/verify/fixtures.py
-  - tests/verify/test_block_no_repair.py
-  - tests/verify/test_grounding.py
-  - tests/verify/test_no_free_text_path.py
   - tests/verify/test_numbers.py
-  - tests/verify/test_plan_checks.py
   - tests/verify/test_text_checks.py
 findings:
-  critical: 2
+  critical: 1
   warning: 1
   info: 7
-  total: 10
+  total: 9
 status: issues_found
 ---
 
 # Phase 6: Code Review Report
 
-**Reviewed:** 2026-09-24T23:45:00Z
+**Reviewed:** 2026-09-25T09:44:04Z
 **Depth:** standard
-**Files Reviewed:** 44
+**Files Reviewed:** 10
 **Status:** issues_found
 
 ## Summary
 
-This is a re-review of the phase after the three gap-closure plans (06-05, 06-06,
-06-07). Those three fixes are **correct for what they targeted**: the compile route now
-honours `settings.tailoring_enabled` before any read (WR-01 closed); the bullet/section
-ops are grounded on their own family's id set at the single validation boundary, so a
-non-bullet id can no longer produce a phantom `ChangeRecord` (WR-02 closed); and the
-date-like exclusion is now region-local, so one entry's year can no longer excuse a
-token in another entry's region (WR-03 closed). The patch schema still carries no field
-that reaches the PDF, `apply_patch` remains all-or-nothing and pure, the spend guard is
-still reserve-then-call, and the `ok`-only artifact predicate is still enforced in SQL on
-both accessors. No injection, traversal, secret or auth-bypass defect was found in the
-phase-6 source.
+This is an incremental re-review scoped to the files changed since the prior review
+commit `cea6f3e` (i.e. the 06-08 CR-01/CR-02 plan and the 06-09 WR-01 plan). The
+prior review's 44-file scope is preserved by reference; findings in unchanged files
+are carried forward where still valid.
 
-However, **check 4 (`metric_containment`) still hard-fails valid CVs**, in two ways the
-06-05 fix did not close and that no committed test exercises. Both are the CR-01 class:
-a blocking check fails on ordinary, correct CV content, and the only recovery (D-118's
-"generate a fresh tailoring") re-runs the same predicate, so preview and download are
-dead for the affected CV:
+**Prior findings status:**
 
-- **CR-01** — `_allowed_for_entry` never includes `RenderedEntry.location`, although the
-  template renders it into the region. A location carrying a digit (Eircode, UK/US postal
-  code, "Dublin 2", "Remote (GMT+1)") is a surplus candidate and a **hard fail**.
-- **CR-02** — `_entry_lines` anchors a region to *any* line containing `squash(entry.org)`
-  as a substring. When a later entry's employer name (which is squashed, so whitespace-
-  and punctuation-insensitive) also appears in an earlier entry's bullet, the later
-  entry's region starts at that bullet; the earlier entry's bullets then bleed into the
-  later region and their digits fail. The substring rule also misfires on short/common
-  org names.
+- **Prior CR-01 (digit-bearing `location` hard-failed check 4) — CLOSED.** Verified
+  independently: `_allowed_for_entry` now folds `entry.location` into that entry's
+  own `allowed` set (`app/verify/numbers.py:175-176`), and `allowed`-only (never
+  `excluded`) is the correct asymmetry. A reproduced entry with `location="Dublin 2"`
+  yields `candidates=['2']`, `allowed=['01','2','2020','2021']`, `check_metric_containment=pass`.
+- **Prior CR-02 (org-substring region anchor) — NOT CLOSED.** The *literal* original
+  reproduction (an earlier bullet naming only the later employer) is fixed, but the
+  defect class persists: the anchor still substring-matches org **and** title, so a
+  bullet containing **both** hijacks the later entry's region start and bleeds its
+  digits. Reproduced below; re-raised as **CR-01**.
+- **Prior WR-01 (raised transport error escapes as a bare 500, no audit row) — CLOSED.**
+  `tailor_listing`'s `except` (`app/pipeline/tailor.py:243-256`) writes one
+  `purpose="tailor"`, `status="error"`, `run_id=None` row with the exception class
+  only, logs the class only, returns `None`, and retains `finally: _release()`. The
+  route's `patch is None` branch (`app/api/tailoring.py:387-392`) is the typed 502
+  `data-error="tailoring_failed"`. Confirmed by the committed tests and by reading
+  the current source.
+- **Prior IN-07 (understated `_allowed_for_entry` docstring) — CLOSED.** The docstring
+  and the set now both name `dates`, `org`, `title`, `location`, and each bullet's
+  `text`/`metrics`.
+- **Prior IN-01..IN-06 — still open** (unchanged code, carried forward below).
 
-Both were reproduced against the committed stand-in fact store (transcripts below). The
-one remaining Warning is a pre-existing error-handling gap (a raised backend exception
-escapes as a 500 and skips the audit row the module promises). The Info items are the
-still-valid carry-overs plus two minor surface/audit inconsistencies.
+**New in this pass:** the residual hard-fail above (CR-01, Critical), one Warning
+(check 4 silently skips regions it cannot anchor, so a fabricated digit there is not
+caught), and one new Info (the new `except` scope can write an audit row for a call
+that was never attempted). The focused lane is green:
+`tests/verify tests/pipeline/test_tailor_stage.py tests/api/test_tailoring_generate.py
+tests/api/test_tailoring_review.py tests/test_import_discipline.py` → **105 passed**.
 
 Severity note: `critical` here is the severity tier equivalent to a BLOCKER.
 
+## Prior Findings Resolution
+
+| Prior ID | Status | Evidence |
+|---|---|---|
+| CR-01 (`location` digit hard-fail) | **Closed** | `app/verify/numbers.py:175-176`; independent repro passes |
+| CR-02 (org-substring mis-anchor) | **Not closed** | residual reproduced; see CR-01 below |
+| WR-01 (raise escapes, no audit row) | **Closed** | `app/pipeline/tailor.py:243-256`; `app/api/tailoring.py:387-392` |
+| IN-01 (cap refusal looks like model failure) | Open | carried as IN-01 |
+| IN-02 (`verify_text` indirect version) | Open | carried as IN-02 |
+| IN-03 (`cv.py` unreachable "lost all entries") | Open | carried as IN-03 |
+| IN-04 (two blocked-artifact renderers) | Open | carried as IN-04 |
+| IN-05 (history links collide on newest `ok`) | Open | carried as IN-05 |
+| IN-06 (`patch.listing_id` never checked) | Open | carried as IN-06 |
+| IN-07 (allow-set docstring) | **Closed** | `app/verify/numbers.py:163-171` |
+
 ## Critical Issues
 
-### CR-01: `metric_containment` hard-fails a valid CV whose location contains a digit
+### CR-01: A bullet carrying both the next entry's org and title still hijacks that entry's region and hard-fails check 4 (residual CR-02)
 
-**File:** `app/verify/numbers.py:143-152` (`_allowed_for_entry`), rendered at
-`app/latex/templates/cv.tex.jinja:60`, checked at `app/verify/text_checks.py:82-98`
+**File:** `app/verify/numbers.py:151-156` (the anchor predicate), consumed at
+`app/verify/numbers.py:246-270`, checked at `app/verify/text_checks.py:82-98`
 
-**Issue:** The template renders `entry.location` on its own line inside the entry's
-region:
+**Issue:** The 06-08 fix replaced the org-only anchor with an org-**and**-title anchor
+(`if org_needle in line and title_needle in line`, line 154), but both needles are
+still naked squashed substrings. A bullet in an earlier entry that contains **both**
+a later entry's org and its title still matches first, so `_entry_lines` returns that
+bullet line as the later entry's region start. The earlier entry's trailing bullets
+are then pulled into the later region as surplus candidates and `check_metric_containment`
+returns `fail` on an otherwise-correct CV. This is the same class and the same
+consequence as the original CR-02: a blocking check fails correct content and the only
+recovery (D-118's fresh tailor) deterministically re-runs the same predicate, so the
+preview/download path is dead for the affected CV.
 
-```latex
-\BLOCK{ if entry.location }
-\noindent\textit{\VAR{entry.location}}\par
-\BLOCK{ endif }
-```
-
-`region_token_report` cuts a region from the entry's org line to the next entry's org
-line (`app/verify/numbers.py:236-255`), so every digit core in the location line is a
-candidate. But `_allowed_for_entry` enumerates only `dates`, `org`, `title` and the
-bullets' `text`/`metrics` — **not `location`** — and `non_entry_structured_strings`
-(`app/verify/numbers.py:155-179`) does not carry locations either. So a location such as
-`Dublin 2`, `London EC1A 4JQ`, `New York, NY 10001`, `D02 X285` or `Remote (GMT+1)`
-produces a candidate that is absent from `allowed`, and `check_metric_containment` returns
-`fail`. Check 4 is blocking (`app/verify/text_checks.py:92-97`); D-118's recovery is a
-fresh tailor, which reproduces the same plan text.
-
-Reproduced against the committed stand-in (only the source location and the matching
-extraction line changed):
+Reproduced against the current code (two roles at the same employer, the earlier
+bullet a promotion narrative):
 
 ```
-entry location = "Dublin 2"
-region exp/northwind-labs-2021 candidates= ['2', '99', '40']
-allowed                          = ['03', '09', '2021', '2024', '40', '99']
-metric_containment: fail ['exp/northwind-labs-2021:2']
+entry A = exp/acme-2018  "Acme" / "Engineer" / 2018-01 -- 2018-12
+  bullets: ["Partnered with Acme's Senior Engineer team to cut 5 incidents",
+            "Mentored 3 juniors"]
+entry B = exp/acme-2019  "Acme" / "Senior Engineer" / 2019-01 -- 2019-12
+  bullets: ["Led 7 people"]
+
+regions: exp/acme-2018 found=True  cand=[]        allowed=['01','12','2018','3','5']
+         exp/acme-2019 found=True  cand=['5','3','7'] allowed=['01','12','2019','7']
+check_metric_containment: fail ['exp/acme-2019:3', 'exp/acme-2019:5']
 ```
 
-`D-113` states every region digit core must be "one of that region's source tokens";
-`location` **is** a source token of the region, so this is an implementation divergence,
-not a missing feature. No committed fixture exercises it — the stand-in's location is
-`"Dublin, IE"` (no digit) and `grep -rn location tests/verify app/verify` returns nothing.
+Entry B's region started at line 2 (A's bullet, which contains `acme` and
+`seniorengineer`) instead of its real header at line 4, so A's digits `5` and `3`
+became B's surplus candidates. A bullet mentioning the employer and a title word
+("Acme's Senior Engineer team", "promoted to Senior Engineer at Acme") is ordinary CV
+prose, and titles like `Engineer`/`Manager`/`Analyst` are common, so this is not
+exotic. The authored regression test (`test_a_bullet_naming_a_later_employer_does_not_bleed_into_its_region`)
+passes only because its bullet names the employer **without** the title.
 
-**Fix:** add the entry's location to its allow-set:
-
-```python
-def _allowed_for_entry(entry: RenderedEntry) -> set[str]:
-    """The digit cores a region may carry: its surviving bullets, location, org/title and dates."""
-    allowed: set[str] = set(digit_cores(entry.dates))
-    allowed |= set(digit_cores(entry.org))
-    allowed |= set(digit_cores(entry.title))
-    if entry.location:
-        allowed |= set(digit_cores(entry.location))
-    for bullet in entry.bullets:
-        allowed |= set(digit_cores(bullet.text))
-        for metric in bullet.metrics:
-            allowed |= set(digit_cores(metric))
-    return allowed
-```
-
-Add a regression fixture: a stand-in entry whose location is `"Dublin 2"` and an
-extraction whose location line is `Dublin 2` must pass `metric_containment` while
-`novel_metric_extract.txt` still fails.
-
-### CR-02: Region anchoring matches `squash(org)` as a substring, mis-locating a region and hard-failing a valid CV
-
-**File:** `app/verify/numbers.py:120-140` (`_entry_lines`, match at line 134), consumed at
-`app/verify/numbers.py:236-255`
-
-**Issue:** `_entry_lines` finds an entry's region start with
-`if needle in squashed_lines[index]` from a cursor. Because `squash` strips whitespace and
-all non-alphanumerics (`app/domain/tex.py:125-134`), this is a naked substring test:
-a bullet from an **earlier** entry that mentions a **later** entry's employer matches
-first. The later entry's region then begins at that bullet line, which (a) truncates the
-earlier entry's region so its trailing bullets are never checked there, and (b) pulls the
-earlier entry's bullet digits into the later region, where they are surplus candidates
-against the later entry's facts. The result is a **hard fail** on a correct CV.
-
-Reproduced with two roles at the same employer, where entry A's bullet names the company:
-
-```
-regions: [('exp/acme-2018', []), ('exp/acme-2019', ['5'])]
-check:   fail ['exp/acme-2019:5']
-```
-
-`Acme`'s squashed needle `acme` matches the bullet line `Rebuilt Acme's 5 service mesh`,
-so entry B's region starts one line early. This is not exotic: a bullet referring to the
-employer ("Acme's billing platform") is ordinary CV prose, and the substring rule is even
-broader for short or common org names (`Meta` matching `metadata`, `Go` matching
-`ongoing`, a single-letter employer name matching almost anything). Same class and same
-consequence as CR-01: a blocking check fails correct content with no UI recovery.
-
-**Fix:** anchor the region on the entry **header line**, which the template emits with
-both the org and the title on the same line (`cv.tex.jinja:58`), instead of on any line
-that merely contains the org. Requiring both needles also removes the substring-vs-word
-fragility:
+**Fix:** add a third, structural discriminator that a bullet cannot satisfy. The
+committed extraction places the entry's date-range on the line carrying org+title or
+the line immediately after it (`tests/fixtures/verify/base_extract.txt:5-6`), while a
+bullet never has the entry's own date-range adjacent. Require the dates needle on the
+candidate line or its successor:
 
 ```python
 def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
@@ -203,11 +139,17 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     for entry in entries:
         org_needle = squash(entry.org)
         title_needle = squash(entry.title)
+        dates_needle = squash(entry.dates)
         found = -1
-        if org_needle and title_needle:
+        if org_needle and title_needle and dates_needle:
             for index in range(cursor, len(lines)):
                 line = squashed_lines[index]
-                if org_needle in line and title_needle in line:
+                next_line = squashed_lines[index + 1] if index + 1 < len(lines) else ""
+                if (
+                    org_needle in line
+                    and title_needle in line
+                    and (dates_needle in line or dates_needle in next_line)
+                ):
                     found = index
                     break
         positions.append(found)
@@ -216,59 +158,69 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     return positions
 ```
 
-(Any anchor that only matches the header — e.g. requiring the `---` separator the
-template emits — is equivalent; requiring org **and** title avoids depending on how the
-extractor renders the em-dash.) Add a regression case: two entries at the same employer
-where the first entry's bullet names the employer must keep each bullet's metrics inside
-its own region.
+This was checked against the committed `base_extract.txt` (still finds the header),
+the residual reproduction above (now `[0, 4]`), and a wrapped header (still `-1`,
+the accepted skip). Add a regression case: two entries at the same employer where the
+first entry's bullet names both the employer and the later title must keep each
+entry's metrics inside its own region, while `novel_metric_extract.txt` still fails.
 
 ## Warnings
 
-### WR-01: A raised backend exception skips the audit row and escapes the route as a 500
+### WR-01: Check 4 silently skips an entry whose org+title header is not on one extraction line, so a fabricated digit there is never caught
 
-**File:** `app/pipeline/tailor.py:217-242` (`tailor_listing`), `app/api/tailoring.py:370-384` (generate route)
+**File:** `app/verify/numbers.py:151` (the `if org_needle and title_needle` guard),
+`app/verify/numbers.py:249-264` (`position < 0` → `found=False`, `candidates=[]`),
+`app/verify/text_checks.py:86-88` (the `not report.found` skip)
 
-**Issue:** `tailor_listing`'s docstring states it "never raises for a model failure" and the
-module's contract is "every call writes exactly one `llm_calls` row". The
-`complete_structured` call sits inside `try` with only `_release()` in `finally`; the
-`record_llm_call` that would satisfy the audit contract is **after** the call, so a raise
-(transport error) propagates with no `llm_calls` row written. The generate route does not
-catch it, so the request becomes a 500. In practice `app/llm` returns values rather than
-raising, so this is latent — but it is an unhandled exception path on the request surface.
+**Issue:** The strict org-**and**-title anchor reports `found=False` whenever no single
+squashed line carries both needles. In that case `region_token_report` emits an empty
+candidate list and `check_metric_containment` skips the region entirely. This is the
+safe direction for false positives (no more CR-02 mis-location), but it is a silent
+false **negative** in the one blocking check whose job is to catch a number the
+renderer introduced: a fabricated digit inside a skipped region is not reported.
 
-**Fix:** record the attempt before surfacing the failure, then keep the value-returning
-contract:
+Two reachable triggers reproduced against the current code (fabricated `99` in the
+region, check still `pass`):
 
-```python
-try:
-    parts = build_tailoring_parts(facts, listing, requirements)
-    result = await backend.complete_structured(...)
-    await llm_call_repo.record_llm_call(
-        session, purpose="tailor", status=result.status, result=result, run_id=None, now=now
-    )
-except Exception as exc:  # noqa: BLE001 — an audit row is owed even when the transport raises
-    await llm_call_repo.record_llm_call(
-        session, purpose="tailor", status="error", error=f"{type(exc).__name__}: {exc}",
-        run_id=None, now=now,
-    )
-    log.warning("pipeline.tailor_transport_error", error=type(exc).__name__)
-    return None
-finally:
-    await _release()
 ```
+D) RenderedEntry(title="")            + text "Acme --- \n2020-01 -- 2021-01\nReduced latency 99%"
+   -> entry found=False, candidates=[], allowed=['01','2020','2021','40'], check=pass
+   (`Org.name`/`Title.name` carry no min_length, so an empty or all-punctuation
+    title name yields an empty `squash(title)` needle and disables the region.)
+
+E) org="Acme Corporation", title="Senior Software Engineer", header wraps:
+   "Acme Corporation --- Senior\nSoftware Engineer\n2020-01 -- 2021-01\nReduced latency 99%"
+   -> entry found=False, candidates=[], check=pass
+   (a long org+title wraps in the rendered PDF; the extractor emits two lines, neither
+    of which carries both needles.)
+```
+
+The committed test `test_a_split_header_entry_is_reported_not_found_not_mislocated`
+pins the split-header behaviour as a deliberate trade-off, but it does not surface
+that the consequence is a skipped integrity check on realistic long-title content.
+This should be an explicit, documented ceiling rather than an implicit one.
+
+**Fix:** either (a) keep the strict anchor but treat `found=False` for an entry whose
+`org`/`title` are present elsewhere in the text as a `warn` (not a silent skip) in
+`check_metric_containment`, so the operator sees that the entry was not metric-checked;
+or (b) fall back to a weaker but still collision-resistant anchor (e.g. require
+`org_needle` at the start of the squashed line and the `---` separator, or the
+dates-adjacency anchor from CR-01) before declaring the region absent. Do not restore
+the org-only substring anchor — that is the CR-01/CR-02 defect.
 
 ## Info
 
 ### IN-01: A spend-cap refusal is surfaced as a generic 502 "tailoring failed"
 
-**File:** `app/pipeline/tailor.py:200-215` (refusal returns `None`), `app/api/tailoring.py:379-384`
+**File:** `app/pipeline/tailor.py:206-221` (refusal returns `None`),
+`app/api/tailoring.py:387-392`
 
-**Issue:** `tailor_listing` returns `None` both for a budget refusal and for a model
-failure, and the generate route maps every `None` to `data-error="tailoring_failed"` with
-HTTP 502. The operator cannot tell "the rolling-24h cap refused this" from "the model
-returned garbage", even though the refusal row already carries `budget_exceeded`.
-**Fix:** return a small result value (or raise a typed refusal) distinguishing the two,
-and map the cap case to a 429/409 fragment naming the 24 h ceiling.
+**Issue:** `tailor_listing` returns `None` for a budget refusal, a model failure and
+(now) a transport raise, and the generate route maps every `None` to
+`data-error="tailoring_failed"` / HTTP 502. The operator cannot tell "the rolling-24h
+cap refused this" from "the model returned garbage", even though the refusal row
+already carries `BUDGET_EXCEEDED_MARKER`. **Fix:** return a small result value
+distinguishing the cases and map the cap to a 429/409 fragment naming the 24 h ceiling.
 
 ### IN-02: `verify_text` derives `verifier_version` indirectly through `model_fields`
 
@@ -276,9 +228,9 @@ and map the cap case to a 429/409 fragment naming the 24 h ceiling.
 
 **Issue:** `verifier_version=VerificationResult.model_fields["verifier_version"].default`
 re-reads the field default where the module already exports `VERIFIER_VERSION`
-(`app/verify/base.py:22`) — the constant `compile_tailored` uses for the merged result
-(`app/pipeline/tailor.py:385`). The indirection breaks silently if the field is renamed.
-**Fix:** `verifier_version=VERIFIER_VERSION` (imported from `app.verify.base`).
+(`app/verify/base.py:22`). The indirection breaks silently if the field is renamed, and
+it diverges from `compile_tailored`, which uses the constant
+(`app/pipeline/tailor.py:405`). **Fix:** `verifier_version=VERIFIER_VERSION`.
 
 ### IN-03: The "section lost all its entries" guard is unreachable dead code
 
@@ -286,14 +238,11 @@ re-reads the field default where the module already exports `VERIFIER_VERSION`
 
 **Issue:** `_build_plan` raises `InvalidPatchError("section ... lost all its entries")`
 when `section.entries and not entries`, but `entries` is a 1:1 comprehension over
-`section.entries`, so it can never be empty when the source is non-empty (the branch is
-marked `# pragma: no cover`). No current op targets entries, so D-106's
-"a section losing all entries" invariant is enforced by no reachable path, yet the
-`_validate_patch` comment (lines 681-683) implies it is.
-**Fix:** either delete the branch and state in `_validate_patch` that no current op can
-empty a section (adding the guard with the first op that can), or keep the branch and
-drop the enforcement claim. An unreachable raise plus a comment claiming enforcement is
-misleading.
+`section.entries`, so it cannot be empty when the source is non-empty (branch marked
+`# pragma: no cover`). No current op targets entries, yet the `_validate_patch` comment
+implies the invariant is enforced. **Fix:** delete the branch and state that no current
+op can empty a section (re-add with the first op that can), or drop the enforcement
+claim in the comment.
 
 ### IN-04: Two parallel blocked-artifact renderers
 
@@ -301,53 +250,54 @@ misleading.
 `app/web/templates/html/_cv_findings.html` (Jinja include)
 
 **Issue:** the compile action's immediate blocked response and the page's blocked state
-explain the same failure through two separate, independently-escaping code paths. Both
-are safe today (`html.escape` on one side, Jinja autoescape on the other), but a change
-to one will drift from the other.
-**Fix:** have `_findings_fragment` render `_cv_findings.html` through the shared
-`Jinja2Templates` env (the route already holds `templates`) and delete the hand-built
-string.
+explain the same failure through two independently-escaping code paths. Both are safe
+today (`html.escape` on one side, Jinja autoescape on the other), but a change to one
+will drift from the other. **Fix:** render `_cv_findings.html` through the shared
+`Jinja2Templates` env and delete the hand-built string.
 
 ### IN-05: Every "Download PDF" link in the compile history points at the newest `ok` artifact
 
 **File:** `app/web/templates/html/tailoring.html:64`
 
-**Issue:** each `history` row that is `ok` renders
-`href="/listings/{{ listing_id }}/cv/pdf"`, but the route serves
-`latest_for_listing(ok_only=True)` — the **newest** `ok` row, not the row the link sits
-beside. With more than one `ok` compile, every historical "Download PDF" downloads the
-same (newest) file, which is misleading in a surface whose whole point is retained
-history (D-117).
-**Fix:** either carry the row's artifact id into the URL and select by id via
-`read_for_download(ok_only=True)`, or drop the per-row link and keep a single link on the
-latest artifact.
+**Issue:** each `history` row that is `ok` renders `href="/listings/{{ listing_id }}/cv/pdf"`,
+but the route serves `latest_for_listing(ok_only=True)` — the newest `ok` row, not the
+row the link sits beside (`app/api/tailoring.py:512`). With more than one `ok` compile,
+every historical "Download PDF" downloads the same (newest) file, misleading in a
+surface whose point is retained history (D-117). **Fix:** carry the row's artifact id
+into the URL and select by id via `read_for_download(ok_only=True)`, or keep a single
+link on the latest artifact.
 
 ### IN-06: The client-controlled `patch.listing_id` is never checked against the URL listing
 
-**File:** `app/api/tailoring.py:433-439` (parse), `app/pipeline/tailor.py:271-273` (persist)
+**File:** `app/api/tailoring.py:444-447` (parse), `app/pipeline/tailor.py:291-292`
+(persist)
 
 **Issue:** the round-tripped `TailoringPatch` is validated structurally but its
-`listing_id` is never compared with the route's `listing_id`; the artifact row's
-`listing_id` is server-derived (`listing.id`), so there is no cross-listing exposure, but
-`cv_artifacts.patch_json` can be persisted with a `listing_id` that disagrees with the row
-— an audit-trail inconsistency a forged POST can create at will.
-**Fix:** validate `patch.listing_id == listing_id` after parsing (reject with 422), or
-overwrite the field server-side before `compile_tailored`.
+`listing_id` is never compared with the route's `listing_id`. The artifact row's
+`listing_id` is server-derived (`listing.id`), so there is no cross-listing exposure,
+but `cv_artifacts.patch_json` can be persisted with a `listing_id` that disagrees with
+its row — an audit-trail inconsistency a forged POST can create at will. **Fix:**
+validate `patch.listing_id == listing_id` after parsing (reject 422), or overwrite the
+field server-side before `compile_tailored`.
 
-### IN-07: The `_allowed_for_entry` docstring understates and mislabels its fields
+### IN-07: The new `except` scope can write an audit row for a call that was never attempted
 
-**File:** `app/verify/numbers.py:144`
+**File:** `app/pipeline/tailor.py:223-256`
 
-**Issue:** the docstring says "its surviving bullets, label and org/title" — there is no
-`label` field on `RenderedEntry` (the field is `dates`), and `location` is absent from
-both the docstring and the set, which is what let CR-01 through review. A docstring that
-enumerates the allow-set fields is a place a missed field should be impossible to hide.
-**Fix:** correct it to name every source token the region legitimately carries (`dates`,
-`org`, `title`, `location`, each bullet's `text` and `metrics`), and add `location` to the
-set per CR-01.
+**Issue:** the `try` wraps `build_tailoring_parts(...)` as well as
+`backend.complete_structured(...)`. If the pure prompt assembly raises (e.g. an
+attribute access on the listing object fails), the `except` still writes a
+`purpose="tailor"`, `status="error"` `llm_calls` row and logs
+`tailor_transport_error`, even though no request left the process. The module's contract
+is "exactly one audit row per ATTEMPTED call"; this writes one for a non-attempt and
+inflates the rolling-24h cap used by the next refusal decision. It is latent (prompt
+assembly is pure and the listing is loaded), but the row is indistinguishable from a
+genuine transport failure. **Fix:** build `parts` before the `try`, or narrow the
+`except` to the `complete_structured`/`record_llm_call` region, so only an attempted
+call is audited.
 
 ---
 
-**Reviewed:** 2026-09-24T23:45:00Z
+**Reviewed:** 2026-09-25T09:44:04Z
 **Reviewer:** the agent (gsd-code-reviewer)
 **Depth:** standard
