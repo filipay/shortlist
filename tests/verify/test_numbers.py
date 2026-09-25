@@ -131,8 +131,8 @@ def test_a_date_core_is_never_a_candidate() -> None:
 
     report = region_token_report(fixture.plan, fixture.text, page_count=1)[0]
 
-    assert "2021" not in report.candidates
-    assert "03" not in report.candidates
+    assert "2021" not in set(report.candidates)
+    assert "03" not in set(report.candidates)
 
 
 def test_a_page_number_line_is_never_a_candidate() -> None:
@@ -140,7 +140,7 @@ def test_a_page_number_line_is_never_a_candidate() -> None:
 
     report = region_token_report(fixture.plan, fixture.text, page_count=3)[0]
 
-    assert "1" not in report.candidates
+    assert "1" not in set(report.candidates)
     assert report.candidates == ["99", "40"]
 
 
@@ -259,7 +259,7 @@ def test_a_digit_in_a_skill_label_appearing_in_the_region_is_not_a_candidate() -
 
     report = region_token_report(plan, text, page_count=1)[0]
 
-    assert "3" not in report.candidates
+    assert "3" not in set(report.candidates)
     assert "3" in report.allowed
 
 
@@ -529,7 +529,7 @@ def test_a_bullet_embedding_the_next_entrys_org_and_title_never_hijacks_a_region
     assert [report.found for report in reports] == [True, True, True]
     for index, report in enumerate(reports):
         for earlier in corpus[:index]:
-            assert str(earlier[2]) not in report.candidates
+            assert str(earlier[2]) not in set(report.candidates)
     assert check_metric_containment(plan, text, page_count=1).status == "pass"
 
     # The mutation really embeds the next entry's org AND title (the collision class).
@@ -539,6 +539,406 @@ def test_a_bullet_embedding_the_next_entrys_org_and_title_never_hijacks_a_region
         squashed = squash(mutated)
         assert squash(next_org) in squashed
         assert squash(next_title) in squashed
+
+
+# --- 06-11 / WR-02: the org-first boundary and the region-end leak guard --------
+
+
+def _two_entry_plan(
+    *,
+    a_id: str,
+    a_org: str,
+    a_title: str,
+    a_dates: str,
+    a_bullets: list[Bullet],
+    b_id: str,
+    b_org: str,
+    b_title: str,
+    b_dates: str,
+    b_bullets: list[Bullet] | None = None,
+) -> RenderPlan:
+    """A two-entry Experience plan, A first. The common fixture for the 06-11 shapes."""
+    entry_a = RenderedEntry(
+        id=a_id, org=a_org, title=a_title, dates=a_dates, bullets=a_bullets
+    )
+    entry_b = RenderedEntry(
+        id=b_id, org=b_org, title=b_title, dates=b_dates, bullets=b_bullets or []
+    )
+    return RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry_a, entry_b],
+            )
+        ]
+    )
+
+
+def test_a_bullet_carrying_the_next_entrys_org_title_and_dates_does_not_bleed_into_its_region() -> None:
+    """Variant 1: a bullet co-locating the next org, title AND date-range is not a header.
+
+    The content/title-plus-date anchor matched the earlier bullet as entry B's header,
+    pulled A's ``5`` into B's region and hard-failed ``['exp/acme-2019:5']`` on a
+    correct CV. The org-first position is what prevents the hijack.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Partnered with Acme Senior Engineer 2019-01 -- 2019-12 to cut 5 incidents",
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (VERIFY_FIXTURES / "org_title_dates_collision_extract.txt").read_text(
+        encoding="utf-8"
+    )
+
+    reports = region_token_report(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is True
+    assert reports[1].entry_id == "exp/acme-2019"
+    assert "5" not in reports[1].candidates
+    assert check_metric_containment(plan, text, page_count=1).status == "pass"
+
+    # The failure class, proven: the earlier bullet line carries BOTH the later org
+    # and title AND its date-range, so a content-only or title-plus-date-only anchor
+    # WOULD match it. The org-first boundary is the fix.
+    first_bullet_line = next(line for line in text.splitlines() if "cut 5 incidents" in line)
+    squashed_bullet = squash(first_bullet_line)
+    assert squash("Acme") in squashed_bullet
+    assert squash("Senior Engineer") in squashed_bullet
+    assert squash("2019-01 -- 2019-12") in squashed_bullet
+
+
+def test_an_unanchored_entry_does_not_donate_its_digits_to_the_previous_region() -> None:
+    """Variant 2: an extractor line-merge leaves B unanchored; A must not absorb B's digits.
+
+    The pre-fix false-fail is ``fail ['exp/globex-2018:7']`` (or ``['exp/acme-2019:5']``):
+    the preceding region cannot separate the merged neighbour, so the correct
+    disposition is a visible ``warn`` naming B, not a block on A.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Liaised with the Globex Inc Manager on 5 projects",
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (VERIFY_FIXTURES / "org_title_dates_merge_extract.txt").read_text(
+        encoding="utf-8"
+    )
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is False
+    assert check.status == "warn"
+    assert "exp/acme-2019" in check.offending
+    assert not any(entry.startswith("exp/globex-2018:") for entry in check.offending)
+
+
+_LEAK_SHAPES = [
+    "dates_on_own_line",
+    "merged_header_dates_on_successor",
+    "merged_header_with_dates",
+]
+
+
+def _leak_shape_text(shape: str) -> str:
+    lines = ["Globex Inc --- Engineer", "2018-01 -- 2018-12"]
+    if shape == "dates_on_own_line":
+        lines += [
+            "Liaised with the Globex Inc Manager on 5 projects",
+            "Acme --- Senior Engineer",
+            "2019-01 -- 2019-12",
+            "Led 7 people",
+        ]
+    elif shape == "merged_header_dates_on_successor":
+        lines += [
+            "Liaised with the Globex Inc Manager on 5 projects Acme Senior Engineer",
+            "2019-01 -- 2019-12",
+            "Led 7 people",
+        ]
+    else:  # merged_header_with_dates
+        lines += [
+            "Liaised with the Globex Inc Manager on 5 projects Acme Senior Engineer 2019-01 -- 2019-12",
+            "Led 7 people",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("shape", _LEAK_SHAPES)
+def test_an_unanchored_entrys_date_cores_are_never_absorbed_by_the_previous_region(
+    shape: str,
+) -> None:
+    """Every unanchored extraction shape leaves the preceding region free of B's dates.
+
+    Shape ``merged_header_with_dates`` is the containment gate: an equality-only guard
+    never fires and returns ``fail ['exp/globex-2018:2019','exp/globex-2018:7']``,
+    while containment returns ``warn ['exp/acme-2019']``.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Liaised with the Globex Inc Manager on 5 projects",
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = _leak_shape_text(shape)
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    if shape == "dates_on_own_line":
+        assert reports[1].found is True
+        assert check.status == "pass"
+        return
+    assert reports[1].found is False
+    assert "2019" not in reports[0].candidates
+    assert "01" not in reports[0].candidates
+    assert "12" not in reports[0].candidates
+    assert check.status == "warn"
+    assert "exp/acme-2019" in check.offending
+    assert not any(entry.startswith("exp/globex-2018:") for entry in check.offending)
+
+
+_ROUND3_SHAPES = ["digit_bearing_header", "identical_dates"]
+
+
+@pytest.mark.parametrize("shape", _ROUND3_SHAPES)
+def test_a_digit_bearing_or_identical_date_neighbour_is_not_charged_to_the_preceding_region(
+    shape: str,
+) -> None:
+    """Round-3 shapes: a digit-bearing header and a shared identical date-range.
+
+    Pre-fix both false-failed the anchored entry (``['exp/acme-2018:3']`` /
+    ``['exp/acme-2018:7']``). The bound matches the neighbour's org and title as well
+    as its date-range and excludes the anchored entry's own date line BY POSITION, so
+    a shared identical date-range no longer suppresses the bound.
+    """
+    if shape == "digit_bearing_header":
+        plan = _two_entry_plan(
+            a_id="exp/acme-2018",
+            a_org="Acme",
+            a_title="Engineer",
+            a_dates="2018-01 -- 2018-12",
+            a_bullets=[Bullet(id="bul/acme-2018/1", text="Delivered the platform")],
+            b_id="exp/3m-2019",
+            b_org="3M",
+            b_title="Manager",
+            b_dates="2019-01 -- 2019-12",
+            b_bullets=[Bullet(id="bul/3m-2019/1", text="Led 7 people")],
+        )
+        extract_name = "digit_bearing_header_extract.txt"
+        named = "exp/3m-2019"
+    else:
+        plan = _two_entry_plan(
+            a_id="exp/acme-2018",
+            a_org="Acme",
+            a_title="Engineer",
+            a_dates="2019-01 -- 2019-12",
+            a_bullets=[Bullet(id="bul/acme-2018/1", text="Delivered the platform")],
+            b_id="exp/globex-2019",
+            b_org="Globex Inc",
+            b_title="",
+            b_dates="2019-01 -- 2019-12",
+            b_bullets=[Bullet(id="bul/globex-2019/1", text="Led 7 people")],
+        )
+        extract_name = "identical_dates_extract.txt"
+        named = "exp/globex-2019"
+    text = (VERIFY_FIXTURES / extract_name).read_text(encoding="utf-8")
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is False
+    assert check.status == "warn"
+    assert not any(entry.startswith("exp/acme-2018:") for entry in check.offending)
+    assert named in check.offending
+
+    # The failure class: the accept-side fix cannot have been bought by weakening the
+    # block — a genuinely fabricated ``99`` in A's OWN region is still a hard fail.
+    mutated = text.replace("Delivered the platform", "Delivered the 99 platform")
+    fabricated = check_metric_containment(plan, mutated, page_count=1)
+    assert fabricated.status == "fail"
+    assert "exp/acme-2018:99" in fabricated.offending
+
+
+_OWN_CONTENT_SHAPES = ["own_date_line_shared_range", "own_bullet_quotes_dates"]
+
+
+@pytest.mark.parametrize("shape", _OWN_CONTENT_SHAPES)
+def test_the_region_end_bound_never_shortens_an_anchored_region_at_its_own_content(
+    shape: str,
+) -> None:
+    """The bound must not collapse an anchored region at its own date/bullet line.
+
+    Under the uncorrected containment rule both shapes returned
+    ``warn ['exp/globex-2019']`` with A's candidates empty — the false PASS this phase
+    exists to prevent. The positional own-date exclusion and the own-bullet squash
+    equality keep the fabricated ``99`` charged as ``fail ['exp/acme-2018:99']``.
+    """
+    if shape == "own_date_line_shared_range":
+        plan = _two_entry_plan(
+            a_id="exp/acme-2018",
+            a_org="Acme",
+            a_title="Engineer",
+            a_dates="2019-01 -- 2019-12",
+            a_bullets=[Bullet(id="bul/acme-2018/1", text="Delivered the platform")],
+            b_id="exp/globex-2019",
+            b_org="Globex Inc",
+            b_title="",
+            b_dates="2019-01 -- 2019-12",
+        )
+        text = (
+            "Acme --- Engineer\n"
+            "2019-01 -- 2019-12\n"
+            "Delivered the 99 platform\n"
+            "Globex Inc --- \n"
+        )
+    else:  # own_bullet_quotes_dates
+        plan = _two_entry_plan(
+            a_id="exp/acme-2018",
+            a_org="Acme",
+            a_title="Engineer",
+            a_dates="2018-01 -- 2018-12",
+            a_bullets=[
+                Bullet(
+                    id="bul/acme-2018/1",
+                    text="Covered the 2019-01 -- 2019-12 period",
+                ),
+                Bullet(id="bul/acme-2018/2", text="Delivered the platform"),
+            ],
+            b_id="exp/globex-2019",
+            b_org="Globex Inc",
+            b_title="",
+            b_dates="2019-01 -- 2019-12",
+        )
+        text = (
+            "Acme --- Engineer\n"
+            "2018-01 -- 2018-12\n"
+            "Covered the 2019-01 -- 2019-12 period\n"
+            "Delivered the 99 platform\n"
+            "Globex Inc --- \n"
+        )
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is False
+    assert check.status == "fail"
+    assert "exp/acme-2018:99" in check.offending
+
+
+_DATE_PHRASE_TEMPLATES = [
+    "Liaised with {org} {title} {dates} on {n} projects",
+    "Partnered with {org}'s {title} team from {dates} to cut {n} incidents",
+    "Mentored the {org} {title} team ({dates}) of {n} people",
+]
+
+
+def _date_collision_plan_and_text(
+    corpus: list[tuple[str, str, int]], phrase: str
+) -> tuple[RenderPlan, str]:
+    """A 3-entry plan + extraction where each bullet embeds the NEXT org, title AND dates."""
+    entries: list[RenderedEntry] = []
+    lines: list[str] = []
+    for index, (org, title, marker) in enumerate(corpus):
+        year = 2019 + index
+        if index + 1 < len(corpus):
+            next_org, next_title, _ = corpus[index + 1]
+            next_dates = f"{year + 1}-01 -- {year + 1}-12"
+            bullet_text = phrase.format(
+                org=next_org, title=next_title, dates=next_dates, n=marker
+            )
+        else:
+            bullet_text = "Delivered the platform"
+        entries.append(
+            RenderedEntry(
+                id=f"exp/collision-{year}",
+                org=org,
+                title=title,
+                dates=f"{year}-01 -- {year}-12",
+                bullets=[Bullet(id=f"bul/collision-{year}/1", text=bullet_text)],
+            )
+        )
+        lines.append(f"{org} --- {title}")
+        lines.append(f"{year}-01 -- {year}-12")
+        lines.append(bullet_text)
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(id="sec.experience", title="Experience", entries=entries)
+        ]
+    )
+    return plan, "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("phrase", _DATE_PHRASE_TEMPLATES)
+@pytest.mark.parametrize("corpus", [_DISTINCT_EMPLOYER_CORPUS, _SAME_EMPLOYER_CORPUS])
+def test_a_bullet_embedding_the_next_entrys_org_title_and_dates_never_hijacks_a_region(
+    phrase: str, corpus: list[tuple[str, str, int]]
+) -> None:
+    """The date dimension of the collision class, not one instance: every region anchors."""
+    plan, text = _date_collision_plan_and_text(corpus, phrase)
+
+    reports = region_token_report(plan, text, page_count=1)
+
+    assert [report.found for report in reports] == [True, True, True]
+    for index, report in enumerate(reports):
+        for earlier in corpus[:index]:
+            assert str(earlier[2]) not in set(report.candidates)
+    assert check_metric_containment(plan, text, page_count=1).status == "pass"
+
+    # The mutation really embeds the next entry's org, title AND date-range (the
+    # date dimension the discriminator depends on).
+    for index in range(len(corpus) - 1):
+        next_org, next_title, _ = corpus[index + 1]
+        next_dates = f"{2019 + index + 1}-01 -- {2019 + index + 1}-12"
+        mutated = phrase.format(
+            org=next_org,
+            title=next_title,
+            dates=next_dates,
+            n=corpus[index][2],
+        )
+        squashed = squash(mutated)
+        assert squash(next_org) in squashed
+        assert squash(next_title) in squashed
+        assert squash(next_dates) in squashed
 
 
 if __name__ == "__main__":  # pragma: no cover
