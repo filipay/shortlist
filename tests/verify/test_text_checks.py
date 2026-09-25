@@ -8,9 +8,16 @@ case proves a correct absence does not false-fail.
 
 from __future__ import annotations
 
-from app.domain.cv import DropBullet, TailoringPatch
+from app.domain.cv import (
+    DropBullet,
+    RenderPlan,
+    RenderedEntry,
+    RenderedSection,
+    TailoringPatch,
+)
 from app.verify import verify_text
 from app.verify.base import VERIFIER_VERSION, CheckResult, VerificationResult
+from app.verify.text_checks import check_metric_containment
 from tests.verify.fixtures import (
     VerifyFixture,
     build_fixture,
@@ -182,6 +189,114 @@ def test_a_declared_drop_is_not_a_missing_bullet() -> None:
     assert result.passed is True
     assert _check(result, "entity_present").status == "pass"
     assert _check(result, "verbatim_integrity").status == "pass"
+
+
+# --- ESC-06-B / WR-01: an unanchorable region fails closed ----------------------
+
+
+def test_an_unanchorable_region_is_a_visible_warn_not_a_silent_skip() -> None:
+    """A region the check cannot anchor must surface as a warn, never a silent pass.
+
+    The empty/all-punctuation-title case makes ``squash(title)`` empty, so no
+    structural start is found and the region has no candidates. A fabricated ``99``
+    inside it must not disappear: it is named in the check's ``offending``.
+    """
+    entry = RenderedEntry(
+        id="exp/acme-2020",
+        org="Acme",
+        title="",
+        dates="2020-01 -- 2021-01",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(id="sec.experience", title="Experience", entries=[entry])
+        ]
+    )
+    text = "Acme\n2020-01 -- 2021-01\nReduced latency 99%\n"
+
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert check.status == "warn"
+    assert "exp/acme-2020" in check.offending
+
+
+def test_a_fabricated_digit_in_an_unanchorable_region_is_not_reported_pass() -> None:
+    """A wrapped org+title header is unanchorable, but a fabricated digit is visible.
+
+    Both strings are document-wide, so ``entity_present`` passes; the header wraps
+    across two extraction lines, so check 4 cannot anchor the region. The fabricated
+    ``99`` must yield a ``warn`` (never ``pass``) and the entry must be named — while
+    ``passed`` stays ``True`` because a warn never blocks.
+    """
+    entry = RenderedEntry(
+        id="exp/acme-2020",
+        org="Acme Corporation",
+        title="Senior Software Engineer",
+        dates="2020-01 -- 2021-01",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(id="sec.experience", title="Experience", entries=[entry])
+        ]
+    )
+    text = (
+        "Alex Example\n"
+        "Experience\n"
+        "Acme Corporation --- Senior\n"
+        "Software Engineer\n"
+        "2020-01 -- 2021-01\n"
+        "Reduced latency 99%\n"
+    )
+    facts = load_standin_facts()
+    patch = TailoringPatch(listing_id=1)
+
+    result = verify_text(facts, plan, patch, text, page_count=1)
+
+    assert _check(result, "entity_present").status == "pass"
+    check = _check(result, "metric_containment")
+    assert check.status == "warn"
+    assert "exp/acme-2020" in check.offending
+    assert result.passed is True
+
+
+def test_an_unanchored_region_does_not_hide_an_anchored_surplus() -> None:
+    """``fail`` wins over ``warn``: an anchored surplus still hard-fails check 4."""
+    entry_a = RenderedEntry(
+        id="exp/northwind-labs-2021",
+        org="Northwind Labs",
+        title="Senior Engineer",
+        dates="2021-03 -- 2024-09",
+        bullets=[],
+    )
+    entry_b = RenderedEntry(
+        id="exp/acme-2019",
+        org="Acme",
+        title="",
+        dates="2019-01 -- 2019-12",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry_a, entry_b],
+            )
+        ]
+    )
+    text = (
+        "Northwind Labs --- Senior Engineer\n"
+        "2021-03 -- 2024-09\n"
+        "Reduced latency 99%\n"
+        "Acme --- \n"
+    )
+
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert check.status == "fail"
+    assert "exp/northwind-labs-2021:99" in check.offending
 
 
 if __name__ == "__main__":  # pragma: no cover

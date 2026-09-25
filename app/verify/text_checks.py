@@ -11,7 +11,9 @@ The six checks (D-112..D-114):
   the plan is present. ``bullet.text`` is human-authored and immutable and is never
   scanned for proper nouns (D-112).
 - ``metric_containment`` (check 4) — per region, every surviving digit core must be
-  one of that region's source tokens (D-113, ``app/verify/numbers.py``).
+  one of that region's source tokens (D-113, ``app/verify/numbers.py``). A region the
+  check cannot anchor surfaces as a visible ``warn`` naming the entry — never a
+  silent skip — while an anchored surplus digit still hard-fails.
 - ``injection_residue`` (check 7) — no ingest pattern matches. It reuses the single
   ``INJECTION_PATTERNS`` list; a second list must never be minted.
 - ``page_budget`` (check 8) — WARN only, never fails (D-114): a two-page CV against a
@@ -80,11 +82,21 @@ def check_entity_present(plan: RenderPlan, text: str) -> CheckResult:
 
 
 def check_metric_containment(plan: RenderPlan, text: str, *, page_count: int) -> CheckResult:
-    """Check 4 — every region's surviving digit core is one of its source tokens."""
+    """Check 4 — every region's surviving digit core is one of its source tokens.
+
+    An anchored surplus digit is a hard ``fail``. A region ``_entry_lines`` cannot
+    anchor is reported ``found=False``; it is collected into ``unanchored`` and
+    surfaces as a visible ``warn`` naming the entry, so a fabricated digit in a
+    region the check cannot scope is never silently passed. ``fail`` wins over
+    ``warn``: an anchored surplus in any region still blocks.
+    """
     offending: list[str] = []
+    unanchored: list[str] = []
     for report in region_token_report(plan, text, page_count=page_count):
         if not report.found:
-            # An absent org is an ``entity_present`` failure, not a metric failure.
+            # A region the check cannot anchor must surface, never vanish: a
+            # fabricated digit inside it would otherwise pass unnoticed.
+            unanchored.append(report.entry_id)
             continue
         allowed = set(report.allowed)
         surplus = sorted({core for core in report.candidates if core not in allowed})
@@ -94,6 +106,12 @@ def check_metric_containment(plan: RenderPlan, text: str, *, page_count: int) ->
             "metric_containment",
             f"{len(offending)} numeric token(s) are absent from their region's source facts",
             sorted(set(offending)),
+        )
+    if unanchored:
+        return _warn(
+            "metric_containment",
+            f"{len(set(unanchored))} region(s) could not be anchored and were not metric-checked",
+            sorted(set(unanchored)),
         )
     return _pass("metric_containment", "every numeric token is grounded in its region's facts")
 
