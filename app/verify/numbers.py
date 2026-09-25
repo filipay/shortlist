@@ -18,8 +18,9 @@ match each other.
 assumption A3 needs ``2021-03`` to yield the date cores ``2021`` and ``03`` so
 they can be excluded. ``squash`` removes the hyphen and would fuse the whole
 date into ``202103``, defeating that exclusion. So an entry's region is located
-by matching ``squash(org)`` against each line's squash (the template emits the
-org verbatim on the entry header line) and is then read from the ORIGINAL lines,
+on the entry's own HEADER line — the line carrying both ``squash(org)`` and
+``squash(title)`` that is also gated by the entry's date-range needle on that
+line or its immediate successor — and is then read from the ORIGINAL lines,
 which preserve the date hyphen. ``squash`` remains the substrate for the
 membership checks that genuinely need it (``entity_present``, ``verbatim_integrity``).
 
@@ -120,13 +121,22 @@ class RegionReport:
 def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     """The line index of each entry's own header line, in plan order (``-1`` when absent).
 
-    A region is anchored on the line carrying BOTH the entry's org AND its title —
-    the template emits both on one header line (``cv.tex.jinja:58``) — so a bullet
-    that merely names a later employer can never start that employer's region and
-    cannot donate its digits to it. Requiring both needles also removes the
-    substring-vs-word fragility of a short or common org name ("Meta" matching
+    Region ``i`` starts on a line gated by a structural discriminator a body bullet
+    can never satisfy: the line must carry the entry's ``squash(org)`` AND
+    ``squash(title)`` (the template emits both on one header line,
+    ``cv.tex.jinja:58``), AND the entry's date-range needle ``squash(entry.dates)``
+    must appear on that same line or on its immediately following line. The
+    date-range adjacency is the discriminator — a bullet never carries the entry's
+    own date-range on itself or its successor — so a bullet that merely names a
+    later employer and title can no longer start that employer's region and cannot
+    donate its digits to it (ESC-06-A / CR-01). Requiring org AND title also removes
+    the substring-vs-word fragility of a short or common org name ("Meta" matching
     "metadata"). A cursor advances past a matched line so two entries at the same
     employer resolve to their own headers.
+
+    All three needles must be non-empty: an empty ``squash`` needle would make the
+    membership test vacuously true and silently restore a content-only match, so an
+    entry with an empty org, title or dates is reported ``found=False``.
 
     Only how a region's START is found changes: ``region_token_report`` still ends a
     region at the next found start (or end-of-text for the last), so a section's
@@ -134,12 +144,14 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     WR-03 / 06-05 property).
 
     Deliberate extraction-variation trade-off: if extraction splits an entry's org
-    and title onto SEPARATE lines, no line carries both needles, so the region is
-    reported ``found=False`` and check 4 skips it via its existing ``not
-    report.found`` guard (``entity_present`` still verifies the strings
-    document-wide). An org-only fallback is deliberately NOT added — that is exactly
-    the CR-02 substring mis-location this fixes. The trade-off is pinned by
-    ``test_a_split_header_entry_is_reported_not_found_not_mislocated``.
+    and title onto SEPARATE lines, or the entry's date-range does not land on the
+    header or its immediate successor (a long header wraps), no structural start is
+    found; the region is reported ``found=False`` and check 4 surfaces that as a
+    visible ``warn`` naming the entry — never a silent skip and never a
+    mis-location at a bullet. An org-only fallback is deliberately NOT added — that
+    is exactly the CR-02 substring mis-location this fixes. The trade-off is pinned
+    by ``test_a_split_header_entry_is_reported_not_found_not_mislocated`` and
+    ``test_a_non_adjacent_date_range_is_not_a_region_start``.
     """
     squashed_lines = [squash(line) for line in lines]
     positions: list[int] = []
@@ -147,11 +159,17 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     for entry in entries:
         org_needle = squash(entry.org)
         title_needle = squash(entry.title)
+        dates_needle = squash(entry.dates)
         found = -1
-        if org_needle and title_needle:
+        if org_needle and title_needle and dates_needle:
             for index in range(cursor, len(lines)):
                 line = squashed_lines[index]
-                if org_needle in line and title_needle in line:
+                if org_needle not in line or title_needle not in line:
+                    continue
+                dates_adjacent = dates_needle in line or (
+                    index + 1 < len(lines) and dates_needle in squashed_lines[index + 1]
+                )
+                if dates_adjacent:
                     found = index
                     break
         positions.append(found)
@@ -237,9 +255,10 @@ def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list
     excluded set: that entry's OWN date-like cores, any lone-integer page-number
     line inside the region, and the digit cores of the non-entry structured strings
     that physically appear in the region. Nothing is excluded document-wide
-    (WR-03): a token equal to another entry's year remains a candidate here. An org
-    absent from the text is reported ``found=False`` — that is an ``entity_present``
-    failure, never a metric failure.
+    (WR-03): a token equal to another entry's year remains a candidate here. An
+    entry whose header cannot be anchored is reported ``found=False`` with empty
+    candidates; check 4 surfaces that as a visible ``warn`` naming the entry — it is
+    not by itself an ``entity_present`` failure.
     """
     entries = [entry for section in plan.sections for entry in section.entries]
     lines = text.splitlines()
