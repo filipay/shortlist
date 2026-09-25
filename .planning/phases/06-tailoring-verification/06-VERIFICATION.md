@@ -273,5 +273,25 @@ A fix is available and was checked by the reviewer: add a structural discriminat
 
 ---
 
+## Gap-Closure Acceptance Criteria (orchestrator-added, per user decision 2026-09-25)
+
+> Not authored by the verifier. These criteria are binding on the `/gsd-plan-phase 06 --gaps` fix plan: the gap must be closed by **replacing the fragile lexical anchor**, not by tightening it again.
+
+**Why round-2 was missed (root cause, for the planner):** 06-08 implemented the prior review's wording literally (`org_needle in line and title_needle in line`) — a naked substring match over lossy extracted text. Narrowing a fragile mechanism does not remove the bug; the fix's own docstring asserted a guarantee the code did not deliver, and its regression test named the org but not the title, so it could not fail. The repair therefore ships with the fix.
+
+Required acceptance criteria:
+
+| # | Criterion | Required evidence |
+|---|-----------|-------------------|
+| A | **Structural anchor.** Region starts are found by a discriminator a body bullet cannot satisfy — the entry's date-range needle on the candidate line or its successor, or the header separator. The naked org+title substring match is removed, not augmented. | `<automated>` + `<fails_when>`: `base_extract.txt` found; `novel_metric_extract.txt` still fails; last region still runs to end-of-text. |
+| B | **Fail closed on unanchorable regions.** `found=False` must surface as a visible `warn` in the check report, never a silent `candidates=[]` skip. | `<automated>` + `<fails_when>`: empty/all-punctuation-title and wrapped-header fixtures produce a `warn`; a fabricated digit in that region is not reported `pass`. |
+| C | **Literal repro fixture.** The fixture corpus gains the finding's exact repro string and the test asserts the corrected behavior. | Fixture containing `"Liaised with the Globex Inc Manager on 5 projects"` (or `"Partnered with Acme's Senior Engineer team to cut 5 incidents"`) + assertion `metric_containment` == `pass`. |
+| D | **Property test over the class.** A test mutates bullet text to embed another entry's org AND title tokens across the corpus and asserts `pass`, so the whole lexical-collision class is covered, not one instance. | `<automated>` + `<fails_when>`: property test over the existing builders; fails if any region start is hijacked by a bullet. |
+
+**Closure authority (process rule from this miss):** the author of a gap fix does not certify its closure — a reviewer/verifier owns the "closed" verdict. Add criterion **E** to the plan's verification: after the fix, run `/gsd-code-review 06` scoped to the changed files before the fix is reported closed.
+
+---
+
 _Verified: 2026-09-25T10:23:05Z_
+_Verified: verifier report above; Gap-Closure Acceptance Criteria appended by orchestrator 2026-09-25_
 _Verifier: the agent (gsd-verifier)_
