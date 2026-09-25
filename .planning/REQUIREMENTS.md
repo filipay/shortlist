@@ -67,14 +67,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Tailoring (TAIL)
 
-- [x] **TAIL-01**: User can generate a CV tailored to a specific listing
-- [x] **TAIL-02**: Tailoring is expressed as a typed patch (move / reweight / demote / drop / reorder) over enumerated IDs, with no free-text field on the path to the PDF
-- [x] **TAIL-03**: The tool never rewrites or invents CV claims — bullet text is immutable
-- [x] **TAIL-04**: A verification gate checks the compiled PDF for any unsupported content
-- [x] **TAIL-05**: A CV that fails verification is blocked and cannot be downloaded or attached
-- [x] **TAIL-06**: Verification never auto-repairs content — it blocks
-- [x] **TAIL-07**: User can review the tailored CV and its change log before compiling
-- [x] **TAIL-08**: Anything dropped from the CV is listed explicitly with a reason
+- [ ] **TAIL-01**: User can generate a CV tailored to a specific listing
+- [ ] **TAIL-02**: Tailoring is expressed as a typed patch (move / reweight / demote / drop / reorder) over enumerated IDs, with no free-text field on the path to the PDF
+- [ ] **TAIL-03**: The tool never rewrites or invents CV claims — bullet text is immutable
+- [ ] **TAIL-04**: A verification gate checks the compiled PDF for any unsupported content
+- [ ] **TAIL-05**: A CV that fails verification is blocked and cannot be downloaded or attached
+- [ ] **TAIL-06**: Verification never auto-repairs content — it blocks
+- [ ] **TAIL-07**: User can review the tailored CV and its change log before compiling
+- [ ] **TAIL-08**: Anything dropped from the CV is listed explicitly with a reason
 
 ### Apply (APPLY)
 
@@ -101,7 +101,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
 - [x] **UI-03**: User can edit search criteria and ranking weights
 - [ ] **UI-04**: User can view and manage the application tracker
-- [x] **UI-05**: User can preview and download the tailored CV PDF
+- [ ] **UI-05**: User can preview and download the tailored CV PDF
 - [ ] **UI-06**: The UI is usable from both a laptop and a phone browser
 - [x] **UI-07**: All UI assets are vendored locally with no CDN dependency
 
@@ -213,14 +213,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-04 | Phase 4 | Complete |
 | CV-05 | Phase 4 | Complete |
 | CV-06 | Phase 4 | Complete |
-| TAIL-01 | Phase 6 | Complete |
-| TAIL-02 | Phase 6 | Complete |
-| TAIL-03 | Phase 6 | Complete |
-| TAIL-04 | Phase 6 | Complete |
-| TAIL-05 | Phase 6 | Complete |
-| TAIL-06 | Phase 6 | Complete |
-| TAIL-07 | Phase 6 | Complete |
-| TAIL-08 | Phase 6 | Complete |
+| TAIL-01 | Phase 6 | Gaps Found |
+| TAIL-02 | Phase 6 | Gaps Found |
+| TAIL-03 | Phase 6 | Gaps Found |
+| TAIL-04 | Phase 6 | Gaps Found |
+| TAIL-05 | Phase 6 | Gaps Found |
+| TAIL-06 | Phase 6 | Gaps Found |
+| TAIL-07 | Phase 6 | Gaps Found |
+| TAIL-08 | Phase 6 | Gaps Found |
 | APPLY-01 | Phase 7 | Pending |
 | APPLY-02 | Phase 7 | Pending |
 | APPLY-03 | Phase 7 | Pending |
@@ -238,7 +238,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 7 | Pending |
-| UI-05 | Phase 6 | Complete |
+| UI-05 | Phase 6 | Gaps Found |
 | UI-06 | Phase 8 | Pending |
 | UI-07 | Phase 1 | Complete |
 | PLAT-01 | Phase 1 | Complete |
