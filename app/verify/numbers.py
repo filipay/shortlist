@@ -118,20 +118,40 @@ class RegionReport:
 
 
 def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
-    """The line index of each entry's org, in plan order (``-1`` when absent).
+    """The line index of each entry's own header line, in plan order (``-1`` when absent).
 
-    A cursor advances past a matched line so two entries at the same employer
-    resolve to their own headers rather than both matching the first.
+    A region is anchored on the line carrying BOTH the entry's org AND its title —
+    the template emits both on one header line (``cv.tex.jinja:58``) — so a bullet
+    that merely names a later employer can never start that employer's region and
+    cannot donate its digits to it. Requiring both needles also removes the
+    substring-vs-word fragility of a short or common org name ("Meta" matching
+    "metadata"). A cursor advances past a matched line so two entries at the same
+    employer resolve to their own headers.
+
+    Only how a region's START is found changes: ``region_token_report`` still ends a
+    region at the next found start (or end-of-text for the last), so a section's
+    skills table rendered AFTER its last entry stays inside that last region (the
+    WR-03 / 06-05 property).
+
+    Deliberate extraction-variation trade-off: if extraction splits an entry's org
+    and title onto SEPARATE lines, no line carries both needles, so the region is
+    reported ``found=False`` and check 4 skips it via its existing ``not
+    report.found`` guard (``entity_present`` still verifies the strings
+    document-wide). An org-only fallback is deliberately NOT added — that is exactly
+    the CR-02 substring mis-location this fixes. The trade-off is pinned by
+    ``test_a_split_header_entry_is_reported_not_found_not_mislocated``.
     """
     squashed_lines = [squash(line) for line in lines]
     positions: list[int] = []
     cursor = 0
     for entry in entries:
-        needle = squash(entry.org)
+        org_needle = squash(entry.org)
+        title_needle = squash(entry.title)
         found = -1
-        if needle:
+        if org_needle and title_needle:
             for index in range(cursor, len(lines)):
-                if needle in squashed_lines[index]:
+                line = squashed_lines[index]
+                if org_needle in line and title_needle in line:
                     found = index
                     break
         positions.append(found)

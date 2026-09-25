@@ -60,6 +60,27 @@ def with_digit_skill(
     return facts.model_copy(update={"sections": sections})
 
 
+def with_digit_location(
+    facts: CvFacts, *, location: str = "Dublin 2"
+) -> CvFacts:
+    """A copy of ``facts`` whose LAST entry of every entry-bearing section carries ``location``.
+
+    Rebuilt through ``model_copy`` so the loaded stand-in is never mutated and
+    ``tests/golden/base.rendered.tex`` cannot shift. A section with no entries is
+    returned unchanged. The digit ``2`` in the default location is ordinary CV
+    content (the verifier's own CR-01 example), not a fabricated metric.
+    """
+    sections = []
+    for section in facts.sections:
+        if not section.entries:
+            sections.append(section)
+            continue
+        entries = list(section.entries)
+        entries[-1] = entries[-1].model_copy(update={"location": location})
+        sections.append(section.model_copy(update={"entries": entries}))
+    return facts.model_copy(update={"sections": sections})
+
+
 def build_fixture(
     patch: TailoringPatch | None = None,
     *,
@@ -90,5 +111,6 @@ __all__ = [
     "VerifyFixture",
     "build_fixture",
     "load_standin_facts",
+    "with_digit_location",
     "with_digit_skill",
 ]

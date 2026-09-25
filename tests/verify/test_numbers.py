@@ -23,7 +23,12 @@ from app.verify.numbers import (
     region_token_report,
 )
 from app.verify.text_checks import check_metric_containment
-from tests.verify.fixtures import build_fixture, load_standin_facts, with_digit_skill
+from tests.verify.fixtures import (
+    build_fixture,
+    load_standin_facts,
+    with_digit_location,
+    with_digit_skill,
+)
 
 # --- digit cores ---------------------------------------------------------------
 
@@ -264,6 +269,96 @@ def test_the_committed_digit_skill_extract_has_no_surplus_candidate() -> None:
     # The only surviving metric tokens are the bullets' own; the "3" in "AWS S3" is not.
     assert report.candidates == ["99", "40"]
     assert set(report.candidates) <= set(report.allowed)
+
+
+def test_a_bullet_naming_a_later_employer_does_not_bleed_into_its_region() -> None:
+    """CR-02: a bullet naming a later entry's employer must not start that region."""
+    entry_a = RenderedEntry(
+        id="exp/acme-2018",
+        org="Acme",
+        title="Engineer",
+        dates="2018-01 -- 2018-12",
+        bullets=[Bullet(id="bul/acme-2018/1", text="Rebuilt Acme's 5 service mesh")],
+    )
+    entry_b = RenderedEntry(
+        id="exp/acme-2019",
+        org="Acme",
+        title="Analyst",
+        dates="2019-01 -- 2019-12",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry_a, entry_b],
+            )
+        ]
+    )
+    text = (
+        "Acme --- Engineer\n"
+        "2018-01 -- 2018-12\n"
+        "Rebuilt Acme's 5 service mesh\n"
+        "Acme --- Analyst\n"
+        "2019-01 -- 2019-12\n"
+    )
+
+    reports = region_token_report(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is True
+    # A's bullet digit stays in A's own region and is grounded there ...
+    assert "5" in reports[0].allowed
+    # ... and does not bleed into B's region (the old fail [exp/acme-2019:5]).
+    assert "5" not in reports[1].candidates
+
+
+def test_the_committed_digit_location_extract_has_no_surplus_candidate() -> None:
+    """CR-01 end-to-end at the region level over the committed location extraction."""
+    facts = with_digit_location(load_standin_facts())
+    fixture = build_fixture(facts=facts, extract_name="digit_location_extract.txt")
+
+    report = region_token_report(fixture.plan, fixture.text, page_count=1)[0]
+
+    assert set(report.candidates) <= set(report.allowed)
+    assert "2" in report.allowed
+
+
+def test_a_split_header_entry_is_reported_not_found_not_mislocated() -> None:
+    """The strict org-AND-title anchor's deliberate trade-off, pinned.
+
+    The template emits org and title on one header line (``cv.tex.jinja:58``); when
+    extraction splits them onto separate lines no line carries both needles, so the
+    region is reported ``found=False`` (check 4 skips it) rather than mis-located at
+    a bullet — the safer direction, chosen over the pre-fix substring mis-location.
+    """
+    entry = RenderedEntry(
+        id="exp/acme-2020",
+        org="Acme",
+        title="Engineer",
+        dates="2018-01 -- 2018-12",
+        bullets=[Bullet(id="bul/acme-2020/1", text="Rebuilt the 5 service mesh")],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry],
+            )
+        ]
+    )
+    text = (
+        "Acme\n"
+        "Engineer\n"
+        "2018-01 -- 2018-12\n"
+        "Rebuilt the 5 service mesh\n"
+    )
+
+    report = region_token_report(plan, text, page_count=1)[0]
+
+    assert report.found is False
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -15,6 +15,7 @@ from tests.verify.fixtures import (
     VerifyFixture,
     build_fixture,
     load_standin_facts,
+    with_digit_location,
     with_digit_skill,
 )
 
@@ -96,6 +97,26 @@ def test_a_digit_bearing_skill_label_still_passes_metric_containment() -> None:
     """
     facts = with_digit_skill(load_standin_facts())
     fixture = build_fixture(facts=facts, extract_name="digit_skill_extract.txt")
+
+    result = verify_text(
+        fixture.facts, fixture.plan, fixture.patch, fixture.text, page_count=fixture.page_count
+    )
+
+    assert _check(result, "metric_containment").status == "pass"
+    assert _check(result, "entity_present").status == "pass"
+    assert _check(result, "layout_ats").status == "pass"
+    assert result.passed is True
+
+
+def test_a_digit_bearing_location_still_passes_metric_containment() -> None:
+    """CR-01: a valid CV whose entry location carries a digit passes every check.
+
+    The location digit is grounded in the region that renders it, so check 4 does not
+    false-fail. ``entity_present``/``layout_ats`` are asserted too so a fixture typo
+    cannot make this pass by accident.
+    """
+    facts = with_digit_location(load_standin_facts())
+    fixture = build_fixture(facts=facts, extract_name="digit_location_extract.txt")
 
     result = verify_text(
         fixture.facts, fixture.plan, fixture.patch, fixture.text, page_count=fixture.page_count
