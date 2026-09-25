@@ -22,6 +22,7 @@ from app.verify.numbers import (
     is_page_number_line,
     region_token_report,
 )
+from app.verify.text_checks import check_metric_containment
 from tests.verify.fixtures import build_fixture, load_standin_facts, with_digit_skill
 
 # --- digit cores ---------------------------------------------------------------
@@ -141,6 +142,40 @@ def test_an_absent_org_is_reported_not_found() -> None:
 
     assert report.found is False
     assert report.candidates == []
+
+
+def test_a_digit_bearing_location_is_not_a_surplus_candidate() -> None:
+    """CR-01: the entry's location digit core is grounded in its own region's allowed set.
+
+    The fold adds the location to ``allowed`` ONLY (never to ``excluded``), so the
+    digit remains a region candidate and is excused by membership in ``allowed``.
+    """
+    entry = RenderedEntry(
+        id="exp/acme-2020",
+        org="Acme",
+        title="Engineer",
+        dates="2020-01 -- 2021-01",
+        location="Dublin 2",
+        bullets=[],
+    )
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(
+                id="sec.experience",
+                title="Experience",
+                entries=[entry],
+            )
+        ]
+    )
+    text = "Acme --- Engineer\n2020-01 -- 2021-01\nDublin 2\n"
+
+    report = region_token_report(plan, text, page_count=1)[0]
+
+    assert report.found is True
+    assert "2" in report.allowed
+    assert set(report.candidates) <= set(report.allowed)
+    # The far end of the check-4 predicate the blocked preview/download depends on.
+    assert check_metric_containment(plan, text, page_count=1).status == "pass"
 
 
 # --- GAP 1 / WR-03: region-local exclusion -------------------------------------

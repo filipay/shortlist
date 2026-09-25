@@ -141,10 +141,19 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
 
 
 def _allowed_for_entry(entry: RenderedEntry) -> set[str]:
-    """The digit cores a region may carry: its surviving bullets, label and org/title."""
+    """The digit cores a region may carry: every source token the region renders.
+
+    That is the entry's ``dates``, ``org``, ``title``, ``location`` (the template
+    emits it inside the region at ``cv.tex.jinja:59-60``) and each surviving
+    bullet's ``text`` and ``metrics``. This adds only to that entry's OWN allowed
+    set — never to ``excluded`` — so the digit stays a region candidate and is
+    grounded by membership in ``allowed``.
+    """
     allowed: set[str] = set(digit_cores(entry.dates))
     allowed |= set(digit_cores(entry.org))
     allowed |= set(digit_cores(entry.title))
+    if entry.location:
+        allowed |= set(digit_cores(entry.location))
     for bullet in entry.bullets:
         allowed |= set(digit_cores(bullet.text))
         for metric in bullet.metrics:
