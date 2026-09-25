@@ -121,18 +121,24 @@ class RegionReport:
 def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     """The line index of each entry's own header line, in plan order (``-1`` when absent).
 
-    Region ``i`` starts on a line gated by a structural discriminator a body bullet
-    can never satisfy: the line must carry the entry's ``squash(org)`` AND
-    ``squash(title)`` (the template emits both on one header line,
-    ``cv.tex.jinja:58``), AND the entry's date-range needle ``squash(entry.dates)``
-    must appear on that same line or on its immediately following line. The
-    date-range adjacency is the discriminator — a bullet never carries the entry's
-    own date-range on itself or its successor — so a bullet that merely names a
-    later employer and title can no longer start that employer's region and cannot
-    donate its digits to it (ESC-06-A / CR-01). Requiring org AND title also removes
-    the substring-vs-word fragility of a short or common org name ("Meta" matching
+    Region ``i`` starts on a line that BEGINS with ``squash(org)`` (the template
+    emits the org first on the header line, ``cv.tex.jinja:58``), AND carries
+    ``squash(title)``, AND has the entry's date-range needle ``squash(entry.dates)``
+    on that same line or on its immediately following line. The org-first position is
+    the structural boundary: an earlier line that merely names a later employer and
+    title mid-line does not start that employer's region, so its digits are not
+    donated there (ESC-06-A / CR-01). Requiring org AND title also removes the
+    substring-vs-word fragility of a short or common org name ("Meta" matching
     "metadata"). A cursor advances past a matched line so two entries at the same
     employer resolve to their own headers.
+
+    Residual, stated rather than hidden: a line that literally begins with the org
+    and also carries the title with an adjacent date-range is structurally
+    indistinguishable from a real header and IS taken as the region start. A body
+    line can coincide with such a shape (for example an extractor line-merge of a
+    bullet with the following header), in which case the region starts there;
+    ``region_token_report``'s region-end bound is what then limits a neighbour to a
+    visible ``warn`` instead of a false ``fail``.
 
     All three needles must be non-empty: an empty ``squash`` needle would make the
     membership test vacuously true and silently restore a content-only match, so an
@@ -147,10 +153,10 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     and title onto SEPARATE lines, or the entry's date-range does not land on the
     header or its immediate successor (a long header wraps), no structural start is
     found; the region is reported ``found=False`` and check 4 surfaces that as a
-    visible ``warn`` naming the entry — never a silent skip and never a
-    mis-location at a bullet. An org-only fallback is deliberately NOT added — that
-    is exactly the CR-02 substring mis-location this fixes. The trade-off is pinned
-    by ``test_a_split_header_entry_is_reported_not_found_not_mislocated`` and
+    visible ``warn`` naming the entry — not a silent skip and not a mis-location at
+    a body line. An org-only fallback is deliberately NOT added — that is exactly the
+    CR-02 substring mis-location this fixes. The trade-off is pinned by
+    ``test_a_split_header_entry_is_reported_not_found_not_mislocated`` and
     ``test_a_non_adjacent_date_range_is_not_a_region_start``.
     """
     squashed_lines = [squash(line) for line in lines]
@@ -164,7 +170,7 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
         if org_needle and title_needle and dates_needle:
             for index in range(cursor, len(lines)):
                 line = squashed_lines[index]
-                if org_needle not in line or title_needle not in line:
+                if not line.startswith(org_needle) or title_needle not in line:
                     continue
                 dates_adjacent = dates_needle in line or (
                     index + 1 < len(lines) and dates_needle in squashed_lines[index + 1]
@@ -251,17 +257,39 @@ def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list
     """Per-entry region reports over the extracted ``text`` (D-113).
 
     Region ``i`` runs from entry ``i``'s org line to the next entry's org line (the
-    last to end-of-text). Candidate tokens are the region's digit cores minus the
-    excluded set: that entry's OWN date-like cores, any lone-integer page-number
-    line inside the region, and the digit cores of the non-entry structured strings
-    that physically appear in the region. Nothing is excluded document-wide
-    (WR-03): a token equal to another entry's year remains a candidate here. An
-    entry whose header cannot be anchored is reported ``found=False`` with empty
+    last to end-of-text), bounded further against an unanchored later neighbour: an
+    anchored region's end is the FIRST line after its header whose squash CONTAINS
+    any non-empty squash of a later unanchored entry's org, title OR date-range
+    (containment, so an own-line header, a merged header/date line and a
+    digit-bearing header line before its dates all bound it), excluding the anchored
+    entry's OWN date line BY POSITION and its own ``location`` / surviving-bullet
+    lines by squash equality, and not shrinking below its header line. Candidate
+    tokens are the region's digit cores minus the excluded set: that entry's OWN
+    date-like cores, any lone-integer page-number line inside the region, and the
+    digit cores of the non-entry structured strings that physically appear in the
+    region. Nothing is excluded document-wide (WR-03): a token equal to another
+    entry's year remains a candidate here.
+
+    Residual, stated rather than hidden: the bound delimits the later entry only via
+    its org/title/date-range strings at line granularity. If none of those strings
+    appears after the anchored region's start on a line the bound may use, the later
+    entry is not bounded from here (a non-empty org or title then trips
+    ``entity_present``, so it is not a valid-pass CV). If the later entry's only such
+    occurrence after the region start is a line the own-content exclusion protects —
+    the anchored entry's own date line, or a line squash-identical to one of its own
+    location/bullet lines — the two entries are not separable at line granularity:
+    the bound declines to move, protecting the anchored region from the false PASS
+    the own-content exclusion exists to prevent, so the later entry's residual digits
+    there may still be charged to the earlier region rather than downgraded — a
+    documented residual, not a weakened block.
+
+    An entry whose header cannot be anchored is reported ``found=False`` with empty
     candidates; check 4 surfaces that as a visible ``warn`` naming the entry — it is
     not by itself an ``entity_present`` failure.
     """
     entries = [entry for section in plan.sections for entry in section.entries]
     lines = text.splitlines()
+    squashed_lines = [squash(line) for line in lines]
     positions = _entry_lines(entries, lines)
 
     reports: list[RegionReport] = []
@@ -269,8 +297,8 @@ def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list
         position = positions[index]
         if position < 0:
             # No region to locate; there is no region text to scope structured
-            # content to, so that operand is empty (region-local still holds).
-            allowed = _allowed_for_entry(entry) | _region_structured_cores(plan, "")
+            # content to, so ``allowed`` is exactly the entry's own set (IN-01).
+            allowed = _allowed_for_entry(entry)
             reports.append(
                 RegionReport(
                     entry_id=entry.id,
@@ -283,6 +311,45 @@ def region_token_report(plan: RenderPlan, text: str, *, page_count: int) -> list
             continue
         later = [candidate for candidate in positions if candidate > position]
         end = min(later) if later else len(lines)
+        # --- region-end bound (ESC-06-C / T-06-49) ---------------------------
+        # A later UNANCHORED entry's digits must not be charged to this region.
+        # Exclude this region's OWN content from the search: its date line BY
+        # POSITION (a later entry may share the same date-range) and its own
+        # location / surviving-bullet lines by squash equality.
+        own_date_squash = squash(entry.dates)
+        excluded_indices: set[int] = set()
+        if own_date_squash:
+            if own_date_squash in squashed_lines[position]:
+                excluded_indices.add(position)
+            elif (
+                position + 1 < len(lines)
+                and own_date_squash in squashed_lines[position + 1]
+            ):
+                excluded_indices.add(position + 1)
+        own_value_squashes: set[str] = set()
+        if entry.location:
+            own_value_squashes.add(squash(entry.location))
+        own_value_squashes.update(squash(bullet.text) for bullet in entry.bullets)
+        own_value_squashes.discard("")
+        for later_index in range(index + 1, len(entries)):
+            if positions[later_index] >= 0:
+                continue
+            neighbour = entries[later_index]
+            needles = {
+                squash(neighbour.org),
+                squash(neighbour.title),
+                squash(neighbour.dates),
+            }
+            needles.discard("")
+            if not needles:
+                continue
+            for candidate_index in range(position + 1, end):
+                line = squashed_lines[candidate_index]
+                if candidate_index in excluded_indices or line in own_value_squashes:
+                    continue
+                if any(needle in line for needle in needles):
+                    end = max(position + 1, min(end, candidate_index))
+                    break
         region_lines = lines[position:end]
         region_text = "\n".join(region_lines)
         structured_cores = _region_structured_cores(plan, region_text)
