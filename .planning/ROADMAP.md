@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 11 plans (10 executed; 1 planned gap-closure)
+**Plans:** 11/11 plans executed (10 executed; 1 planned gap-closure)
 
 Plans:
 **Wave 1**
@@ -301,7 +301,7 @@ Plans:
 
 **Gap closure (round 4)** *(planned 2026-09-25 from `06-VERIFICATION.md` (`gaps_found`, 11/12) + `06-REVIEW.md` (1 warning, WR-02); wave 1 — all prerequisites above are executed)*
 
-- [ ] 06-11-PLAN.md — WR-02 residual / criterion E: check 4's region start must BEGIN with the entry's org (the template emits org first) and an anchored region's end is bounded at a later unanchored entry's lone date-range line, so a valid CV whose earlier bullet co-locates a later entry's org, title AND date-range no longer false-fails and an extractor line-merge yields a visible `warn` instead of a false fail; the false docstring absolute is replaced by an explicit residual; `VERIFIER_VERSION` recorded once at 1.0.4
+- [x] 06-11-PLAN.md — WR-02 residual / criterion E: check 4's region start must BEGIN with the entry's org (the template emits org first) and an anchored region's end is bounded at a later unanchored entry's lone date-range line, so a valid CV whose earlier bullet co-locates a later entry's org, title AND date-range no longer false-fails and an extractor line-merge yields a visible `warn` instead of a false fail; the false docstring absolute is replaced by an explicit residual; `VERIFIER_VERSION` recorded once at 1.0.4
 
 **UI hint**: yes
 
@@ -354,7 +354,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
-| 6. Tailoring + Verification | 10/10 | In Progress|  |
+| 6. Tailoring + Verification | 11/11 | In Progress|  |
 | 7. Assisted Apply + Tracker | 0/0 | Not started | - |
 | 8. Operations + Polish | 0/0 | Not started | - |
 

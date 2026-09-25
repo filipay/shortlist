@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 06
-current_phase_name: tailoring-verification
+current_phase_name: Tailoring + Verification
 status: executing
-stopped_at: Completed 06-10-PLAN.md
-last_updated: "2026-09-25T14:51:28.642Z"
+stopped_at: Completed 06-11-PLAN.md
+last_updated: "2026-09-25T15:35:16.264Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 06 execution started
-state_head: c995b31c9638bbdaaf12dd1be873fc0267779482
+state_head: 67113848fd6511e8377118885ac33c8afc342c84
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 56
-  completed_plans: 55
+  completed_plans: 56
   percent: 0
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 06 (tailoring-verification) — READY TO EXECUTE
-Plan: 2 of 10
+Phase: 06 (Tailoring + Verification) — EXECUTING
+Plan: 2 of 11
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 06 execution started
 
@@ -89,6 +89,7 @@ Progress: [████████████████████] 45/45 p
 | Phase 06 P07 | 11 | 2 tasks | 2 files |
 | Phase 06 P08 | 8 min | 2 tasks | 6 files |
 | Phase 06 P10 | 10 min | 2 tasks | 6 files |
+| Phase 06 P11 | 18 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,10 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-10: the region anchor is REPLACED, not tightened — a region starts only when the line carries org AND title AND the entry's date-range needle on that line or its immediate successor, so a bullet embedding a later entry's org+title cannot hijack its region
 - [Phase 06]: 06-10: an unanchorable region fails closed as a visible warn naming the entry; fail precedence is preserved so an anchored surplus digit still hard-fails metric_containment
 - [Phase 06]: 06-10: VERIFIER_VERSION bumped once to 1.0.3 for the combined anchor + fail-closed change; no schema/Alembic (head 0004) or dependency change
+- [Phase 06]: 06-11: check-4's region start is an org-first structural boundary — _entry_lines accepts a line only when squash(line).startswith(squash(org)) AND it carries squash(title) AND the entry's date-range is on that line or its successor, so a body bullet embedding a later org mid-line cannot hijack that region (WR-02)
+- [Phase 06]: 06-11: region_token_report bounds an anchored region's end at the first line whose squash CONTAINS a later unanchored entry's org, title or date-range (containment), excluding the anchored entry's own date line BY POSITION and its own location/bullet lines by squash equality, never below the header — so an unanchored neighbour surfaces as a visible warn, not a false fail on the preceding region
+- [Phase 06]: 06-11: both falsified absolute docstring guarantees are removed and the line-granularity residual is stated explicitly (ast docstring scan clean); the always-empty structured-cores operand is removed (IN-01) and candidate assertions use exact set membership (IN-02)
+- [Phase 06]: 06-11: VERIFIER_VERSION bumped once to 1.0.4 for the org-first anchor + region-end bound; no schema/Alembic (head 0004) or dependency change. Criterion E closure remains owned by the independent scoped review, not the fix author
 
 ### Pending Todos
 
@@ -191,6 +196,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T11:44:45.608Z
-Stopped at: Completed 06-10-PLAN.md
+Last session: 2026-09-25T15:35:15.736Z
+Stopped at: Completed 06-11-PLAN.md
 Resume file: None
