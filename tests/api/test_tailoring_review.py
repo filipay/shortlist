@@ -56,6 +56,11 @@ BULLET3 = "bul/northwind-labs-2021/3"
 
 HIDDEN_RE = re.compile(r'name="(patch_json|base_cv_version_id|fact_store_hash)" value="([^"]*)"')
 
+#: One requirement-coverage row: its class, status and requirement text.
+REQ_ROW_RE = re.compile(
+    r'<li class="(req-[a-z]+)">\s*<strong>([^<]+)</strong> — ([^<\n]+)', re.S
+)
+
 
 class ReviewStubBackend:
     """Returns the current `patch` and records the calls it received."""
@@ -395,6 +400,59 @@ async def test_the_requirement_and_suggestion_panels_render(
     assert "req-gap" in body
     assert "Add a summary line" in body
     assert "Suggestions (not applied to the render)" in body
+
+
+async def test_requirement_rows_read_gap_then_partial_then_met(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The coverage panel sorts gap → partial → met, stable within a status.
+
+    ``direct`` is the "met" status and ``adjacent``/``transferable`` are the "partial"
+    ones (``app.domain.cv.GapFinding``); the deliberately shuffled input proves the
+    panel does not simply echo ``patch.gaps``. Two ``gap`` rows pin the stability: the
+    equal-severity pair keeps its input order.
+    """
+    listing_id = await _seed_scored_listing(session_factory, title="Ordered Coverage Role")
+    _BACKEND.patch = TailoringPatch(
+        listing_id=listing_id,
+        gaps=[
+            GapFinding(
+                requirement="Direct requirement", status="direct", evidence_ids=["skill.python"]
+            ),
+            GapFinding(requirement="Gap one", status="gap"),
+            GapFinding(
+                requirement="Adjacent requirement",
+                status="adjacent",
+                evidence_ids=["skill.python"],
+            ),
+            GapFinding(
+                requirement="Transferable requirement",
+                status="transferable",
+                evidence_ids=["skill.python"],
+            ),
+            GapFinding(requirement="Gap two", status="gap"),
+        ],
+    )
+
+    body = (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+
+    section = body.split("<h4>Requirement coverage</h4>", 1)[1].split("</ul>", 1)[0]
+    rows = [(m.group(1), m.group(3).strip()) for m in REQ_ROW_RE.finditer(section)]
+    assert [requirement for _, requirement in rows] == [
+        "Gap one",
+        "Gap two",
+        "Adjacent requirement",
+        "Transferable requirement",
+        "Direct requirement",
+    ], "gap → partial → met, stable within a status"
+    assert [css for css, _ in rows] == [
+        "req-gap",
+        "req-gap",
+        "req-partial",
+        "req-partial",
+        "req-met",
+    ]
 
 
 async def test_generate_on_an_unscored_listing_refuses_without_a_backend_call(

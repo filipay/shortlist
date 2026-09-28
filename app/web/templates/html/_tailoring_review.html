@@ -45,11 +45,11 @@
 
   <h4>Requirement coverage</h4>
   <ul class="requirement-list">
-    {% for finding in patch.gaps %}
-    <li class="{% if finding.status == 'gap' %}req-gap{% elif finding.status == 'direct' %}req-met{% else %}req-partial{% endif %}">
-      <strong>{{ finding.status }}</strong> — {{ finding.requirement }}
-      {% if gap_bands[loop.index0] %}<span class="badge">{{ gap_bands[loop.index0] }}</span>{% endif %}
-      {% for evidence in finding.evidence_ids %}<code>{{ evidence }}</code> {% endfor %}
+    {% for row in requirement_rows %}
+    <li class="{% if row.finding.status == 'gap' %}req-gap{% elif row.finding.status == 'direct' %}req-met{% else %}req-partial{% endif %}">
+      <strong>{{ row.finding.status }}</strong> — {{ row.finding.requirement }}
+      {% if row.band %}<span class="badge">{{ row.band }}</span>{% endif %}
+      {% for evidence in row.finding.evidence_ids %}<code>{{ evidence }}</code> {% endfor %}
     </li>
     {% endfor %}
   </ul>

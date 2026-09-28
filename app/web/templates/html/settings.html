@@ -121,12 +121,57 @@
     {% endif %}
   </p>
   <p class="settings-note">
-    To supply one: put your LaTeX CV at <code>cv/base.tex</code> in the project
-    checkout, run <code>bash scripts/cv-tex-spike.sh</code>, review the draft it
-    writes to <code>cv/cv.draft.yaml</code>, then promote the reviewed draft to
+    To supply one, upload your LaTeX CV below. It is converted to the fact store
+    at the path above, replacing what is there now. The file picker fills the text
+    box; you can also paste the LaTeX into it directly, so the box works with
+    JavaScript turned off.
+  </p>
+  <form method="post" action="/settings/cv" x-data="{}">
+    <div class="field">
+      <label for="cv-tex-file">Pick a .tex file <span class="field-note">optional — fills the box below</span></label>
+      <input type="file"
+             id="cv-tex-file"
+             accept=".tex,text/x-tex,text/plain"
+             @change="$event.target.files[0]?.text().then(t => $refs.cvTex.value = t)">
+    </div>
+    <div class="field">
+      <label for="cv-tex">LaTeX CV source</label>
+      <textarea id="cv-tex"
+                name="cv_tex"
+                x-ref="cvTex"
+                rows="8"
+                spellcheck="false"></textarea>
+      <p class="field-note">The file picker above fills this box. You can paste the LaTeX here instead.</p>
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="cv-upload-submit">Convert and save CV</button>
+    </div>
+  </form>
+
+  {% if cv_upload %}
+  <div class="settings-banner{% if cv_upload.status != 'ok' %} settings-banner-error{% endif %}"
+       id="cv-upload-result"
+       role="status"
+       aria-live="polite"
+       data-status="{{ cv_upload.status }}">
+    <p class="settings-note">
+      <strong>{% if cv_upload.status == 'ok' %}Saved{% else %}Not saved{% endif %}:</strong>
+      {{ cv_upload.message }}
+    </p>
+    {% if cv_upload.report %}
+    <ul class="requirement-list">
+      {% for line in cv_upload.report %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <p class="settings-note">
+    Fallback, without the form: put your LaTeX CV at <code>cv/base.tex</code> in the
+    project checkout, run <code>bash scripts/cv-tex-spike.sh</code>, review the draft
+    written to <code>cv/cv.draft.yaml</code>, then promote it to
     <code>cv/cv.yaml</code> — the checkout's <code>cv/</code> directory is what the
-    container mounts, read at the path above. There is deliberately no upload
-    control: the CV is a host file and never crosses the network.
+    container mounts, read at the path above.
   </p>
 </section>
 

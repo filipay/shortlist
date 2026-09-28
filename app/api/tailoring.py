@@ -229,6 +229,30 @@ def _gap_bands(facts: CvFacts, patch: TailoringPatch) -> list[str | None]:
     return bands
 
 
+#: Severity order for the requirement-coverage panel: the unmet need is what the user
+#: must see first. The `GapFinding.status` vocabulary is `gap`/`transferable`/`adjacent`/
+#: `direct` (see `app.domain.cv.GapFinding`); `transferable` and `adjacent` both read as
+#: partial, and anything unknown sorts after `direct` (last).
+_FINDING_SEVERITY = {"gap": 0, "transferable": 1, "adjacent": 1, "direct": 2}
+
+
+def _requirement_rows(
+    facts: CvFacts, patch: TailoringPatch
+) -> list[dict[str, Any]]:
+    """The ``patch.gaps`` findings paired with their band, ordered gap → partial → met.
+
+    The band is positional against ``patch.gaps``, so it is paired here BEFORE the sort
+    and travels with its finding — sorting the pairs cannot shift a band onto a
+    neighbour. ``sorted`` is stable, so findings of equal severity keep their order.
+    """
+    bands = _gap_bands(facts, patch)
+    rows = [
+        {"finding": finding, "band": band}
+        for finding, band in zip(patch.gaps, bands, strict=True)
+    ]
+    return sorted(rows, key=lambda row: _FINDING_SEVERITY.get(row["finding"].status, 3))
+
+
 def _error_fragment(reason: str, message: str, status_code: int) -> HTMLResponse:
     """An error fragment targeting the review region, so a swap never empties the DOM."""
     return HTMLResponse(
@@ -258,7 +282,7 @@ def _review_context(
         "plan": plan,
         "patch": patch,
         "dropped_bullets": _dropped_bullets(facts, plan, patch),
-        "gap_bands": _gap_bands(facts, patch),
+        "requirement_rows": _requirement_rows(facts, patch),
         "patch_json": patch.model_dump_json(),
         "version_value": "" if base_cv_version_id is None else str(base_cv_version_id),
         "fact_store_hash": fact_store_hash if fact_store_hash is not None else facts_hash(facts),

@@ -40,6 +40,38 @@ from app.llm.contract import (
 )
 
 
+def _normalize_json_schema(node: object) -> object:
+    """Rewrite Pydantic's JSON Schema into the plain subset the provider honors.
+
+    Pydantic emits two keywords that the opencode-go → minimax-m3 converter does
+    NOT reliably honor, so the model is under-constrained and returns shapes the
+    schema forbids (e.g. ``ops`` as an object where an array is required):
+
+    * ``const`` (draft-6+) — for a single-value ``Literal`` discriminator like
+      ``op: "move_bullet"``. Rewritten to the draft-4-compatible ``enum: [value]``.
+    * ``discriminator`` — an **OpenAPI-only** annotation, not valid JSON Schema at
+      all. Removed entirely. The ``oneOf``/``$ref`` union it annotates stays.
+
+    Everything else (``$defs``, ``$ref``, ``oneOf``, ``additionalProperties``,
+    ``required``) is preserved verbatim: the working ranking call proves the
+    provider handles them, and inlining ``$defs`` would only bloat the payload.
+    This is a pure, deterministic, I/O-free walk.
+    """
+    if isinstance(node, dict):
+        out: dict[str, object] = {}
+        for key, value in node.items():
+            if key == "const":
+                out["enum"] = [value]
+            elif key == "discriminator":
+                continue
+            else:
+                out[key] = _normalize_json_schema(value)
+        return out
+    if isinstance(node, list):
+        return [_normalize_json_schema(item) for item in node]
+    return node
+
+
 def to_message_parts(texts: Sequence[str]) -> list[dict[str, str]]:
     """Wrap each port-level string as a wire `TextPartInput`.
 
@@ -88,7 +120,10 @@ def to_message_body(
         },
         FORMAT_FIELD: {
             FORMAT_TYPE_FIELD: FORMAT_JSON_SCHEMA_TYPE,
-            FORMAT_SCHEMA_FIELD: schema.model_json_schema(),
+            # `_normalize_json_schema` strips `const`/`discriminator`, which the
+            # provider converter drops (leaving the model under-constrained). See
+            # its docstring; this is the ONLY `model_json_schema()` call site.
+            FORMAT_SCHEMA_FIELD: _normalize_json_schema(schema.model_json_schema()),
         },
     }
     if retry_count is not None:

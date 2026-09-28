@@ -19,13 +19,17 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
+import shutil
 import sqlite3
+import tempfile
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import structlog
+import yaml
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import delete, func, select, text
@@ -34,7 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.searches import read_form
 from app.config import settings
-from app.cv.factstore import fact_store_report
+from app.cv.factstore import CvFactStoreError, fact_store_report, load_facts
+from app.cv.import_tex import parse_tex, write_draft
 from app.db.models import Base, Run
 from app.db.repositories import llm_call_repo, ranking_config_repo
 from app.db.session import get_session
@@ -64,6 +69,11 @@ LLM_TEST_PATH = "/settings/llm-test"
 #: The weights editor (D-99 / RANK-04). A plain full-page POST, like the reset card:
 #: no htmx swap is involved and the route makes ZERO model calls.
 WEIGHTS_PATH = "/settings/weights"
+
+#: The CV intake route. A plain urlencoded POST: `python-multipart` is deliberately
+#: NOT a dependency, so the `.tex` source travels as an ordinary text field
+#: (`cv_tex`), not a multipart file upload.
+CV_UPLOAD_PATH = "/settings/cv"
 
 #: The system prompt is a **module-level constant** with no f-string, no `%`, no
 #: `.format` and no concatenation of any request-derived value. This IS the trust
@@ -142,6 +152,7 @@ async def _settings_context(
     *,
     banner: str | None = None,
     error: bool = False,
+    cv_upload: dict[str, Any] | None = None,
     probe: llm_call_repo.LlmCallRecord | None = None,
     probe_error_kind: str | None = None,
     probe_observation: bool = False,
@@ -158,6 +169,9 @@ async def _settings_context(
     return {
         "banner": banner,
         "error": error,
+        # The CV intake result (POST /settings/cv). Defined on every render so the
+        # template never sees an undefined name; `None` means "nothing submitted".
+        "cv_upload": cv_upload,
         "counts": await _counts(session),
         "deleted_tables": RESET_DELETE_ORDER,
         "kept_tables": RESET_KEPT_TABLES,
@@ -276,9 +290,115 @@ async def save_weights(
     )
 
 
+def _publish_cv(draft: dict[str, Any]) -> tuple[str, str]:
+    """Validate `draft` then atomically publish it as the live ``cv.yaml``.
+
+    Returns ``(status, message)``. The sequence is deliberate: write a temp file in
+    the destination's OWN directory (so ``os.replace`` is atomic on one filesystem),
+    validate it through :func:`load_facts` — the single loader ranking and tailoring
+    use — then back up any existing store and replace it. Any failure before the
+    replace deletes the temp file and leaves the existing ``cv.yaml`` completely intact.
+    """
+    destination = Path(settings.cv_dir) / CV_FILENAME
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        dir=destination.parent, prefix=".cv-upload-", suffix=".yaml"
+    )
+    os.close(fd)
+    temp = Path(temp_name)
+    try:
+        write_draft(draft, temp)
+        load_facts(temp)
+    except (CvFactStoreError, OSError, yaml.YAMLError) as exc:
+        temp.unlink(missing_ok=True)
+        log.warning("cv_upload.rejected", error=type(exc).__name__)
+        return (
+            "error",
+            f"Not saved — the converted CV did not validate: {exc}",
+        )
+
+    if destination.exists():
+        # Cheap data-loss guard: keep the store we are about to overwrite.
+        shutil.copy2(destination, destination.with_name(destination.name + ".bak"))
+    os.replace(temp, destination)
+    return (
+        "ok",
+        "Saved your CV. Existing tailored drafts are now stale and must be "
+        "regenerated — the fact store changed.",
+    )
+
+
+async def _render_cv_upload(
+    request: Request,
+    session: AsyncSession,
+    *,
+    status: str,
+    message: str,
+    report: list[str],
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(
+            session,
+            cv_upload={"status": status, "message": message, "report": report},
+        ),
+    )
+
+
+@router.post(CV_UPLOAD_PATH, response_class=HTMLResponse)
+async def upload_cv(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Convert a submitted LaTeX CV and publish it as the live fact store.
+
+    A plain urlencoded POST (no multipart): the source arrives as the ``cv_tex``
+    text field. The conversion, validation and publish are all-or-nothing — see
+    :func:`_publish_cv`. Every outcome is a 200 re-render carrying a ``cv_upload``
+    result, matching this page's convention that a refused action is rendered with
+    its honest reason rather than thrown.
+    """
+    form = await read_form(request)
+    raw = form.get("cv_tex")
+    cv_tex = raw if isinstance(raw, str) else ""
+
+    if not cv_tex.strip():
+        return await _render_cv_upload(
+            request,
+            session,
+            status="error",
+            message="Not saved — no LaTeX source was submitted.",
+            report=[],
+        )
+
+    draft, import_report = parse_tex(cv_tex)
+    report_lines = import_report.summary().splitlines()
+    if import_report.sections_parsed == 0 or import_report.entries_parsed == 0:
+        # Nothing USABLE. An empty/non-CV document has no recognised section; a
+        # document with a section heading but no entry the parser could read has
+        # none either. ``load_facts`` accepts a store with zero entries, so
+        # without this gate the second case would happily replace the live CV
+        # with an empty one. Fail before writing anything.
+        return await _render_cv_upload(
+            request,
+            session,
+            status="error",
+            message=(
+                "Not saved — no recognised CV entries were found in the LaTeX."
+            ),
+            report=report_lines,
+        )
+
+    status, message = _publish_cv(draft)
+    return await _render_cv_upload(
+        request, session, status=status, message=message, report=report_lines
+    )
+
+
 class ResetRefused(Exception):
     """A guard declined the reset. Nothing has been deleted."""
-
 
 def snapshot_database(*, db_path: Path, backups_dir: Path, moment: datetime) -> Path:
     """Copy the live database with `VACUUM INTO`. Returns the snapshot path.
