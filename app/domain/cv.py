@@ -66,6 +66,9 @@ SCHEMA_VERSION = 1
 SECTION_TITLES: dict[str, str] = {
     "sec.experience": "Experience",
     "sec.skills": "Skills",
+    "sec.projects": "Projects",
+    "sec.education": "Education",
+    "sec.volunteering": "Volunteering",
 }
 
 

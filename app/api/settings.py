@@ -40,6 +40,7 @@ from app.api.searches import read_form
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, fact_store_report, load_facts
 from app.cv.import_tex import parse_tex, write_draft
+from app.cv.llm_extract import ExtractionError, extract_facts
 from app.db.models import Base, Run
 from app.db.repositories import llm_call_repo, ranking_config_repo
 from app.db.session import get_session
@@ -351,6 +352,7 @@ async def upload_cv(
     request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
+    backend: LLMBackend = Depends(get_llm_backend),
 ) -> HTMLResponse:
     """Convert a submitted LaTeX CV and publish it as the live fact store.
 
@@ -359,6 +361,11 @@ async def upload_cv(
     :func:`_publish_cv`. Every outcome is a 200 re-render carrying a ``cv_upload``
     result, matching this page's convention that a refused action is rendered with
     its honest reason rather than thrown.
+
+    The deterministic parser runs first. Only when it reports work it could not do
+    (no entries, an unmapped heading, or an unread macro) does the model-assisted
+    extraction run, and only as a producer of the draft that still flows through
+    :func:`_publish_cv` — validation is never bypassed.
     """
     form = await read_form(request)
     raw = form.get("cv_tex")
@@ -375,25 +382,71 @@ async def upload_cv(
 
     draft, import_report = parse_tex(cv_tex)
     report_lines = import_report.summary().splitlines()
-    if import_report.sections_parsed == 0 or import_report.entries_parsed == 0:
-        # Nothing USABLE. An empty/non-CV document has no recognised section; a
-        # document with a section heading but no entry the parser could read has
-        # none either. ``load_facts`` accepts a store with zero entries, so
-        # without this gate the second case would happily replace the live CV
-        # with an empty one. Fail before writing anything.
+    needs_help = (
+        import_report.entries_parsed == 0
+        or bool(import_report.unresolved_sections)
+        or bool(import_report.unresolved_macros)
+    )
+
+    if not needs_help:
+        # Fast path: the deterministic parser fully understood the document.
+        if import_report.sections_parsed == 0 or import_report.entries_parsed == 0:
+            return await _rendered_refusal(request, session, report_lines)
+        status, message = _publish_cv(draft)
+        return await _render_cv_upload(
+            request,
+            session,
+            status=status,
+            message=message,
+            report=[*report_lines, "parsed directly from the LaTeX"],
+        )
+
+    # The deterministic parser cannot do the job. Try the model-assisted path.
+    try:
+        extraction = await extract_facts(backend, tex_source=cv_tex)
+    except ExtractionError as exc:
+        if import_report.entries_parsed >= 1:
+            # Partial deterministic result: publish it rather than lose the upload.
+            status, message = _publish_cv(draft)
+            return await _render_cv_upload(
+                request,
+                session,
+                status=status,
+                message=message,
+                report=[
+                    *report_lines,
+                    "parsed directly from the LaTeX",
+                    f"model-assisted pass failed ({exc}); "
+                    "kept the deterministic result",
+                ],
+            )
         return await _render_cv_upload(
             request,
             session,
             status="error",
             message=(
-                "Not saved — no recognised CV entries were found in the LaTeX."
+                "Not saved — the parser found no CV entries and the model-assisted "
+                f"pass failed: {exc}"
             ),
             report=report_lines,
         )
 
-    status, message = _publish_cv(draft)
+    status, message = _publish_cv(extraction.facts)
     return await _render_cv_upload(
-        request, session, status=status, message=message, report=report_lines
+        request, session, status=status, message=message, report=list(extraction.report)
+    )
+
+
+async def _rendered_refusal(
+    request: Request, session: AsyncSession, report_lines: list[str]
+) -> HTMLResponse:
+    """The no-usable-content refusal, shared by the fast path's gate."""
+    return await _render_cv_upload(
+        request,
+        session,
+        status="error",
+        message="Not saved — no recognised CV entries were found in the LaTeX.",
+        report=report_lines,
     )
 
 

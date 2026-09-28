@@ -13,6 +13,7 @@ from app.domain.cv import (
     BulletWeight,
     CvFacts,
     DropBullet,
+    Section,
     Suggestion,
     TailoringPatch,
     UnknownIdError,
@@ -320,6 +321,21 @@ def test_contact_round_trips_and_a_partial_contact_is_valid() -> None:
     without_contact = _facts_dict()
     without_contact["meta"].pop("contact")
     assert CvFacts.model_validate(without_contact).meta.contact is None
+
+
+def test_the_widened_section_vocabulary_resolves_and_validates() -> None:
+    """The three added keys resolve through `resolved_title` and pass the validator.
+
+    The two pre-existing entries are pinned byte-identical and in their original
+    order — this change is additive.
+    """
+    assert SECTION_TITLES["sec.experience"] == "Experience"
+    assert SECTION_TITLES["sec.skills"] == "Skills"
+
+    for key in ("sec.projects", "sec.education", "sec.volunteering"):
+        section = Section(id=key, title_key=key, order=10)
+        assert section.resolved_title == SECTION_TITLES[key]
+        assert section.resolved_title != key
 
 
 if __name__ == "__main__":  # pragma: no cover
