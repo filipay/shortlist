@@ -126,7 +126,7 @@
     box; you can also paste the LaTeX into it directly, so the box works with
     JavaScript turned off.
   </p>
-  <form method="post" action="/settings/cv" x-data="{}">
+  <form method="post" action="/settings/cv" x-data="{ busy: false }" @submit="busy = true">
     <div class="field">
       <label for="cv-tex-file">Pick a .tex file <span class="field-note">optional — fills the box below</span></label>
       <input type="file"
@@ -144,8 +144,23 @@
       <p class="field-note">The file picker above fills this box. You can paste the LaTeX here instead.</p>
     </div>
     <div class="form-actions">
-      <button type="submit" id="cv-upload-submit">Convert and save CV</button>
+      <button type="submit"
+              id="cv-upload-submit"
+              :disabled="busy"
+              x-text="busy ? 'Converting the CV…' : 'Convert and save CV'">Convert and save CV</button>
     </div>
+    {# The route returns the whole settings page, so this is a plain navigation, not
+       an htmx swap. Alpine marks the wait the moment the form is submitted; with
+       JavaScript off the attribute stays hidden and the browser's own loading state
+       covers the wait, and the form submits exactly as before. #}
+    <p id="cv-upload-progress"
+       class="settings-note"
+       role="status"
+       aria-live="polite"
+       x-show="busy"
+       x-cloak>
+      Converting the CV and saving it — this calls the model, so it can take up to a minute.
+    </p>
   </form>
 
   {% if cv_upload %}

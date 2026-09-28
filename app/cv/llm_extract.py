@@ -25,6 +25,7 @@ prompt constant below is the whole system instruction, with no interpolation.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -60,7 +61,20 @@ CV_EXTRACT_SYSTEM_PROMPT = (
     "document — never pair one entry's date with another entry's employer. "
     "A section that is a flat list of skills or languages, with no employer, job title "
     "or dates, must be emitted as skills with no entries. "
-    "Output only the requested JSON."
+    "Put the whole CV as a JSON document in the cv_json string field. "
+    "Every list must be a JSON ARRAY: use [] for an empty list, never an empty string "
+    "and never a bare string. "
+    "Every date must be a JSON STRING, including a bare year: "
+    'write "2026", never 2026. '
+    "Use exactly this shape, where the values are examples only: "
+    '{"meta": {"name": "Alex Example", "email": "alex@example.invalid", '
+    '"phone": null, "location": null, "links": []}, '
+    '"sections": [{"heading": "WORK EXPERIENCE", '
+    '"entries": [{"org": "Globex Inc", "title": "Thing One", '
+    '"dates": "2026 - present", "location": null, '
+    '"bullets": ["What was actually done"]}], "skills": []}, '
+    '{"heading": "SKILLS", "entries": [], "skills": ["Python", "Go"]}]} '
+    "Output only the requested JSON object with the cv_json field."
 )
 
 
@@ -105,6 +119,23 @@ class _ExtractedCv(BaseModel):
 
     meta: _ExtractedMeta
     sections: list[_ExtractedSection]
+
+
+class _ExtractedEnvelope(BaseModel):
+    """The WIRE schema: one string field carrying the CV as a JSON document.
+
+    The provider's schema-constrained call is reliable at "emit a string" and
+    unreliable at a nested array shape — a live call returned ``""`` where a list
+    was required and a bare year as a JSON number where a string was required. A
+    single string field sidesteps the provider's own structured-shape coercion; the
+    JSON inside it is parsed and normalised deterministically by this module, then
+    validated against :class:`_ExtractedCv` exactly as before. No safety property
+    is loosened: the grounding guard still runs on the compiled result.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cv_json: str
 
 
 class ExtractionError(Exception):
@@ -210,6 +241,189 @@ def _parse_dates(text: str) -> tuple[str, str | None, str | None] | None:
         start, location = single_match.groups()
         return f"{start}-01", None, (location.strip() if location else None)
     return None
+
+
+# ---------------------------------------------------------------------------
+# wire parsing: the model returns JSON text inside one string field
+# ---------------------------------------------------------------------------
+
+_JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove a surrounding markdown code fence, if present."""
+    match = _JSON_FENCE_RE.match(text)
+    return match.group(1) if match is not None else text.strip()
+
+
+def _outermost_json_object(text: str) -> str | None:
+    """The first balanced ``{...}`` span, respecting braces inside JSON strings."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _loads_cv_json(raw: str) -> object:
+    """Parse the model's JSON string, tolerating a fence or surrounding prose."""
+    candidate = _strip_code_fence(raw)
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+    outer = _outermost_json_object(candidate)
+    if outer is not None:
+        try:
+            return json.loads(outer)
+        except json.JSONDecodeError:
+            pass
+    raise ExtractionError("the model's cv_json field was not valid JSON")
+
+
+def _string_or_none(value: object) -> str | None:
+    """A scalar rendered as a string; ``None`` for null/containers."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return None
+    return str(value)
+
+
+def _string_list(value: object) -> list[str]:
+    """Coerce whatever shape the model produced into a list of strings."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        items = list(value.values())
+    else:
+        items = [value]
+    out: list[str] = []
+    for item in items:
+        if item is None:
+            continue
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str):
+                out.append(text)
+        else:
+            out.append(str(item))
+    return out
+
+
+def _normalise_entry(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "org": _string_or_none(item.get("org")) or "",
+        "title": _string_or_none(item.get("title")) or "",
+        "dates": _string_or_none(item.get("dates")) or "",
+        "location": _string_or_none(item.get("location")),
+        "bullets": _string_list(item.get("bullets")),
+    }
+
+
+def _normalise_entries(value: object) -> list[dict[str, Any]]:
+    """A list of entry objects, tolerating ``""``/null/dict-by-key/one scalar."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        items = list(value.values())
+    else:
+        items = [value]
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append(_normalise_entry(item))
+    return out
+
+
+def _normalise_sections(value: object) -> list[dict[str, Any]]:
+    """Sections as a list, or a dict keyed by heading (the key becomes ``heading``)."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items: list[tuple[str | None, object]] = [(None, item) for item in value]
+    elif isinstance(value, dict):
+        items = list(value.items())
+    else:
+        items = [(None, value)]
+    out: list[dict[str, Any]] = []
+    for key, item in items:
+        if not isinstance(item, dict):
+            continue
+        heading = item.get("heading")
+        if not isinstance(heading, str) or not heading.strip():
+            heading = key or ""
+        out.append(
+            {
+                "heading": heading,
+                "entries": _normalise_entries(item.get("entries")),
+                "skills": _string_list(item.get("skills")),
+            }
+        )
+    return out
+
+
+def _normalise_meta(value: object) -> dict[str, Any]:
+    meta = value if isinstance(value, dict) else {}
+    return {
+        "name": _string_or_none(meta.get("name")),
+        "email": _string_or_none(meta.get("email")),
+        "phone": _string_or_none(meta.get("phone")),
+        "location": _string_or_none(meta.get("location")),
+        "links": _string_list(meta.get("links")),
+    }
+
+
+def _parse_extraction(raw_json: str) -> _ExtractedCv:
+    """Parse + normalise the model's JSON string into the existing wire model.
+
+    Any parse or validation failure is an :class:`ExtractionError`, never a bare
+    exception. The normalisation only reshapes container types; it never invents a
+    value, and the grounding guard still decides what reaches the store.
+    """
+    payload = _loads_cv_json(raw_json)
+    if not isinstance(payload, dict):
+        raise ExtractionError("the model's extracted CV was not a JSON object")
+    normalised = {
+        "meta": _normalise_meta(payload.get("meta")),
+        "sections": _normalise_sections(payload.get("sections")),
+    }
+    try:
+        return _ExtractedCv.model_validate(normalised)
+    except ValidationError as exc:
+        raise ExtractionError(
+            f"the model's extracted CV did not match the expected shape: {exc}"
+        ) from exc
 
 
 def _to_facts_dict(
@@ -415,7 +629,7 @@ async def extract_facts(
 
     try:
         result = await backend.complete_structured(
-            schema=_ExtractedCv,
+            schema=_ExtractedEnvelope,
             system=CV_EXTRACT_SYSTEM_PROMPT,
             parts=[tex_source],
             model=settings.opencode_model,
@@ -425,14 +639,15 @@ async def extract_facts(
     except Exception as exc:  # noqa: BLE001 — a raised transport error is a value here
         raise ExtractionError(f"the extraction call failed: {type(exc).__name__}") from exc
 
-    if not result.ok or not isinstance(result.data, _ExtractedCv):
+    if not result.ok or not isinstance(result.data, _ExtractedEnvelope):
         raise ExtractionError(
             "the extraction call did not return a usable CV"
             f" ({result.error or result.status})"
         )
 
+    extracted = _parse_extraction(result.data.cv_json)
     try:
-        facts, report = _to_facts_dict(result.data, tex_source, now)
+        facts, report = _to_facts_dict(extracted, tex_source, now)
     except ExtractionError:
         raise
     except ValidationError as exc:

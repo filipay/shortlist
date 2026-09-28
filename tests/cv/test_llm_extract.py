@@ -7,6 +7,7 @@ guard, the date wrapper and the heading map are each exercised with teeth.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from app.cv.llm_extract import (
     ExtractionError,
     _ExtractedCv,
     _ExtractedEntry,
+    _ExtractedEnvelope,
     _ExtractedMeta,
     _ExtractedSection,
     extract_facts,
@@ -125,17 +127,24 @@ def _real_extraction() -> _ExtractedCv:
 
 
 class StubBackend:
-    """Returns a canned structured result and records the call shape."""
+    """Returns a canned structured result and records the call shape.
+
+    The wire schema is a single string field (``_ExtractedEnvelope``). A canned
+    ``_ExtractedCv`` is serialised into that string; ``cv_json`` supplies a raw
+    string directly for the malformed-shape tests.
+    """
 
     def __init__(
         self,
         extracted: _ExtractedCv | None = None,
         *,
+        cv_json: str | None = None,
         ok: bool = True,
         error: str | None = None,
         raise_on_call: bool = False,
     ) -> None:
         self._extracted = extracted
+        self._cv_json = cv_json
         self._ok = ok
         self._error = error
         self._raise = raise_on_call
@@ -163,7 +172,14 @@ class StubBackend:
             raise RuntimeError("transport down")
         if not self._ok:
             return StructuredCallResult(ok=False, status="invalid", error=self._error)
-        return StructuredCallResult(ok=True, status="ok", data=self._extracted)
+        raw = (
+            self._cv_json
+            if self._cv_json is not None
+            else json.dumps(self._extracted.model_dump())
+        )
+        return StructuredCallResult(
+            ok=True, status="ok", data=_ExtractedEnvelope(cv_json=raw)
+        )
 
 
 def _write_and_load(facts: dict, tmp_path: Path):
@@ -450,3 +466,152 @@ async def test_every_stored_entity_is_a_substring_of_the_grounded_source() -> No
         name = result.facts["meta"].get("name")
         if name:
             assert _grounded(name) in grounded
+
+
+# --- 8. the actual captured wire shapes are normalised -------------------------
+
+
+def _captured_payload() -> dict:
+    """The exact malformed shape a live call returned (2026-09-28).
+
+    ``entries``/``skills`` came back as ``""`` where a list was required, and a
+    bare year came back as the JSON number ``2026`` where a string was required.
+    """
+    payload = _real_extraction().model_dump()
+    payload["sections"][0]["skills"] = ""  # entries-only section: empty string
+    payload["sections"][4]["entries"] = ""  # skills-only section: empty string
+    payload["sections"][1]["entries"][0]["dates"] = 2026  # bare year as int
+    return payload
+
+
+async def test_the_live_failure_shape_is_normalised_and_loads(tmp_path: Path) -> None:
+    backend = StubBackend(cv_json=json.dumps(_captured_payload()))
+
+    result = await extract_facts(backend, tex_source=REAL_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert len(facts.sections) == 5
+    assert len(facts.all_entries()) == 5
+    # The JSON number 2026 became the string "2026" and then the bare-year month.
+    widget = facts.entry_by_id("exp/widget-kit-2026")
+    assert widget is not None
+    assert widget.start == "2026-01"
+    assert widget.end is None
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda body: f"```json\n{body}\n```",
+        lambda body: f"```\n{body}\n```",
+        lambda body: f"Here is the CV:\n{body}\nDone.",
+    ],
+)
+async def test_a_fenced_or_prose_wrapped_json_document_is_parsed(
+    tmp_path: Path, wrap
+) -> None:
+    body = json.dumps(_real_extraction().model_dump())
+    backend = StubBackend(cv_json=wrap(body))
+
+    result = await extract_facts(backend, tex_source=REAL_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert len(facts.all_entries()) == 5
+
+
+async def test_sections_as_an_object_keyed_by_heading_become_a_list(
+    tmp_path: Path,
+) -> None:
+    payload = {
+        "meta": {"name": "Alex Example"},
+        "sections": {
+            "WORK EXPERIENCE": {
+                "entries": [
+                    {
+                        "org": "Northwind Labs",
+                        "title": "Senior Backend Engineer",
+                        "dates": "2021 - 2023",
+                        "bullets": ["Built the ingest path"],
+                    }
+                ],
+                "skills": [],
+            },
+            "CODING PROFICIENCY": {"entries": [], "skills": ["Python"]},
+        },
+    }
+
+    result = await extract_facts(
+        StubBackend(cv_json=json.dumps(payload)), tex_source=REAL_TEX
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert {section.title_key for section in facts.sections} == {
+        "sec.experience",
+        "sec.skills",
+    }
+    assert facts.all_entries(), "the keyed heading must become the section heading"
+
+
+async def test_a_string_bullets_field_becomes_a_one_element_list(tmp_path: Path) -> None:
+    payload = {
+        "meta": {"name": "Alex Example"},
+        "sections": [
+            {
+                "heading": "WORK EXPERIENCE",
+                "entries": [
+                    {
+                        "org": "Northwind Labs",
+                        "title": "Senior Backend Engineer",
+                        "dates": "2021 - 2023",
+                        "bullets": "Built the ingest path",
+                    }
+                ],
+                "skills": [],
+            }
+        ],
+    }
+
+    result = await extract_facts(
+        StubBackend(cv_json=json.dumps(payload)), tex_source=REAL_TEX
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert [bullet.text for bullet in facts.all_entries()[0].bullets] == [
+        "Built the ingest path"
+    ]
+
+
+async def test_a_null_meta_becomes_an_empty_meta(tmp_path: Path) -> None:
+    payload = {
+        "meta": None,
+        "sections": [
+            {
+                "heading": "WORK EXPERIENCE",
+                "entries": [
+                    {
+                        "org": "Northwind Labs",
+                        "title": "Senior Backend Engineer",
+                        "dates": "2021 - 2023",
+                        "bullets": [],
+                    }
+                ],
+                "skills": [],
+            }
+        ],
+    }
+
+    result = await extract_facts(
+        StubBackend(cv_json=json.dumps(payload)), tex_source=REAL_TEX
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert facts.meta.name is None
+    assert facts.all_entries()
+
+
+@pytest.mark.parametrize("raw", ["not json at all", "{ broken", "[1, 2, 3]"])
+async def test_a_non_json_or_non_object_cv_string_raises_extraction_error(
+    raw: str,
+) -> None:
+    with pytest.raises(ExtractionError):
+        await extract_facts(StubBackend(cv_json=raw), tex_source=REAL_TEX)

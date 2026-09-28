@@ -7,6 +7,7 @@ private helper.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Iterator, Sequence
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from app.cv.factstore import load_facts
 from app.cv.llm_extract import (
     _ExtractedCv,
     _ExtractedEntry,
+    _ExtractedEnvelope,
     _ExtractedMeta,
     _ExtractedSection,
 )
@@ -167,7 +169,9 @@ class CvStubBackend:
             raise RuntimeError("backend transport down")
         if not self.ok:
             return StructuredCallResult(ok=False, status="invalid", error=self.error)
-        return StructuredCallResult(ok=True, status="ok", data=self.extracted)
+        assert self.extracted is not None
+        envelope = _ExtractedEnvelope(cv_json=json.dumps(self.extracted.model_dump()))
+        return StructuredCallResult(ok=True, status="ok", data=envelope)
 
 
 _BACKEND = CvStubBackend()
@@ -415,7 +419,7 @@ async def test_the_model_schema_is_the_contract(cv_client, cv_dir: Path) -> None
 
     assert response.status_code == 200
     assert 'data-status="ok"' in response.text
-    assert _BACKEND.calls[0]["schema"] is _ExtractedCv
+    assert _BACKEND.calls[0]["schema"] is _ExtractedEnvelope
     assert _BACKEND.calls[0]["text"] == REAL_TEX
     facts = load_facts(cv_dir / "cv.yaml")
     assert "Ghost Corp" not in {org.name for org in facts.orgs}
