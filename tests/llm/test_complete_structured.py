@@ -871,7 +871,7 @@ def test_parse_providers_accepts_the_live_dict_shape() -> None:
 
 
 def test_the_new_phase_three_ceilings_are_settings_fields() -> None:
-    assert Settings().opencode_completion_timeout_seconds == 120.0
+    assert Settings().opencode_completion_timeout_seconds == 300.0
     assert Settings().opencode_max_retries == 2
     assert Settings().opencode_structured_retry_count == 2
     assert Settings(opencode_max_retries=5).opencode_max_retries == 5

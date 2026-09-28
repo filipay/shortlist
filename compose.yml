@@ -36,7 +36,7 @@ services:
       # the identical defect class — so it is fixed here alongside its three
       # siblings. Every default matches app/config.py exactly.
       - OPENCODE_TIMEOUT_SECONDS=${OPENCODE_TIMEOUT_SECONDS:-5}
-      - OPENCODE_COMPLETION_TIMEOUT_SECONDS=${OPENCODE_COMPLETION_TIMEOUT_SECONDS:-120}
+      - OPENCODE_COMPLETION_TIMEOUT_SECONDS=${OPENCODE_COMPLETION_TIMEOUT_SECONDS:-300}
       - OPENCODE_MAX_RETRIES=${OPENCODE_MAX_RETRIES:-2}
       - OPENCODE_STRUCTURED_RETRY_COUNT=${OPENCODE_STRUCTURED_RETRY_COUNT:-2}
       # Phase-4 LaTeX engine, forwarded for the same reason as the knobs above.

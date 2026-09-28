@@ -66,7 +66,13 @@ class Settings(BaseSettings):
     #: Bounded timeout for ONE structured completion (PLAT-04). A real call takes
     #: whole seconds to tens of seconds, so reusing the 5-second health timeout
     #: would abort every completion. Configuration, not a constant.
-    opencode_completion_timeout_seconds: float = 120.0
+    #:
+    #: Raised 120 -> 300 on measured evidence: a single CV extraction over an
+    #: 81-line .tex took 90s, and a real multi-section CV is several times that
+    #: input. The 120s ceiling was rejecting a call the model would have finished,
+    #: and because the client resends on a transport failure the operator waited
+    #: for two of them before seeing an error.
+    opencode_completion_timeout_seconds: float = 300.0
     #: How many times the client resends a completion that failed at the transport
     #: layer. The server-side schema retry count is `opencode_structured_retry_count`.
     opencode_max_retries: int = 2

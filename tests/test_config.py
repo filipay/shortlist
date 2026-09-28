@@ -410,7 +410,7 @@ def test_the_phase_three_ceilings_are_environment_tunable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A config field no test can override is only half a config field."""
-    assert Settings.model_fields["opencode_completion_timeout_seconds"].default == 120.0
+    assert Settings.model_fields["opencode_completion_timeout_seconds"].default == 300.0
     assert Settings.model_fields["opencode_max_retries"].default == 2
     assert Settings.model_fields["opencode_structured_retry_count"].default == 2
 
