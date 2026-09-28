@@ -5,8 +5,11 @@ One path, four routes:
 * ``GET /listings/{id}/cv`` — the page shell: generate control (or the ``rank first``
   state), and the latest artifact's state.
 * ``POST /listings/{id}/cv/generate`` — one tailoring call; returns the review
-  fragment carrying the patch as a hidden ``patch_json`` field. NO artifact row, NO
-  ``.tex``, NO PDF (D-108/D-109).
+  fragment carrying the patch as a hidden ``patch_json`` field and keeps the patch as
+  this listing's single live ``cv_drafts`` row. NO ``cv_artifacts`` row, NO ``.tex``,
+  NO PDF (D-108/D-109).
+* ``POST /listings/{id}/cv/delete`` — the only removal path: deletes the listing's
+  ``cv_drafts`` row and redirects back to the page.
 * ``POST /listings/{id}/cv/compile`` — re-parses the client's ``patch_json`` with
   Pydantic, re-grounds it and compiles. A Layer-1 fail short-circuits to a blocked
   row (D-111/D-115).
@@ -29,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +41,13 @@ from app.api.searches import read_form
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
 from app.db.models import Listing
-from app.db.repositories import cv_artifact_repo, cv_repo, score_repo, state_repo
+from app.db.repositories import (
+    cv_artifact_repo,
+    cv_draft_repo,
+    cv_repo,
+    score_repo,
+    state_repo,
+)
 from app.db.repositories.queue_repo import QueueQuery, read_row
 from app.db.session import get_session
 from app.domain.cv import (
@@ -229,6 +238,33 @@ def _error_fragment(reason: str, message: str, status_code: int) -> HTMLResponse
     )
 
 
+def _review_context(
+    *,
+    listing_id: int,
+    patch: TailoringPatch,
+    plan: RenderPlan,
+    facts: CvFacts,
+    base_cv_version_id: int | None,
+    fact_store_hash: str | None = None,
+) -> dict[str, Any]:
+    """The shared review-fragment context, so generate and reload cannot drift.
+
+    ``fact_store_hash`` defaults to the CURRENT fact store's hash — what generate
+    captures. A restored draft passes the hash stored beside the patch instead, so the
+    D-109 guard still refuses a compile after the fact store moves.
+    """
+    return {
+        "listing_id": listing_id,
+        "plan": plan,
+        "patch": patch,
+        "dropped_bullets": _dropped_bullets(facts, plan, patch),
+        "gap_bands": _gap_bands(facts, patch),
+        "patch_json": patch.model_dump_json(),
+        "version_value": "" if base_cv_version_id is None else str(base_cv_version_id),
+        "fact_store_hash": fact_store_hash if fact_store_hash is not None else facts_hash(facts),
+    }
+
+
 def _review_response(
     request: Request,
     *,
@@ -247,16 +283,41 @@ def _review_response(
     return templates.TemplateResponse(
         request,
         REVIEW_TEMPLATE,
-        {
-            "listing_id": listing_id,
-            "plan": plan,
-            "patch": patch,
-            "dropped_bullets": _dropped_bullets(facts, plan, patch),
-            "gap_bands": _gap_bands(facts, patch),
-            "patch_json": patch.model_dump_json(),
-            "version_value": "" if base_cv_version_id is None else str(base_cv_version_id),
-            "fact_store_hash": facts_hash(facts),
-        },
+        _review_context(
+            listing_id=listing_id,
+            patch=patch,
+            plan=plan,
+            facts=facts,
+            base_cv_version_id=base_cv_version_id,
+        ),
+    )
+
+
+def _draft_review_html(
+    listing_id: int, draft: cv_draft_repo.CvDraftRecord
+) -> str | None:
+    """The stored draft's review fragment, or `None` when it can no longer render.
+
+    Degrades safely rather than 500-ing the page: a missing/unreadable fact store, an
+    unparseable patch or one that no longer applies to the facts all return `None`, so
+    the page still renders and can still offer deletion. On success the context is the
+    same one generate used, guarded by the STORED fact-store hash.
+    """
+    try:
+        facts = load_facts(Path(settings.cv_dir) / CV_FILENAME)
+        patch = TailoringPatch.model_validate(draft.patch_json)
+        plan = apply_patch(facts, patch)
+    except (CvFactStoreError, OSError, ValidationError, UnknownIdError, InvalidPatchError):
+        return None
+    return templates.get_template(REVIEW_TEMPLATE).render(
+        _review_context(
+            listing_id=listing_id,
+            patch=patch,
+            plan=plan,
+            facts=facts,
+            base_cv_version_id=draft.base_cv_version_id,
+            fact_store_hash=draft.fact_store_hash,
+        )
     )
 
 
@@ -320,6 +381,11 @@ async def tailoring_page(
     # from the newest row's persisted verification, degrading to [] on an odd blob.
     history = await cv_artifact_repo.history_for_listing(session, listing_id)
     findings = _parse_findings(latest.verification_json) if latest is not None else []
+    # The live draft (D-108 superseded): the generated CV survives a reload here. The
+    # fragment is rebuilt from the STORED patch; an unrenderable draft leaves `draft`
+    # truthy (so the UI can still delete it) with `draft_review_html` omitted.
+    draft = await cv_draft_repo.read_draft(session, listing_id)
+    draft_review_html = _draft_review_html(listing_id, draft) if draft is not None else None
 
     return templates.TemplateResponse(
         request,
@@ -333,6 +399,8 @@ async def tailoring_page(
             "latest": latest,
             "findings": findings,
             "history": history,
+            "draft": draft,
+            "draft_review_html": draft_review_html,
         },
     )
 
@@ -345,7 +413,13 @@ async def generate_tailored_cv(
     session: AsyncSession = Depends(get_session),
     backend: Any = Depends(get_llm_backend),
 ) -> HTMLResponse:
-    """Generate exactly one patch; return the review fragment. No artifact row (D-108).
+    """Generate exactly one patch; return the review fragment and keep it as the draft.
+
+    D-108's "persists nothing" is **superseded** by the explicit requirement to keep
+    the generated CV per job: after the patch is applied, it is upserted as this
+    listing's single live ``cv_drafts`` row (no ``cv_artifacts`` row, no ``.tex``, no
+    PDF) and committed so a reload reconnects to it. The only removal path is
+    ``POST /listings/{id}/cv/delete``.
 
     `tailor_listing` never lets a backend transport failure escape: it records the
     attempt's audit row and returns `None`, so the `patch is None` branch below IS
@@ -401,6 +475,17 @@ async def generate_tailored_cv(
         )
 
     version = await cv_repo.current_version(session)
+    # Only a patch that applied is persisted, so an invalid patch leaves any prior
+    # draft in place and never writes a new one.
+    await cv_draft_repo.upsert_draft(
+        session,
+        listing_id=listing_id,
+        base_cv_version_id=version.id if version is not None else None,
+        patch_json=patch.model_dump(mode="json"),
+        fact_store_hash=facts_hash(facts),
+        now=datetime.now(UTC),
+    )
+    await session.commit()
     return _review_response(
         request,
         listing_id=listing_id,
@@ -409,6 +494,31 @@ async def generate_tailored_cv(
         facts=facts,
         base_cv_version_id=version.id if version is not None else None,
     )
+
+
+@router.post("/listings/{listing_id}/cv/delete")
+async def delete_tailored_cv(
+    listing_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Delete this listing's live draft and redirect back to the page (303).
+
+    Plain-form friendly: the page's non-htmx delete form posts here and the browser
+    follows the redirect, so a refresh shows the draft gone. Deliberately NOT gated by
+    ``Settings.tailoring_enabled``: this is removal/cleanup of an already-generated
+    draft, not new tailoring work, and gating it would strand a draft when the
+    operator pauses tailoring. An unknown listing is the existing 404 fragment.
+    """
+    await read_form(request)
+
+    listing = await session.get(Listing, listing_id)
+    if listing is None:
+        return _not_found()
+    await cv_draft_repo.delete_draft(session, listing_id)
+    await session.commit()
+    return RedirectResponse(url=f"/listings/{listing_id}/cv", status_code=303)
 
 
 @router.post("/listings/{listing_id}/cv/compile", response_class=HTMLResponse)

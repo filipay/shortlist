@@ -256,12 +256,24 @@ async def rank_listing(
 ) -> score_repo.ScoreRecord | None:
     """Score exactly ONE listing and write its audit row and score row.
 
-    Never commits (the caller owns the transaction) and never raises for a model
-    failure — a failed call is a value. Returns the written `ScoreRecord`, or
+    Commits the read-only preamble before the model call so no read transaction
+    spans network I/O; the caller still owns the write transaction. Never raises for
+    a model failure — a failed call is a value. Returns the written `ScoreRecord`, or
     `None` when the call did not produce a valid response (no score row is written
     in that case).
     """
     weights = await ranking_config_repo.read_weights(session)
+
+    # Commit the read-only preamble (the weights read above, plus `run_ranking`'s
+    # earlier reads in this session) BEFORE the model call. A read transaction left
+    # open across the network call would make the audit/score writes below upgrade a
+    # stale snapshot — which SQLite rejects immediately with SQLITE_BUSY_SNAPSHOT
+    # ("database is locked") once any other connection has committed in the gap (the
+    # concurrent ranking task commits once per listing). Committing a read-only
+    # transaction is harmless, and `expire_on_commit=False` keeps `listing`/`facts`
+    # usable.
+    await session.commit()
+
     parts = build_ranking_parts(facts, listing, weights)
     result = await backend.complete_structured(
         schema=RankingResponse,

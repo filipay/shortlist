@@ -1,0 +1,17 @@
+# Dev override (PLAT-01 dev loop). NOT the production manifest — compose.yml is.
+#
+# Bind-mount the application code so a plain `docker compose up -d` (or a
+# container restart) picks up local edits without an image rebuild. Tectonic
+# and its primed TeX cache stay baked into the image, so PDF compilation still
+# works. `./alembic` is mounted too, so `entrypoint.sh`'s `alembic upgrade head`
+# sees new revisions (e.g. 0005_cv_drafts).
+#
+# Remove this file (or run `docker compose -f compose.yml ...`) to go back to the
+# baked image. Compose appends these volumes to compose.yml's list; all targets
+# are distinct, so nothing is shadowed.
+services:
+  app:
+    volumes:
+      - ./app:/app/app
+      - ./static/vendor:/app/static/vendor
+      - ./alembic:/app/alembic

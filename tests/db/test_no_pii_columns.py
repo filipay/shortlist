@@ -66,6 +66,10 @@ EXPECTED_JSON_COLUMNS: dict[str, frozenset[str]] = {
     "cv_artifacts": frozenset(
         {"patch_json", "change_log_json", "verification_json", "ats_checks_json"}
     ),
+    # 0005 adds the live generated draft. Its one JSON blob is the typed TailoringPatch
+    # (fact IDs, weights, reasons — never free text, never listing content), and the
+    # other columns are two integer FKs, a sha256 hex and a timestamp.
+    "cv_drafts": frozenset({"patch_json"}),
     "applications": frozenset(),
     "application_events": frozenset(),
     "llm_calls": frozenset(),

@@ -34,6 +34,36 @@
     <main id="content">
       {% block content %}{% endblock %}
     </main>
+    {#
+      htmx 2.x ships `responseHandling:[{code:"[45]..",swap:false,error:true}]`, so a
+      non-2xx response is NOT swapped and the server's error fragment vanishes. The
+      tailoring routes render their refusals as HTML *targeting the review region*
+      (e.g. `_error_fragment` -> `#tailoring-review[data-error]`), so force the swap
+      for HTML error bodies only; a JSON 4xx keeps htmx's default behaviour.
+
+      Transport-level failures have no response body to swap, so they are stated
+      where the user is looking instead of failing silently. Plain DOM, no framework.
+    #}
+    <script>
+      document.body.addEventListener('htmx:beforeSwap', function (evt) {
+        var xhr = evt.detail.xhr;
+        if (!xhr || xhr.status < 400) return;
+        var type = xhr.getResponseHeader('content-type') || '';
+        if (type.indexOf('text/html') === -1) return;
+        evt.detail.shouldSwap = true;
+        evt.detail.isError = false;
+      });
+
+      function showTailoringTransportError(evt) {
+        var target = (evt.detail && evt.detail.target) || document.getElementById('tailoring-review');
+        if (!target || target.id !== 'tailoring-review') return;
+        target.innerHTML =
+          '<p class="tailoring-empty">The request did not reach the server. ' +
+          'Check your connection and try again.</p>';
+      }
+      document.body.addEventListener('htmx:sendError', showTailoringTransportError);
+      document.body.addEventListener('htmx:timeout', showTailoringTransportError);
+    </script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

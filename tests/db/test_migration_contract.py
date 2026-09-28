@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0004"], "expected exactly one recorded revision: 0004"
+    assert versions == ["0005"], "expected exactly one recorded revision: 0005"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0004"), head_lines[0]
+    assert head_lines[0].startswith("0005"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -535,6 +535,51 @@ def test_ranking_config_table_and_singleton_check(migrated_db: Path) -> None:
         connection.close()
 
 
+# --- Item 16 (0005) — cv_drafts, the one live generated draft per listing --------
+def test_cv_drafts_table_and_unique_listing(migrated_db: Path) -> None:
+    """D-108 superseded: the generated CV is kept per listing, one live row each.
+
+    The named ``uq_cv_drafts_listing`` constraint is what makes a regenerate replace
+    rather than accumulate, so it is asserted in the migrated DDL and enforced.
+    """
+    connection = _connect(migrated_db)
+    try:
+        assert _exists(connection, "table", "cv_drafts")
+
+        columns = _table_info(connection, "cv_drafts")
+        assert {
+            "id",
+            "listing_id",
+            "base_cv_version_id",
+            "patch_json",
+            "fact_store_hash",
+            "created_at",
+        } <= set(columns)
+        assert columns["listing_id"]["notnull"] == 1
+        assert columns["patch_json"]["notnull"] == 1
+
+        # The (single-column) UNIQUE on listing_id is present and named in the DDL
+        # (a table-level constraint yields SQLite's implicit autoindex, so the name is
+        # asserted on the CREATE TABLE text, not via PRAGMA index_list).
+        table_sql = _master(connection, "table", "cv_drafts")["sql"]
+        assert "uq_cv_drafts_listing" in table_sql, "missing uq_cv_drafts_listing"
+
+        listing_id = _insert_listing(connection)
+        connection.execute(
+            "INSERT INTO cv_drafts (listing_id, patch_json, created_at) VALUES (?, '{}', ?)",
+            (listing_id, "2026-09-28 00:00:00"),
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO cv_drafts (listing_id, patch_json, created_at) VALUES (?, '{}', ?)",
+                (listing_id, "2026-09-28 00:00:00"),
+            )
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -558,7 +603,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0004"], f"expected exactly 0004, saw {versions}"
+        assert versions == ["0005"], f"expected exactly 0005, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

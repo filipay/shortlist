@@ -37,6 +37,8 @@ EXPECTED_TABLES = (
     "listing_fts",
     # Migration 0004 (Phase 5): the single-row global ranking weights document.
     "ranking_config",
+    # Migration 0005: the live generated CV draft (one row per listing).
+    "cv_drafts",
 )
 
 
@@ -73,7 +75,7 @@ def test_migration_creates_every_table_at_latest_revision(migrated_db: Path) -> 
         version = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        assert version == [("0004",)]
+        assert version == [("0005",)]
     finally:
         connection.close()
 

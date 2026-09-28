@@ -100,6 +100,9 @@ RESET_DELETE_ORDER: tuple[str, ...] = (
     "listing_events",
     "listing_dupes",
     "listing_sources",
+    # The live generated draft (migration 0005): regenerable per-listing work, so a
+    # corpus reset deletes it rather than refusing. Must precede `listings` (its parent).
+    "cv_drafts",
     "listings",
     "llm_calls",
     "source_request_log",

@@ -431,6 +431,34 @@ class CvArtifact(Base):
     )
 
 
+class CvDraft(Base):
+    """The one live generated draft per listing (D-108 superseded).
+
+    A NEW table rather than a `draft` ``compile_status`` on `cv_artifacts`:
+    ``cv_artifacts.compile_status`` carries a three-value CHECK whose review surface
+    treats "no artifact" as the ready state, and ``cv_artifact_repo``'s reads filter
+    on ``listing_id`` alone — a draft row there would leak into compiled history and
+    the page's latest-artifact state. This table holds at most one row per listing:
+    the generated patch survives reload/navigation and is removed only by the
+    explicit delete route (``POST /listings/{id}/cv/delete``).
+    """
+
+    __tablename__ = "cv_drafts"
+
+    id = Column(Integer, primary_key=True)
+    listing_id = Column(Integer, ForeignKey("listings.id"), nullable=False)
+    base_cv_version_id = Column(Integer, ForeignKey("cv_versions.id"))
+    patch_json = Column(JSON, nullable=False)
+    #: The semantic fact-store hash captured at generate time (``facts_hash``, a
+    #: sha256 hex), so D-109's guard still round-trips fact-store drift on reload.
+    fact_store_hash = Column(String(64))
+    created_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("listing_id", name="uq_cv_drafts_listing"),
+    )
+
+
 class Application(Base):
     """Acceptance item 5: `cv_artifact_id` — the exact artefact that was sent."""
 

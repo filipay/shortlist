@@ -63,16 +63,24 @@
   </ul>
   {% endif %}
 
+  {# The compile step renders and compiles a PDF, so it is slow and silent without
+     this. htmx resolves `hx-indicator`/`hx-disabled-elt` from the request element
+     (the form), not the clicked button: `find button` disables the submit itself. #}
   <form
     method="post"
     action="/listings/{{ listing_id }}/cv/compile"
     hx-post="/listings/{{ listing_id }}/cv/compile"
     hx-target="#tailoring-review"
     hx-swap="innerHTML"
+    hx-indicator="#compile-progress"
+    hx-disabled-elt="find button"
   >
     <input type="hidden" name="patch_json" value="{{ patch_json }}">
     <input type="hidden" name="base_cv_version_id" value="{{ version_value }}">
     <input type="hidden" name="fact_store_hash" value="{{ fact_store_hash }}">
     <button type="submit">Compile PDF</button>
+    <p id="compile-progress" class="htmx-indicator" role="status" aria-live="polite">
+      Compiling the PDF. This can take a moment.
+    </p>
   </form>
 </section>

@@ -30,9 +30,38 @@
   hx-post="/listings/{{ listing_id }}/cv/generate"
   hx-target="#tailoring-review"
   hx-swap="innerHTML"
+  hx-indicator="#generate-progress"
+  hx-disabled-elt="this"
 >Generate tailored CV</button>
+{# The generate call is a real LLM round-trip, so it is slow and silent without this.
+   `hx-indicator` toggles `.htmx-request` on the element; the button disables itself
+   for the duration. The label is a live region so the wait is announced. #}
+<p id="generate-progress" class="htmx-indicator" role="status" aria-live="polite">
+  Generating a tailored CV — this calls the model, so it can take up to a minute.
+</p>
 {% endif %}
-<div id="tailoring-review" class="tailoring-review"></div>
+<div id="tailoring-review" class="tailoring-review">
+  {# A generated-but-not-compiled draft is persisted (server-supplied). Its review
+     fragment is rendered server-side with the same context the generate response
+     uses, so it is already escaped — `|safe` here re-inserts finished HTML. #}
+  {% if draft_review_html %}{{ draft_review_html | safe }}{% endif %}
+  {% if draft %}
+  <p id="tailoring-draft-note">
+    <strong>A generated CV is kept for this listing.</strong>
+    Review it, compile it to a PDF, or delete it — deleting is the only way it goes away.
+  </p>
+  {# A plain POST form, NOT htmx: the delete path must work with JavaScript off.
+     Alpine only asks for confirmation; with no JavaScript the form still submits. #}
+  <form
+    method="post"
+    action="/listings/{{ listing_id }}/cv/delete"
+    x-data="{}"
+    @submit="if (!confirm('Delete the kept CV for this listing?')) $event.preventDefault()"
+  >
+    <button type="submit" class="cv-delete">Delete kept CV</button>
+  </form>
+  {% endif %}
+</div>
 {% endif %}
 
 {% if latest %}

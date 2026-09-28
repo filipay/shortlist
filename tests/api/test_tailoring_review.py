@@ -7,7 +7,8 @@ Observable truths a verifier should check:
 2. A blocked artifact renders the blocked state and no download link; an `ok` artifact
    renders the download affordance.
 3. `POST .../generate` returns the preview beside the change log and the three guard
-   fields, and writes zero `cv_artifacts` rows and no `.tex`/`.pdf`.
+   fields, writes zero `cv_artifacts` rows and no `.tex`/`.pdf`, and keeps one
+   `cv_drafts` row; `POST .../delete` removes that row and redirects to the page.
 4. A drop and a demotion are each listed with their reason, and a declared drop is shown
    struck in the preview rather than omitted (TAIL-08).
 5. `POST .../compile` with a mutated `fact_store_hash` or a moved `base_cv_version_id`
@@ -31,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.db.models import CvArtifact
+from app.db.models import CvArtifact, CvDraft
 from app.db.repositories import cv_artifact_repo, cv_repo
 from app.domain.cv import (
     BulletWeight,
@@ -173,6 +174,13 @@ async def _artifact_rows(
         return list((await session.execute(select(CvArtifact))).scalars().all())
 
 
+async def _draft_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[CvDraft]:
+    async with session_factory() as session:
+        return list((await session.execute(select(CvDraft))).scalars().all())
+
+
 async def _seed_artifact(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -290,7 +298,7 @@ async def test_generate_returns_the_review_fragment_with_preview_and_guard_field
     assert list((tmp_path / "artifacts").rglob("*.tex")) == [], "generate writes no .tex"
 
 
-async def test_generate_writes_no_artifact_row(
+async def test_generate_persists_a_draft_not_an_artifact(
     tailoring_client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -299,6 +307,39 @@ async def test_generate_writes_no_artifact_row(
     await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
 
     assert await _artifact_rows(session_factory) == []
+    drafts = await _draft_rows(session_factory)
+    assert len(drafts) == 1
+    assert drafts[0].listing_id == listing_id
+
+
+async def test_delete_removes_the_draft_and_redirects_to_the_page(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The explicit delete is the only removal path, and it 303s a plain form back."""
+    listing_id = await _seed_scored_listing(session_factory, title="Delete Role")
+    await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    assert len(await _draft_rows(session_factory)) == 1
+
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/delete")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/listings/{listing_id}/cv"
+    assert await _draft_rows(session_factory) == [], "the draft row is gone"
+    assert await _artifact_rows(session_factory) == [], "delete touches no artifact"
+
+    body = (await tailoring_client.get(f"/listings/{listing_id}/cv")).text
+    assert "Tailored CV preview" not in body, "the page no longer shows the deleted draft"
+    assert 'name="patch_json"' not in body
+
+
+async def test_delete_of_an_unknown_listing_is_a_404_fragment(
+    tailoring_client: AsyncClient,
+) -> None:
+    response = await tailoring_client.post("/listings/9999/cv/delete")
+
+    assert response.status_code == 404
+    assert "unknown-listing" in response.text
 
 
 async def test_a_dropped_bullet_is_struck_and_listed_with_its_reason(

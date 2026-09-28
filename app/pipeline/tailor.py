@@ -189,8 +189,9 @@ async def tailor_listing(
 ) -> TailoringPatch | None:
     """Make exactly ONE structured call and write exactly one audit row per ATTEMPT.
 
-    Never commits (the caller owns the transaction) and never raises — a model
-    failure, a `budget_exceeded` refusal AND a raised transport error are all
+    Commits the read-only preamble before the model call so no read transaction
+    spans network I/O; the caller still owns the write transaction. Never raises — a
+    model failure, a `budget_exceeded` refusal AND a raised transport error are all
     values. Every ATTEMPTED call writes exactly one row: a completed call records
     `result.status`, while a raised `complete_structured` records `status="error"`
     with the exception CLASS NAME only (never its message — T-06-07 forbids a
@@ -219,6 +220,15 @@ async def tailor_listing(
         )
         log.info("pipeline.tailor_refused", reason="per_day")
         return None
+
+    # Commit the read-only preamble (`calls_since` above, plus the caller's earlier
+    # reads) BEFORE the model call. A read transaction left open across the network
+    # call would make the `record_llm_call` write below upgrade a stale snapshot —
+    # which SQLite rejects immediately with SQLITE_BUSY_SNAPSHOT ("database is
+    # locked") once any other connection has committed in the gap. Committing a
+    # read-only transaction is harmless, and `expire_on_commit=False` keeps
+    # `listing`/`facts` usable.
+    await session.commit()
 
     try:
         parts = build_tailoring_parts(facts, listing, requirements)

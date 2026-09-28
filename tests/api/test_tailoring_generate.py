@@ -1,9 +1,10 @@
-"""TAIL-01 / TAIL-02 / TAIL-03 / D-108 / D-111 / D-115 / D-118 — the tailoring path.
+"""TAIL-01 / TAIL-02 / TAIL-03 / D-108 (superseded) / D-111 / D-115 / D-118.
 
 Observable truths a verifier should check:
 
 1. `POST .../generate` on a scored listing returns a fragment containing a
-   `patch_json` hidden field and writes zero `cv_artifacts` rows and zero `.tex` files.
+   `patch_json` hidden field, writes zero `cv_artifacts` rows and zero `.tex` files,
+   and keeps exactly one `cv_drafts` row per listing.
 2. The page on an unscored listing renders the `rank first` state and no generate control.
 3. A Layer-1 fail at compile writes exactly one `blocked` row with NULL paths.
 4. A passing compile writes exactly one `ok` row with non-null paths and page count.
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.cv.factstore import load_facts
-from app.db.models import CvArtifact, LlmCall
+from app.db.models import CvArtifact, CvDraft, LlmCall
 from app.domain.cv import BulletWeight, GapFinding, TailoringPatch, facts_hash
 from app.latex.base import CompileResult, EngineProbe
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
@@ -38,22 +39,25 @@ PATCH_RE = re.compile(r'name="patch_json" value="([^"]*)"')
 HIDDEN_RE = re.compile(r'name="(patch_json|base_cv_version_id|fact_store_hash)" value="([^"]*)"')
 
 
+DEFAULT_PATCH = TailoringPatch(
+    listing_id=1,
+    ops=[
+        BulletWeight(
+            op="reweight_bullet",
+            bullet_id="bul/northwind-labs-2021/1",
+            weight=2.0,
+        )
+    ],
+)
+
+
 class TailoringStubBackend:
     """Returns one fixed valid patch and records the calls it received."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.raise_transport = False
-        self.patch = TailoringPatch(
-            listing_id=1,
-            ops=[
-                BulletWeight(
-                    op="reweight_bullet",
-                    bullet_id="bul/northwind-labs-2021/1",
-                    weight=2.0,
-                )
-            ],
-        )
+        self.patch = DEFAULT_PATCH
 
     async def health(self) -> ProbeOutcome:
         return ProbeOutcome(reachable=True)
@@ -116,6 +120,7 @@ _ENGINE = StubEngine()
 def _reset_stubs() -> None:
     _BACKEND.calls.clear()
     _BACKEND.raise_transport = False
+    _BACKEND.patch = DEFAULT_PATCH
     _ENGINE.calls.clear()
 
 
@@ -176,6 +181,13 @@ async def _llm_call_rows(
         return list((await session.execute(select(LlmCall))).scalars().all())
 
 
+async def _draft_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[CvDraft]:
+    async with session_factory() as session:
+        return list((await session.execute(select(CvDraft))).scalars().all())
+
+
 def _extract_patch(body: str) -> str:
     match = PATCH_RE.search(body)
     assert match is not None, "the review fragment must carry a patch_json hidden field"
@@ -205,10 +217,10 @@ async def test_page_renders_rank_first_for_an_unscored_listing(
     assert "Generate tailored CV" not in body, "no generate control on an unscored listing"
 
 
-# --- truth 1: generate returns the review fragment and writes nothing ----------
+# --- truth 1: generate returns the review fragment and keeps one draft ----------
 
 
-async def test_generate_returns_the_review_fragment_and_writes_nothing(
+async def test_generate_returns_the_review_fragment_and_persists_only_a_draft(
     tailoring_client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
     tmp_path: Path,
@@ -223,8 +235,73 @@ async def test_generate_returns_the_review_fragment_and_writes_nothing(
     assert 'name="patch_json"' in body
     assert _extract_patch(body)
     assert await _artifact_rows(session_factory) == [], "generate persists no artifact row"
+    drafts = await _draft_rows(session_factory)
+    assert len(drafts) == 1, "generate keeps exactly one live draft"
+    assert drafts[0].listing_id == listing_id
+    assert drafts[0].patch_json == _BACKEND.patch.model_dump(mode="json")
     assert list((tmp_path / "artifacts").rglob("*.tex")) == [], "generate writes no .tex"
     assert len(_BACKEND.calls) == 1, "exactly one tailoring call per generate"
+
+
+async def test_a_reload_reconnects_to_the_stored_draft(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The generated CV survives navigation: the page rebuilds it from the stored row."""
+    listing_id = await _seed_scored_listing(session_factory, title="Reload Role")
+
+    await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    assert len(await _draft_rows(session_factory)) == 1, "the draft is stored"
+
+    body = (await tailoring_client.get(f"/listings/{listing_id}/cv")).text
+
+    assert 'id="tailoring-review"' in body
+    assert "Tailored CV preview" in body, "the restored review shows the preview"
+    assert "Change log" in body, "the restored review shows the change log"
+    assert set(_hidden_fields(body)) == {
+        "patch_json",
+        "base_cv_version_id",
+        "fact_store_hash",
+    }, "the compile form's guard fields are restored from the stored draft"
+
+
+async def test_regenerate_replaces_rather_than_accumulates(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Regenerate Role")
+
+    await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    drafts = await _draft_rows(session_factory)
+    assert len(drafts) == 1, "a regenerate replaces the live draft, never accumulates"
+    assert drafts[0].listing_id == listing_id
+
+
+async def test_an_invalid_patch_persists_no_draft(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Invalid Patch Role")
+    # An op referencing a fact ID the store does not carry makes `apply_patch` raise.
+    _BACKEND.patch = TailoringPatch(
+        listing_id=listing_id,
+        ops=[
+            BulletWeight(
+                op="reweight_bullet",
+                bullet_id="bul/does-not-exist/1",
+                weight=2.0,
+            )
+        ],
+    )
+
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    assert response.status_code == 502
+    assert 'data-error="invalid-patch"' in response.text
+    assert await _artifact_rows(session_factory) == []
+    assert await _draft_rows(session_factory) == [], "an invalid patch is never persisted"
 
 
 async def test_generate_returns_a_typed_error_and_one_audit_row_when_the_backend_raises(
