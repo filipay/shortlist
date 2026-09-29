@@ -107,6 +107,10 @@ class RawListing:
     location_raw: str | None = None
     description: str | None = None
     is_remote: bool | None = None
+    #: The board's level collapsed to `junior`/`mid`/`senior`/`lead`, or `None`
+    #: when the board gives nothing usable. The normalise stage may fill it from a
+    #: conservative title heuristic; it is never a fabricated guess.
+    seniority: str | None = None
     salary_min: float | None = None
     salary_max: float | None = None
     salary_interval: str | None = None

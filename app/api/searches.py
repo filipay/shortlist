@@ -49,7 +49,7 @@ from app.api.runs import render_run_fragment
 from app.db.models import Run
 from app.db.repositories import search_repo
 from app.db.session import get_session, get_session_factory
-from app.domain.criteria import search_query_from
+from app.domain.criteria import DEFAULT_WORK_MODE, WORK_MODES, search_query_from
 from app.domain.models import User
 from app.pipeline.run import resolve_enabled_adapters, run_pipeline
 from app.sources.base import CapabilityWarning, compile_query_for_source
@@ -166,6 +166,12 @@ def criteria_from_form(form: Mapping[str, Any]) -> tuple[dict[str, Any], list[st
     the form is ignored rather than stored. A salary floor is validated here because
     the form accepts free text (the pure `search_query_from` would simply drop a
     wrong-typed value, which would be a silent no-op rather than a visible error).
+
+    `remote_only` is deliberately NOT read: the work-mode select supersedes it, and
+    `work_mode=remote` drives both the fetch-side `remote_only` hint and the local
+    hard filter. A legacy stored `remote_only` key is still honoured by
+    `search_query_from` so an un-migrated search keeps working, but the form writes
+    only `work_mode`.
     """
     criteria: dict[str, Any] = {}
     errors: list[str] = []
@@ -177,9 +183,6 @@ def criteria_from_form(form: Mapping[str, Any]) -> tuple[dict[str, Any], list[st
     location = _field(form, "location")
     if location:
         criteria["location"] = location
-
-    if _checkbox(form, "remote_only"):
-        criteria["remote_only"] = True
 
     salary_floor, salary_error = _int_field(form, "salary_floor")
     if salary_error:
@@ -193,6 +196,15 @@ def criteria_from_form(form: Mapping[str, Any]) -> tuple[dict[str, Any], list[st
     seniority = _split_terms(_field(form, "seniority"))
     if seniority:
         criteria["seniority"] = seniority
+
+    # An absent field (or an explicit `any`) stores nothing: the design's default
+    # is "no key means any", so a search that never touched the select is unchanged.
+    # A value outside the vocabulary is a visible error, never a silent no-op.
+    work_mode = _field(form, "work_mode")
+    if work_mode and work_mode not in WORK_MODES:
+        errors.append("Work mode must be one of " + ", ".join(WORK_MODES) + ".")
+    elif work_mode and work_mode != DEFAULT_WORK_MODE:
+        criteria["work_mode"] = work_mode
 
     return criteria, errors
 

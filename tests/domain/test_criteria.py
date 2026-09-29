@@ -13,7 +13,7 @@ import ast
 from pathlib import Path
 
 from app.domain import criteria as criteria_module
-from app.domain.criteria import rule_specs_from, search_query_from
+from app.domain.criteria import rule_specs_from, search_query_from, work_mode_from
 from app.sources.base import SearchQuery
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -91,6 +91,32 @@ def test_missing_or_non_mapping_criteria_yields_empty_keywords() -> None:
     assert search_query_from(None) == SearchQuery(keywords="")
     assert search_query_from({"keywords": None}) == SearchQuery(keywords="")
     assert search_query_from({}) == SearchQuery(keywords="")  # type: ignore[arg-type]
+
+
+# --- work_mode ----------------------------------------------------------------
+def test_work_mode_remote_sets_the_fetch_side_remote_only_hint() -> None:
+    assert search_query_from({"keywords": "x", "work_mode": "remote"}).remote_only is True
+
+
+def test_work_mode_hybrid_onsite_and_any_do_not_set_remote_only() -> None:
+    for mode in ("hybrid", "onsite", "any"):
+        assert search_query_from({"keywords": "x", "work_mode": mode}).remote_only is None
+
+
+def test_a_missing_or_unknown_work_mode_degrades_to_any() -> None:
+    assert work_mode_from({}) == "any"
+    assert work_mode_from(None) == "any"
+    assert work_mode_from({"work_mode": "teleport"}) == "any"
+    assert work_mode_from({"work_mode": 7}) == "any"
+    assert work_mode_from({"work_mode": "hybrid"}) == "hybrid"
+
+
+def test_an_explicit_remote_work_mode_overrides_a_stale_legacy_remote_only() -> None:
+    # A legacy stored `remote_only: false` must not defeat a newly chosen remote mode.
+    query = search_query_from({"keywords": "x", "remote_only": False, "work_mode": "remote"})
+
+    assert query.remote_only is True
+
 
 
 # --- rule_specs_from ----------------------------------------------------------

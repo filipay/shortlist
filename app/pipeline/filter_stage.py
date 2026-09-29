@@ -19,6 +19,7 @@ rule is counted so it is visible rather than silently treated as applied.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,13 +32,75 @@ from app.db.repositories.search_repo import (
     rules_for_searches,
     search_by_id,
 )
-from app.domain.criteria import rule_specs_from
-from app.domain.filter import evaluate
+from app.domain.criteria import rule_specs_from, search_query_from, work_mode_from
+from app.domain.filter import RuleSpec, evaluate
 from app.pipeline.stages import StageCounts, StageResult
 
 log = structlog.get_logger(__name__)
 
 FILTER_STAGE = "filter"
+
+#: Implicit rule ids are prefixed so they can never collide with a `filter_rules.id`
+#: (a decimal string). The id names the search and the criterion it belongs to, so
+#: the persisted exclusion's `criteria_version` can be resolved from the same map as
+#: a DB rule.
+_IMPLICIT_RULE = "search:{search_id}:{criterion}"
+
+
+def _implicit_rules_for_search(record: Any) -> list[RuleSpec]:
+    """The in-memory hard rules a search's own fetch-side criteria imply.
+
+    Two of a search's criteria are fetch-side intent the boards cannot express, so
+    without these they silently filter nothing. Both reuse the existing pure
+    evaluators through `evaluate()` — no second predicate exists:
+
+    * `seniority` -> the `_eval_seniority` allow-list (`unknown_passes=True`);
+    * `work_mode` `remote`/`onsite` -> the `_eval_remote` flag check. Only the
+      normalise stage's `remote_flag` can prove a mode, so an unknown flag passes.
+      `hybrid` deliberately produces NO rule: nothing in the data carries a hybrid
+      signal, and it is a ranking hint (see `app.pipeline.rank`).
+    """
+    criteria = record.criteria_json
+    search_id = record.id
+    specs: list[RuleSpec] = []
+
+    seniority = search_query_from(criteria).seniority
+    if seniority:
+        specs.append(
+            RuleSpec(
+                rule_id=_IMPLICIT_RULE.format(search_id=search_id, criterion="seniority"),
+                kind="seniority",
+                params={"allow": list(seniority), "unknown_passes": True},
+                position=0,
+            )
+        )
+
+    work_mode = work_mode_from(criteria)
+    if work_mode in ("remote", "onsite"):
+        specs.append(
+            RuleSpec(
+                rule_id=_IMPLICIT_RULE.format(search_id=search_id, criterion="work_mode"),
+                kind="remote",
+                # `_eval_remote` fires when the listing's flag EQUALS `flag`, so
+                # `flag` is the flag this mode excludes: `remote` excludes a
+                # non-remote listing (False); `onsite` excludes a remote one (True).
+                # `None` equals neither, so an unknown passes.
+                params={"require": True, "flag": work_mode == "onsite"},
+                position=0,
+            )
+        )
+
+    return specs
+
+
+def _implicit_rules(searches: list) -> list[tuple[int, RuleSpec]]:
+    """Every search's implicit hard rules, paired with the owning search's id."""
+    rules: list[tuple[int, RuleSpec]] = []
+    for record in searches:
+        rules.extend(
+            (record.id, spec) for spec in _implicit_rules_for_search(record)
+        )
+    return rules
 
 
 async def run_filter_stage(
@@ -79,18 +142,31 @@ async def run_filter_stage(
 
         version_by_search = {record.id: record.version for record in searches}
         rules = await rules_for_searches(session, [record.id for record in searches])
-        specs = rule_specs_from([record.as_mapping() for record in rules])
+        db_specs = rule_specs_from([record.as_mapping() for record in rules])
 
         # A rule the assembler dropped (an unknown `kind` from a row written before
         # a vocabulary change, or a row with no usable identifier) is counted, never
         # silently treated as applied. Normally zero: the plan-02-01 CHECK and the
         # repository's enabled filter already rule those rows out.
-        if len(rules) != len(specs):
-            counts.bump("rules_skipped", len(rules) - len(specs))
+        if len(rules) != len(db_specs):
+            counts.bump("rules_skipped", len(rules) - len(db_specs))
+
+        # Each enabled search's own fetch-side criteria are IMPLICIT rules. They are
+        # evaluated through the same pure evaluators as a stored rule, so a listing
+        # whose known value is excluded by the criterion is dropped and an unknown
+        # passes. This is what makes the existing saved criteria work with no
+        # re-save and no migration.
+        implicit_rules = _implicit_rules(searches)
+        counts.bump("implicit_rules", len(implicit_rules))
+        specs = db_specs + [spec for _search_id, spec in implicit_rules]
         counts.bump("rules_loaded", len(specs))
 
         # rule_id -> the search that owns it, for the exclusion's criteria_version.
+        # Implicit rules carry a synthetic id, so they are added to the same map.
         search_id_by_rule = {record.rule_id: record.search_id for record in rules}
+        search_id_by_rule.update(
+            {spec.rule_id: search_id for search_id, spec in implicit_rules}
+        )
 
         listings = await active_listings(session, run_id=run_id)
         counts.bump("candidates", len(listings))

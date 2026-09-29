@@ -79,6 +79,47 @@ async def test_post_searches_with_an_empty_name_writes_no_row(
     assert await _search_rows(session_factory) == []
 
 
+async def test_the_work_mode_select_round_trips_into_criteria_json(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    response = await client.post(
+        "/searches", data={"name": "Remote roles", "work_mode": "remote"}
+    )
+
+    assert response.status_code == 200
+    rows = await _search_rows(session_factory)
+    assert len(rows) == 1
+    assert rows[0].criteria_json == {"work_mode": "remote"}
+
+
+async def test_work_mode_any_is_not_stored_and_an_absent_value_still_loads(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The default is the ABSENCE of the key, so an existing search needs no migration."""
+    await client.post("/searches", data={"name": "Any roles", "work_mode": "any"})
+    rows = await _search_rows(session_factory)
+    assert rows[0].criteria_json == {}
+
+    page = await client.get("/searches")
+    assert page.status_code == 200
+    assert 'name="work_mode"' in page.text
+    # A search with no stored work_mode renders the select on `Any`.
+    assert '<option value="any" selected>' in page.text
+
+
+async def test_an_unknown_work_mode_is_rejected_and_writes_no_row(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    response = await client.post(
+        "/searches", data={"name": "Bad", "work_mode": "teleport"}
+    )
+
+    assert response.status_code == 200
+    assert "Work mode must be one of" in response.text
+    assert await _search_rows(session_factory) == []
+
+
+
 async def test_a_negative_salary_floor_in_the_search_form_writes_no_row(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

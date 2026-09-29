@@ -30,6 +30,27 @@ from app.sources.base import SearchQuery
 _QUERY_INT_KEYS = ("distance_miles", "salary_floor", "hours_old", "results_wanted")
 _QUERY_BOOL_KEYS = ("remote_only", "easy_apply")
 
+#: The user's work-mode preference. `remote`/`onsite` are HARD filters the
+#: normalise stage's `remote_flag` can prove; `hybrid` is a RANKING hint only
+#: because no board or listing carries a hybrid signal; `any` filters nothing. A
+#: missing or unrecognised value means `any`, so an existing saved search is
+#: unchanged.
+WORK_MODES = ("any", "remote", "hybrid", "onsite")
+DEFAULT_WORK_MODE = "any"
+
+
+def work_mode_from(criteria: Mapping[str, Any] | None) -> str:
+    """The stored work mode, or `any` when absent/unrecognised.
+
+    Total like the rest of this module: a wrong-typed or unknown value degrades to
+    `any` rather than raising, so a blob written by a different build cannot break a
+    run.
+    """
+    data = criteria if isinstance(criteria, Mapping) else {}
+    value = data.get("work_mode")
+    return value if isinstance(value, str) and value in WORK_MODES else DEFAULT_WORK_MODE
+
+
 
 def _as_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -81,6 +102,14 @@ def search_query_from(criteria: Mapping[str, Any] | None) -> SearchQuery:
     seniority = _as_seniority(data.get("seniority"))
     if seniority is not None:
         kwargs["seniority"] = seniority
+
+    # `remote` is the one work mode a board can partly honour, so it also sets the
+    # fetch-side `remote_only` hint. A legacy stored `remote_only` key (written
+    # before the work-mode select existed) is still honoured unchanged by
+    # `_QUERY_BOOL_KEYS`; the form no longer writes it. An explicit `remote` work
+    # mode wins over a stale legacy value.
+    if work_mode_from(data) == "remote":
+        kwargs["remote_only"] = True
 
     return SearchQuery(**kwargs)
 
@@ -141,4 +170,10 @@ def rule_specs_from(rows: Iterable[Mapping[str, Any]]) -> list[RuleSpec]:
     return [item[3] for item in keyed]
 
 
-__all__ = ["rule_specs_from", "search_query_from"]
+__all__ = [
+    "DEFAULT_WORK_MODE",
+    "WORK_MODES",
+    "rule_specs_from",
+    "search_query_from",
+    "work_mode_from",
+]

@@ -132,8 +132,10 @@ async def test_the_search_form_criteria_reach_the_adapter_query(
 
     The CRUD lane pins only `keywords`/`location`; the criteria lane builds its
     mapping by hand. A form key the run assembler ignores (say a renamed
-    `remote_only`) would pass both. The run is scoped to the search by id — the
+    `work_mode`) would pass both. The run is scoped to the search by id — the
     real "Run this one" path — so `_resolve_fetch_queries` reads the stored criteria.
+    `work_mode=remote` is the folded successor of the old `remote_only` checkbox and
+    must still reach the adapter query as `remote_only=True`.
     """
     await _register_source(session_factory)
     response = await client.post(
@@ -142,7 +144,7 @@ async def test_the_search_form_criteria_reach_the_adapter_query(
             "name": "Dublin senior python",
             "keywords": "python",
             "location": "Dublin",
-            "remote_only": "1",
+            "work_mode": "remote",
             "salary_floor": "70000",
             "seniority": "senior",
         },

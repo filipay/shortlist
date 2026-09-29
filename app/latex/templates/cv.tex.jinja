@@ -62,11 +62,13 @@
 \BLOCK{ if entry.location }
 \noindent\textit{\VAR{entry.location}}\par
 \BLOCK{ endif }
+\BLOCK{ if entry.bullets }
 \begin{itemize}[leftmargin=1.2em,itemsep=1pt]
 \BLOCK{ for bullet in entry.bullets }
   \item \VAR{bullet.text}
 \BLOCK{ endfor }
 \end{itemize}
+\BLOCK{ endif }
 \BLOCK{ endfor }
 \BLOCK{ if section.skills }
 \begin{tabularx}{\textwidth}{@{}lX@{}}

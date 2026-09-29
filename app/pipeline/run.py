@@ -166,12 +166,20 @@ async def _fetch_one(
         {
             "source": adapter.name,
             "status": "warning",
-            # The Phase-1 sentence is EXTENDED, not replaced: the same rules are
-            # enforced locally as hard filters after the fetch (plan 02-05), so an
-            # unsupported *fetch-side* filter is no longer "not applied at all".
+            # The board could not apply this fetch-side filter. Say exactly what
+            # happens instead: a search's own seniority criterion IS enforced locally
+            # by the filter stage; any other criterion is enforced locally ONLY when
+            # the search also has a matching exclusion rule, which this warning
+            # cannot promise and must not claim.
             "error": (
                 f"filter not applied: {warning.filter_name} — {warning.reason} "
-                "(enforced locally as a hard filter after the fetch)"
+                + (
+                    "(enforced locally after the fetch from the search's own "
+                    "seniority criterion)"
+                    if warning.filter_name == "seniority"
+                    else "(not enforced locally unless this search also has a "
+                    "matching exclusion rule)"
+                )
             ),
         }
         for warning in compiled.warnings

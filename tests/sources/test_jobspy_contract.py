@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.sources._jobspy_mapping import DESIRED_ORDER
+from app.sources._jobspy_mapping import DESIRED_ORDER, map_jobspy_row
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "listings"
 
@@ -68,3 +68,16 @@ def test_source_fixtures_carry_the_full_pinned_column_set() -> None:
             assert set(row) == set(DESIRED_ORDER), (
                 f"{path.name} does not carry the full desired_order column set"
             )
+
+
+def test_job_level_maps_to_the_small_seniority_vocabulary() -> None:
+    """The board's own `job_level` is read into the core `seniority` field."""
+    assert map_jobspy_row({"job_level": "Entry level"}, source="indeed").seniority == "junior"
+    assert map_jobspy_row({"job_level": "Internship"}, source="linkedin").seniority == "junior"
+    mid_senior = map_jobspy_row({"job_level": "Mid-Senior level"}, source="linkedin")
+    assert mid_senior.seniority == "senior"
+    assert map_jobspy_row({"job_level": "Director"}, source="linkedin").seniority == "senior"
+    assert map_jobspy_row({"job_level": "Associate"}, source="linkedin").seniority is None
+    unknown = map_jobspy_row({"job_level": "Something unrecognised"}, source="linkedin")
+    assert unknown.seniority is None
+    assert map_jobspy_row({}, source="linkedin").seniority is None

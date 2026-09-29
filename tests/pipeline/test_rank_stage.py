@@ -12,17 +12,23 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.cv.factstore import load_facts
-from app.db.models import Listing, LlmCall, Run, Score, Source
+from app.db.models import Listing, LlmCall, Run, Score, Search, Source
 from app.domain.cv import CvFacts, iter_fact_ids
 from app.domain.schemas.ranking import RankingResponse, RequirementFit
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
-from app.pipeline.rank import RANK_SYSTEM_PROMPT, rank_listing, run_ranking
+from app.pipeline.rank import (
+    RANK_SYSTEM_PROMPT,
+    build_ranking_parts,
+    rank_listing,
+    run_ranking,
+)
 
 NOW = datetime(2026, 9, 22, tzinfo=UTC)
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "cv" / "awesomecv_standin.yaml"
@@ -259,6 +265,68 @@ async def test_zero_survivor_pass_writes_zero_rows(
     assert stub.calls == []
     assert await _count(session_factory, Score) == 0
     assert await _count(session_factory, LlmCall) == 0
+
+
+# --- the work-mode ranking hint -------------------------------------------------
+
+
+def test_hybrid_work_mode_adds_a_ranking_hint_and_other_modes_do_not() -> None:
+    facts = _facts()
+    listing = SimpleNamespace(
+        title="Hybrid Role",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="Build the thing.",
+        salary_min=None,
+        salary_max=None,
+    )
+    weights = {
+        "skills": 1.0,
+        "seniority": 1.0,
+        "domain": 1.0,
+        "location": 1.0,
+        "evidence": 1.0,
+        "compensation": 1.0,
+    }
+
+    hybrid = "\n".join(
+        build_ranking_parts(facts, listing, weights, work_mode="hybrid")
+    ).casefold()
+    assert "work-mode preference" in hybrid
+    assert "hybrid" in hybrid
+
+    for mode in ("any", "remote", "onsite"):
+        text = "\n".join(
+            build_ranking_parts(facts, listing, weights, work_mode=mode)
+        ).casefold()
+        assert "work-mode preference" not in text, f"{mode} must not add a hint"
+
+
+async def test_run_ranking_threads_the_stored_work_mode_into_the_prompt(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        session.add(
+            Search(
+                name="Hybrid roles",
+                enabled=True,
+                criteria_json={"keywords": "python", "work_mode": "hybrid"},
+                version=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await session.commit()
+
+    run_id = await _seed_run(session_factory)
+    await _add_listing(session_factory, title="Some Role")
+    stub = StubBackend()
+
+    await run_ranking(session_factory, run_id=run_id, llm=stub, facts=_facts())
+
+    assert len(stub.calls) == 1
+    assert "work-mode preference" in stub.calls[0]["text"].casefold()
+
 
 
 # --- the never-fabricate grounding (RANK-05) -----------------------------------

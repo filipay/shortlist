@@ -176,8 +176,13 @@ async def run_status(
 
     fragment = render_run_fragment(request, run, run.source_counts_json)
     if run.status in TERMINAL_STATUSES:
+        # `run-finished` is the one server-sent event the queue listens for: the poll
+        # stops here (286 + outerHTML), so without it the ranked list would only update
+        # on a manual refresh. Do NOT change the status/reswap — the smoke and tests pin them.
         return HTMLResponse(
-            fragment, status_code=286, headers={"HX-Reswap": "outerHTML"}
+            fragment,
+            status_code=286,
+            headers={"HX-Reswap": "outerHTML", "HX-Trigger": "run-finished"},
         )
     return HTMLResponse(fragment)
 

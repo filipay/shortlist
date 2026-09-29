@@ -132,6 +132,31 @@ def test_normalise_sets_the_dedup_keys_and_apply_url() -> None:
     assert normalised.blocking_key is not None
 
 
+# --- seniority -----------------------------------------------------------------
+def test_board_level_wins_over_the_title_heuristic() -> None:
+    # The default title is "Senior Python Engineer"; the board says junior, and the
+    # board is the observed fact — the heuristic must not override it.
+    normalised = normalise_listing(_raw(seniority="junior"))
+
+    assert normalised.seniority == "junior"
+
+
+def test_seniority_falls_back_to_the_conservative_title_heuristic() -> None:
+    assert normalise_listing(_raw(title="Graduate Software Engineer")).seniority == "junior"
+    assert normalise_listing(_raw(title="Entry-Level Analyst")).seniority == "junior"
+    assert normalise_listing(_raw(title="Senior Python Engineer")).seniority == "senior"
+    assert normalise_listing(_raw(title="Lead Data Scientist")).seniority == "senior"
+    assert normalise_listing(_raw(title="VP of Engineering")).seniority == "senior"
+
+
+def test_ambiguous_titles_stay_unknown_and_manager_is_not_senior() -> None:
+    # `manager` is deliberately absent from the heuristic: a wrong tag would hide a
+    # job the user asked to see. `internal` must not be read as `intern`.
+    assert normalise_listing(_raw(title="Engineering Manager")).seniority is None
+    assert normalise_listing(_raw(title="Internal Tools Engineer")).seniority is None
+    assert normalise_listing(_raw(title="Software Engineer")).seniority is None
+
+
 # --- helpers ------------------------------------------------------------------
 def test_normalise_company_name_drops_legal_suffixes_and_punctuation() -> None:
     assert normalise_company_name("Acme Ltd.") == "acme"

@@ -128,6 +128,9 @@ async def test_handler_returns_before_the_pipeline_finishes(
     stopped = await client.get(f"/runs/{run.id}/status")
     assert stopped.status_code == 286
     assert stopped.headers.get("HX-Reswap") == "outerHTML"
+    # The terminal poll also fires the event the queue listens for, so the ranked
+    # list refreshes without a manual page reload.
+    assert stopped.headers.get("HX-Trigger") == "run-finished"
     assert "done" in stopped.text
 
 

@@ -304,11 +304,14 @@
       <fieldset class="form-group">
         <legend class="form-group-title">Exclusion rules <span class="field-note">optional</span></legend>
         <div class="field-grid">
-          <div class="field field-check">
-            <span class="field-label">Remote</span>
-            <label for="new-search-remote">
-              <input type="checkbox" id="new-search-remote" name="remote_only" value="1"> Remote only
-            </label>
+          <div class="field">
+            <label for="new-search-work-mode">Work mode</label>
+            <select id="new-search-work-mode" name="work_mode">
+              <option value="any">Any</option>
+              <option value="remote">Remote only (hard filter)</option>
+              <option value="hybrid">Hybrid (ranking hint)</option>
+              <option value="onsite">On-site only (hard filter)</option>
+            </select>
           </div>
           <div class="field">
             <label for="new-search-salary">Salary floor</label>
@@ -403,10 +406,14 @@
           <label for="search-edit-location-{{ search.id }}">Location</label>
           <input type="text" id="search-edit-location-{{ search.id }}" name="location" value="{{ search.criteria.get('location', '') }}" placeholder="Dublin">
         </div>
-        <div class="field field-check">
-          <span class="field-label">Remote</span>
-          <label><input type="checkbox" name="remote_only" value="1"
-            {% if search.criteria.get('remote_only') %}checked{% endif %}> Remote only</label>
+        <div class="field">
+          <label for="search-edit-work-mode-{{ search.id }}">Work mode</label>
+          <select id="search-edit-work-mode-{{ search.id }}" name="work_mode">
+            <option value="any" {% if search.criteria.get('work_mode', 'any') == 'any' %}selected{% endif %}>Any</option>
+            <option value="remote" {% if search.criteria.get('work_mode') == 'remote' %}selected{% endif %}>Remote only (hard filter)</option>
+            <option value="hybrid" {% if search.criteria.get('work_mode') == 'hybrid' %}selected{% endif %}>Hybrid (ranking hint)</option>
+            <option value="onsite" {% if search.criteria.get('work_mode') == 'onsite' %}selected{% endif %}>On-site only (hard filter)</option>
+          </select>
         </div>
         <div class="field">
           <label for="search-edit-salary-{{ search.id }}">Salary floor</label>
@@ -430,7 +437,11 @@
       <p class="capability-warning">
         <strong>{{ warning.board }}</strong> cannot honour
         <code>{{ warning.filter }}</code>: {{ warning.reason }}.
-        This rule will still be enforced locally after the fetch.
+        {% if warning.filter == 'seniority' -%}
+        It is enforced locally after the fetch from your seniority criterion.
+        {%- else -%}
+        It is not enforced locally unless this search also has a matching exclusion rule.
+        {%- endif %}
       </p>
       {% endfor %}
     </div>

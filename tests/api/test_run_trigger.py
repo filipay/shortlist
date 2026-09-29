@@ -167,6 +167,24 @@ async def test_queue_page_shows_the_trigger_control_and_the_count(client) -> Non
     assert "No listings yet" in response.text
 
 
+async def test_queue_list_listens_for_run_finished_and_reuses_filters(client) -> None:
+    """The queue auto-refreshes on `run-finished`, carrying the current filters.
+
+    Without the trigger attribute the terminal poll stops (286) and nothing ever
+    re-fetches `#queue-list`, so the user must refresh by hand — the bug this pins.
+    """
+    response = await client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="queue-list"' in response.text
+    assert 'hx-get="/queue/list"' in response.text
+    assert 'hx-trigger="run-finished from:body"' in response.text
+    assert 'hx-target="#queue-list"' in response.text
+    # The filter form id is what carries q/toggles/sort/min_score into the refresh.
+    assert 'hx-include="#queue-filters"' in response.text
+    assert 'id="queue-filters"' in response.text
+
+
 async def test_status_route_404s_for_an_unknown_run(client) -> None:
     response = await client.get("/runs/9999/status")
 

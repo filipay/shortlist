@@ -401,14 +401,59 @@ def _eval_remote(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | None:
     if not require:
         return None
 
-    if facts.remote_flag is False:
+    # `flag` is the boolean the rule demands: `False` (the default, and the only
+    # value a stored `remote` rule sets) excludes a listing that is NOT remote;
+    # `True` excludes one that IS (the `work_mode=onsite` implicit rule). A `None`
+    # flag equals neither, so an unknown is never excluded.
+    expected = params.get("flag")
+    expected = expected if isinstance(expected, bool) else False
+    if facts.remote_flag is expected:
         return RuleOutcome(
             excluded=True,
             rule_id=spec.rule_id,
             rule_kind=spec.kind,
-            detail={"remote_flag": False, "require": True},
+            detail={"remote_flag": expected, "require": True},
         )
     return None
+
+
+#: Criterion synonyms mapped to the four-value listing vocabulary the ingest side
+#: stores (`junior`/`mid`/`senior`/`lead`). The listing value is normalised at
+#: ingest, so the user's free-text criterion is normalised here too: the ordinary
+#: words (`graduate`, `entry level`, `intern`, ...) then match a listing stored as
+#: `junior` instead of matching nothing. `mid` and `lead` are deliberately NOT
+#: aliased — a `lead` criterion must not silently become `senior` (or vice versa).
+#: Unmapped terms fall through to the original literal casefold substring match.
+_SENIORITY_TERM_ALIASES: dict[str, str] = {
+    "junior": "junior",
+    "graduate": "junior",
+    "entry level": "junior",
+    "intern": "junior",
+    "internship": "junior",
+    "trainee": "junior",
+    "senior": "senior",
+    "principal": "senior",
+    "staff": "senior",
+    "director": "senior",
+    "head of": "senior",
+    "head": "senior",
+    "vp": "senior",
+    "vice president": "senior",
+    "sr": "senior",
+    "sr.": "senior",
+}
+
+
+def _normalise_seniority_term(term: str) -> str:
+    """Map a criterion synonym to its listing-vocabulary value, else the raw casefold.
+
+    Case- and whitespace-insensitive: `-`, `_` and runs of spaces are treated as one
+    separator, so `Entry-Level`, `entry_level` and `  entry   level ` all resolve.
+    An unmapped term keeps its previous literal-substring behaviour unchanged (its
+    raw casefold is returned), so the mapping can only ever add matches.
+    """
+    key = " ".join(term.casefold().replace("-", " ").replace("_", " ").split())
+    return _SENIORITY_TERM_ALIASES.get(key, term.casefold())
 
 
 def _eval_seniority(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | None:
@@ -434,14 +479,18 @@ def _eval_seniority(spec: RuleSpec, facts: ListingFacts) -> RuleOutcome | None:
         )
 
     lowered = value.casefold()
-    if any(token.casefold() in lowered for token in deny):
+    # Normalise the criterion to the stored vocabulary first, so `graduate` matches
+    # a listing stored as `junior` rather than a term that can never be a substring.
+    deny_terms = [_normalise_seniority_term(token) for token in deny]
+    allow_terms = [_normalise_seniority_term(token) for token in allow]
+    if any(token in lowered for token in deny_terms):
         return RuleOutcome(
             excluded=True,
             rule_id=spec.rule_id,
             rule_kind=spec.kind,
             detail={"seniority": value, "allow": list(allow)},
         )
-    if allow and not any(token.casefold() in lowered for token in allow):
+    if allow and not any(token in lowered for token in allow_terms):
         return RuleOutcome(
             excluded=True,
             rule_id=spec.rule_id,

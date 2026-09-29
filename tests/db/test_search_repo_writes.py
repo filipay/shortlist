@@ -429,4 +429,29 @@ async def _seed_protected_rows(session: AsyncSession, search_id: int) -> None:
     )
 
 
+async def test_work_mode_is_allow_listed_at_the_storage_boundary(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """An unknown work mode is dropped before it reaches the JSON blob.
+
+    The form rejects it; this is the defence for a direct API caller that bypasses
+    the form, so an unexpected value can never flow through to the run.
+    """
+    good = await _make_search(
+        session_factory, name="Good", criteria={"keywords": "python", "work_mode": "hybrid"}
+    )
+    bad = await _make_search(
+        session_factory, name="Bad", criteria={"keywords": "go", "work_mode": "teleport"}
+    )
+
+    async with session_factory() as session:
+        good_row = await session.get(Search, good)
+        bad_row = await session.get(Search, bad)
+
+    assert good_row is not None
+    assert good_row.criteria_json == {"keywords": "python", "work_mode": "hybrid"}
+    assert bad_row is not None
+    assert bad_row.criteria_json == {"keywords": "go"}, "an unknown work mode is dropped"
+
+
 __all__ = []

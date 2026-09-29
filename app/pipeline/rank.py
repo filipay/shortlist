@@ -62,6 +62,7 @@ from app.db.repositories.search_repo import (
     search_by_id,
 )
 from app.domain import rubric
+from app.domain.criteria import DEFAULT_WORK_MODE, work_mode_from
 from app.domain.cv import CvFacts, iter_fact_ids
 from app.domain.schemas.ranking import RankingResponse
 from app.llm import get_llm_backend
@@ -212,17 +213,41 @@ def _rubric_text(weights: Mapping[str, float], *, include_compensation: bool) ->
     return "\n".join(lines)
 
 
-def build_ranking_parts(facts: CvFacts, listing: Any, weights: Mapping[str, float]) -> list[str]:
+def build_ranking_parts(
+    facts: CvFacts,
+    listing: Any,
+    weights: Mapping[str, float],
+    *,
+    work_mode: str = DEFAULT_WORK_MODE,
+) -> list[str]:
     """Assemble the user-turn ``parts`` for one listing (pure, no I/O).
 
     Everything that is data — the CV facts, the single listing and the factor
-    definitions — travels here, never in ``system``.
+    definitions — travels here, never in ``system``. A ``hybrid`` work mode adds a
+    ranking hint (it cannot be a hard filter: nothing in the data carries a hybrid
+    signal), which the model weighs against the existing location factor. The other
+    modes add nothing: `remote`/`onsite` are enforced by the filter stage, not scored.
     """
-    return [
+    parts = [
         _cv_facts_text(facts),
         _listing_text(listing),
         _rubric_text(weights, include_compensation=_listing_has_salary(listing)),
     ]
+    hint = _work_mode_hint(work_mode)
+    if hint is not None:
+        parts.append(hint)
+    return parts
+
+
+def _work_mode_hint(work_mode: str) -> str | None:
+    """The user-turn ranking hint for `hybrid`, or `None` for every other mode."""
+    if work_mode != "hybrid":
+        return None
+    return (
+        "CANDIDATE WORK-MODE PREFERENCE (a ranking hint, not a hard filter): the "
+        "candidate prefers hybrid roles. When you judge the location factor, treat "
+        "a hybrid arrangement as a better match than a fully on-site one."
+    )
 
 
 async def criteria_version_for_run(session: AsyncSession, *, search_id: int | None) -> int:
@@ -244,6 +269,26 @@ async def criteria_version_for_run(session: AsyncSession, *, search_id: int | No
     return 0
 
 
+async def work_mode_for_run(session: AsyncSession, *, search_id: int | None) -> str:
+    """The work-mode ranking hint this pass is scored with.
+
+    Mirrors `criteria_version_for_run`: a per-search run uses that search's stored
+    mode; a union run with exactly one enabled search uses that one. A true union
+    (several searches with potentially different modes) has no single preference, so
+    it degrades to `any` rather than silently picking one search's mode.
+    """
+    if search_id is not None:
+        record = await search_by_id(session, int(search_id))
+        if record is not None:
+            return work_mode_from(record.criteria_json)
+        return DEFAULT_WORK_MODE
+
+    records = await enabled_searches(session)
+    if len(records) == 1:
+        return work_mode_from(records[0].criteria_json)
+    return DEFAULT_WORK_MODE
+
+
 async def rank_listing(
     backend: LLMBackend,
     session: AsyncSession,
@@ -253,6 +298,7 @@ async def rank_listing(
     run_id: int,
     criteria_version: int,
     now: datetime,
+    work_mode: str = DEFAULT_WORK_MODE,
 ) -> score_repo.ScoreRecord | None:
     """Score exactly ONE listing and write its audit row and score row.
 
@@ -274,7 +320,7 @@ async def rank_listing(
     # usable.
     await session.commit()
 
-    parts = build_ranking_parts(facts, listing, weights)
+    parts = build_ranking_parts(facts, listing, weights, work_mode=work_mode)
     result = await backend.complete_structured(
         schema=RankingResponse,
         system=RANK_SYSTEM_PROMPT,
@@ -437,6 +483,7 @@ async def run_ranking(
 
     async with session_factory() as session:
         criteria_version = await criteria_version_for_run(session, search_id=search_id)
+        work_mode = await work_mode_for_run(session, search_id=search_id)
         survivors = await active_listings(session, run_id=run_id)
         excluded_ids = await rule_counts_for_listings(session, run_id=run_id)
 
@@ -490,6 +537,7 @@ async def run_ranking(
                     facts=facts,
                     run_id=run_id,
                     criteria_version=criteria_version,
+                    work_mode=work_mode,
                     now=moment,
                 )
                 await session.commit()
@@ -554,7 +602,7 @@ _RANKING_TASK: asyncio.Task | None = None
 
 
 def ranking_in_progress() -> bool:
-    """True while the live single-flight ranking task is running (a render-time snapshot; D-88 adds no polling).
+    """True while the live single-flight ranking task is running (D-88 adds no polling).
 
     Deliberately takes no run id: the strip renders only the latest run, and a newer
     run cannot start a pass while one is live (it takes the in-flight skip), so a
@@ -613,4 +661,5 @@ __all__ = [
     "ranking_skip_reason",
     "run_ranking",
     "start_ranking_task",
+    "work_mode_for_run",
 ]

@@ -2,8 +2,11 @@
 
 The criteria page compiles every enabled search against every enabled adapter's
 declared capabilities and renders the structured `CapabilityWarning` triples, each
-naming the board and the filter and stating that the rule is still enforced locally
-after the fetch. A registry failure degrades to no warnings, never a 500.
+naming the board and the filter. The rendered sentence is exact about local
+enforcement: seniority is enforced locally from the search's own criterion; any
+other unsupported fetch-side filter is not enforced locally unless the search also
+has a matching exclusion rule. A registry failure degrades to no warnings, never a
+500.
 """
 
 from __future__ import annotations
@@ -36,7 +39,12 @@ BASE = SourceCapabilities(
     max_results_per_query=1000,
 )
 
-LOCAL_ENFORCEMENT_SENTENCE = "enforced locally after the fetch"
+NOT_LOCALLY_ENFORCED_SENTENCE = (
+    "not enforced locally unless this search also has a matching exclusion rule"
+)
+SENIORITY_LOCAL_ENFORCEMENT_SENTENCE = (
+    "enforced locally after the fetch from your seniority criterion"
+)
 
 
 class _BaseAdapter(JobSource):
@@ -60,6 +68,11 @@ class NoRemoteAdapter(_BaseAdapter):
 class FullyCapableAdapter(_BaseAdapter):
     name = "linkedin"
     capabilities = BASE
+
+
+class NoSeniorityAdapter(_BaseAdapter):
+    name = "indeed"
+    capabilities = replace(BASE, supports_seniority=False)
 
 
 async def _seed_source_rows(
@@ -112,8 +125,29 @@ async def test_an_unsupported_filter_is_reported_per_board(
     assert "<strong>indeed</strong>" in response.text
     assert "<code>remote_only</code>" in response.text
     assert "the board has no remote filter" in response.text
-    # The message is honest, not alarming: the rule is still enforced locally.
-    assert LOCAL_ENFORCEMENT_SENTENCE in response.text
+    # The message is honest, not alarming: salary_floor/remote_only have no implicit
+    # local rule, so the page does not claim they are enforced locally.
+    assert NOT_LOCALLY_ENFORCED_SENTENCE in response.text
+
+
+@pytest.mark.usefixtures("registry_snapshot")
+async def test_an_unsupported_seniority_filter_is_enforced_locally(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """The board cannot filter on seniority, but the criterion is enforced locally."""
+    registry.register(NoSeniorityAdapter)
+    await _seed_source_rows(session_factory, "indeed")
+    await _seed_search(
+        session_factory,
+        {"keywords": "python", "seniority": ["junior", "graduate"]},
+    )
+
+    response = await client.get("/searches")
+
+    assert response.status_code == 200
+    assert "<code>seniority</code>" in response.text
+    assert SENIORITY_LOCAL_ENFORCEMENT_SENTENCE in response.text
+    assert NOT_LOCALLY_ENFORCED_SENTENCE not in response.text
 
 
 @pytest.mark.usefixtures("registry_snapshot")

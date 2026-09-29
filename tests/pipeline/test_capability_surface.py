@@ -7,9 +7,10 @@ under `criteria_compile` as a structured `source`/`filter_name`/`reason` triple,
 the run detail page can render it its own way without parsing the error list.
 
 That is the difference between "reported rather than silently ignored" and a warning
-that only exists in one place a future UI might stop reading. And because the same
-rules are also enforced locally as hard filters after the fetch, the persisted
-sentence says so — an unsupported *fetch-side* filter is not "not applied at all".
+that only exists in one place a future UI might stop reading. The persisted sentence
+is now exact: a board's missing seniority filter is enforced locally from the
+search's own seniority criterion, while any other unsupported fetch-side filter is
+only enforced locally when the search also has a matching exclusion rule.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -66,6 +68,19 @@ class NoRemoteFilterAdapter(JobSource):
 
     name = "linkedin"
     capabilities = replace(BASE, supports_remote_flag=False)
+
+    async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
+        return "ok"
+
+    async def fetch(self, query: SearchQuery, budget: FetchBudget) -> FetchResult:
+        return FetchResult(source=self.name, items=[_raw("linkedin")], status="ok", requests_used=1)
+
+
+class NoSeniorityFilterAdapter(JobSource):
+    """A board that cannot filter on seniority (both real adapters' shape)."""
+
+    name = "linkedin"
+    capabilities = replace(BASE, supports_seniority=False)
 
     async def probe(self) -> Literal["ok", "degraded", "unreachable"]:
         return "ok"
@@ -169,7 +184,9 @@ async def test_an_unsupported_salary_floor_is_warned_in_both_places(
     assert len(warnings) == 1
     assert warnings[0]["source"] == "linkedin"
     assert "filter not applied: salary_floor" in warnings[0]["error"]
-    assert "enforced locally" in warnings[0]["error"]
+    # salary_floor has no implicit local rule: do not claim it is enforced locally.
+    assert "not enforced locally unless" in warnings[0]["error"]
+    assert "enforced locally as a hard filter after the fetch" not in warnings[0]["error"]
 
     # (b) The same warning reaches the stage log as a structured triple.
     entry = _criteria_compile_entry(run)
@@ -215,7 +232,7 @@ async def test_an_unsupported_remote_filter_is_warned_in_both_places(
     assert len(warnings) == 1
     assert warnings[0]["source"] == "linkedin"
     assert "filter not applied: remote_only" in warnings[0]["error"]
-    assert "enforced locally" in warnings[0]["error"]
+    assert "not enforced locally unless" in warnings[0]["error"]
 
     entry = _criteria_compile_entry(run)
     assert entry["counts"] == {"warnings": 1}
@@ -251,3 +268,47 @@ async def test_a_board_that_honours_every_filter_records_an_empty_warning_list(
     entry = _criteria_compile_entry(run)
     assert entry["counts"] == {"warnings": 0}
     assert entry["warnings"] == []
+
+
+@pytest.mark.usefixtures("registry_snapshot")
+async def test_an_unsupported_seniority_filter_is_enforced_locally(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The board cannot filter on seniority, but the criterion IS enforced locally."""
+    registry.register(NoSeniorityFilterAdapter)
+    await _seed_source_row(session_factory)
+
+    run_id = await run_pipeline(
+        "manual",
+        None,
+        session_factory,
+        query=SearchQuery(keywords="python", seniority=("junior", "graduate")),
+    )
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+
+    assert run is not None
+    warnings = [entry for entry in (run.errors_json or []) if entry.get("status") == "warning"]
+    assert len(warnings) == 1
+    assert "filter not applied: seniority" in warnings[0]["error"]
+    assert (
+        "enforced locally after the fetch from the search's own seniority criterion"
+        in warnings[0]["error"]
+    )
+
+
+def test_no_copy_promises_local_enforcement_of_an_unenforced_criterion() -> None:
+    """The criteria page must not claim every missing board filter is enforced locally."""
+    template = (
+        Path(__file__).resolve().parents[2]
+        / "app"
+        / "web"
+        / "templates"
+        / "html"
+        / "criteria.html"
+    ).read_text(encoding="utf-8")
+
+    assert "will still be enforced locally" not in template
+    assert "enforced locally after the fetch from your seniority criterion" in template
+    assert "not enforced locally unless this search also has a matching exclusion rule" in template

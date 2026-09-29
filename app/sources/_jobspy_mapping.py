@@ -174,6 +174,34 @@ def _as_bool(value: Any) -> bool | None:
     return None
 
 
+#: Board `job_level` values collapsed into the small vocabulary the local
+#: seniority filter understands. Order matters for LinkedIn's "Mid-Senior level":
+#: `senior` is checked before `mid`, so a mid-senior role is visible to a `senior`
+#: search. A value matching nothing here is left `None` — an unknown level must
+#: never be invented, because the filter's default policy is unknown-passes.
+_SENIORITY_BUCKETS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("intern", "entry", "graduate", "junior", "trainee"), "junior"),
+    (("lead", "principal", "staff", "head"), "lead"),
+    (
+        ("senior", "sr", "director", "vp", "vice president", "executive", "chief"),
+        "senior",
+    ),
+    (("mid",), "mid"),
+)
+
+
+def _as_seniority(value: Any) -> str | None:
+    """Normalise a board `job_level` to `junior`/`mid`/`senior`/`lead`, or `None`."""
+    text = _as_str(value)
+    if text is None:
+        return None
+    lowered = text.casefold()
+    for tokens, bucket in _SENIORITY_BUCKETS:
+        if any(token in lowered for token in tokens):
+            return bucket
+    return None
+
+
 def _as_date(value: Any) -> date | None:
     if _is_missing(value):
         return None
@@ -229,6 +257,7 @@ def map_jobspy_row(row: Any, *, source: str) -> RawListing:
         location_raw=_as_str(_read(row, "location")),
         description=_as_str(_read(row, "description")),
         is_remote=_as_bool(_read(row, "is_remote")),
+        seniority=_as_seniority(_read(row, "job_level")),
         salary_min=_as_float(_read(row, "min_amount")),
         salary_max=_as_float(_read(row, "max_amount")),
         salary_interval=_as_str(_read(row, "interval")),

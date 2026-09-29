@@ -8,6 +8,8 @@ data, never a raise on malformed input, and PII-free evidence.
 
 from __future__ import annotations
 
+import pytest
+
 from app.domain.filter import (
     LISTING_FACT_FIELDS,
     RULE_KINDS,
@@ -373,6 +375,25 @@ def test_remote_excludes_only_a_known_non_remote_flag() -> None:
     assert evaluate([_spec(kind="remote", params=params)], _facts(remote_flag=None)) == []
 
 
+def test_remote_flag_param_selects_which_boolean_is_excluded() -> None:
+    """`flag` drives the work-mode rules: False=remote, True=onsite."""
+    remote = _spec("r-remote", "remote", {"require": True, "flag": False})
+    onsite = _spec("r-onsite", "remote", {"require": True, "flag": True})
+
+    fired_remote = evaluate([remote], _facts(remote_flag=False))
+    assert fired_remote and fired_remote[0].detail == {"remote_flag": False, "require": True}
+
+    fired_onsite = evaluate([onsite], _facts(remote_flag=True))
+    assert fired_onsite and fired_onsite[0].detail == {"remote_flag": True, "require": True}
+
+    # The inverse is never excluded, and an unknown flag equals neither demanded flag.
+    assert evaluate([remote], _facts(remote_flag=True)) == []
+    assert evaluate([onsite], _facts(remote_flag=False)) == []
+    assert evaluate([remote], _facts(remote_flag=None)) == []
+    assert evaluate([onsite], _facts(remote_flag=None)) == []
+
+
+
 # --- seniority ----------------------------------------------------------------
 def test_seniority_deny_matches_outright() -> None:
     outcome = _fire(
@@ -409,6 +430,62 @@ def test_seniority_unknown_policy_is_honoured() -> None:
     )
     assert len(outcomes) == 1
     assert outcomes[0].detail["seniority"] is None
+
+
+# --- seniority criterion synonyms (the criterion is forgiving) -----------------
+@pytest.mark.parametrize(
+    "term",
+    ["graduate", "entry level", "entry-level", "entry_level", "intern", "internship", "trainee"],
+)
+def test_a_junior_synonym_criterion_behaves_like_junior(term: str) -> None:
+    params = {"allow": [term]}
+
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="junior")) == []
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="senior")) != []
+
+
+@pytest.mark.parametrize("term", ["principal", "staff", "director", "vp", "sr"])
+def test_a_senior_synonym_criterion_behaves_like_senior(term: str) -> None:
+    params = {"allow": [term]}
+
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="senior")) == []
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="junior")) != []
+
+
+def test_the_live_graduate_criterion_excludes_senior_and_keeps_junior() -> None:
+    """The exact live saved search: `graduate` must no longer be dead weight."""
+    params = {"allow": ["junior", "graduate"]}
+
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="senior")) != []
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="junior")) == []
+
+
+def test_mid_and_lead_criteria_stay_literal() -> None:
+    mid = _spec(kind="seniority", params={"allow": ["mid"]})
+    lead = _spec(kind="seniority", params={"allow": ["lead"]})
+
+    assert evaluate([mid], _facts(seniority="mid")) == []
+    assert evaluate([mid], _facts(seniority="lead")) != []
+    assert evaluate([lead], _facts(seniority="lead")) == []
+    assert evaluate([lead], _facts(seniority="senior")) != []
+    assert evaluate([mid], _facts(seniority="senior")) != []
+
+
+def test_an_unmapped_seniority_term_keeps_its_literal_substring_behaviour() -> None:
+    params = {"allow": ["enio"]}  # no alias: still a literal substring of "senior"
+
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="senior")) == []
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="junior")) != []
+    # An unmapped term must not become a match-everything wildcard.
+    assert evaluate([_spec(kind="seniority", params={"allow": ["zzz"]})], _facts()) != []
+
+
+def test_a_criterion_term_is_case_and_whitespace_insensitive() -> None:
+    params = {"allow": ["  Graduate  "]}
+
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="junior")) == []
+    assert evaluate([_spec(kind="seniority", params=params)], _facts(seniority="senior")) != []
+
 
 
 # --- company_blocklist --------------------------------------------------------

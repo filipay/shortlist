@@ -67,7 +67,14 @@ class OneListingAdapter(JobSource):
         return FetchResult(source=self.name, items=[self._item], status="ok", requests_used=1)  # type: ignore[arg-type]
 
 
-def _raw(source: str, *, title: str, company: str, description: str) -> RawListing:
+def _raw(
+    source: str,
+    *,
+    title: str,
+    company: str,
+    description: str,
+    is_remote: bool | None = None,
+) -> RawListing:
     return RawListing(
         source=source,  # type: ignore[arg-type]
         source_listing_id=f"{source}-1",
@@ -77,6 +84,7 @@ def _raw(source: str, *, title: str, company: str, description: str) -> RawListi
         company_name=company,
         location_raw="Dublin, Ireland",
         description=description,
+        is_remote=is_remote,
         posted_at=date(2026, 9, 1),
         # Deliberately NO salary on either listing: the salary_floor rule must not
         # reject an unknown (A2/A3).
@@ -437,3 +445,248 @@ async def test_a_run_whose_every_listing_was_filtered_is_all_filtered(
     assert counts["survivors"] == 0
     assert sum(counts["excluded_by_rule"].values()) == 1
     assert counts["sources"]["linkedin"]["fetched"] == 1
+
+
+# --- the search's own seniority criterion (implicit rule) ----------------------
+
+
+async def _seed_seniority_search(
+    session_factory: async_sessionmaker[AsyncSession], seniority: list[str]
+) -> int:
+    """One enabled search whose only filter is its fetch-side seniority criterion."""
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        search = Search(
+            name="Junior roles",
+            enabled=True,
+            criteria_json={"keywords": "python", "seniority": seniority},
+            version=5,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(search)
+        await session.commit()
+        return int(search.id)
+
+
+async def test_a_searchs_own_seniority_criterion_excludes_only_known_mismatches(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The saved criterion is enforced with no re-save, no FilterRule and no migration.
+
+    A known `senior` listing is excluded; a `junior` listing and an unknown-`None`
+    listing both pass (the default unknown-passes policy).
+    """
+    await _register_sources(session_factory, "linkedin", "indeed", "adzuna")
+    search_id = await _seed_seniority_search(session_factory, ["junior", "graduate"])
+    senior = OneListingAdapter(
+        "linkedin",
+        _raw(
+            "linkedin",
+            title="Senior Backend Engineer",
+            company="Acme",
+            description="Build things.",
+        ),
+    )
+    junior = OneListingAdapter(
+        "indeed",
+        _raw(
+            "indeed",
+            title="Junior Backend Engineer",
+            company="Globex",
+            description="Learn things.",
+        ),
+    )
+    unknown = OneListingAdapter(
+        "adzuna",
+        _raw("adzuna", title="Backend Engineer", company="Initech", description="Ship things."),
+    )
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[senior, junior, unknown])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        exclusions = (await session.execute(select(ListingExclusion))).scalars().all()
+        listings = (await session.execute(select(Listing).order_by(Listing.id))).scalars().all()
+
+    assert run is not None
+    assert run.filtered_count == 1, "only the known senior listing is excluded"
+    assert len(exclusions) == 1
+    exclusion = exclusions[0]
+    assert exclusion.rule_kind == "seniority"
+    assert exclusion.rule_id == f"search:{search_id}:seniority"
+    assert exclusion.criteria_version == 5, "the implicit rule stamps its search's version"
+    assert exclusion.detail_json["allow"] == ["junior", "graduate"]
+
+    excluded_listing = next(listing for listing in listings if listing.id == exclusion.listing_id)
+    assert excluded_listing.company_norm == "acme", "the senior listing is the one excluded"
+    assert run.reason_counts_json["survivors"] == 2
+    assert run.reason_counts_json["excluded_by_rule"] == {
+        f"search:{search_id}:seniority": 1
+    }
+
+
+async def test_a_graduate_criterion_matches_a_listing_stored_as_junior(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`graduate` is normalised to the stored vocabulary, so it is no longer dead weight.
+
+    A listing titled "Graduate ..." is stored as `junior` by the ingest heuristic; a
+    criterion of `["graduate"]` must keep it and exclude a `senior` listing.
+    """
+    await _register_sources(session_factory, "linkedin", "indeed")
+    search_id = await _seed_seniority_search(session_factory, ["graduate"])
+    senior = OneListingAdapter(
+        "linkedin",
+        _raw(
+            "linkedin",
+            title="Senior Backend Engineer",
+            company="Acme",
+            description="Build things.",
+        ),
+    )
+    graduate = OneListingAdapter(
+        "indeed",
+        _raw(
+            "indeed",
+            title="Graduate Backend Engineer",
+            company="Globex",
+            description="Learn things.",
+        ),
+    )
+
+    run_id = await run_pipeline("manual", None, session_factory, adapters=[senior, graduate])
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        exclusions = (await session.execute(select(ListingExclusion))).scalars().all()
+        listings = (await session.execute(select(Listing).order_by(Listing.id))).scalars().all()
+
+    assert run is not None
+    assert run.filtered_count == 1, "only the senior listing is excluded"
+    assert len(exclusions) == 1
+    assert exclusions[0].rule_id == f"search:{search_id}:seniority"
+    excluded_listing = next(
+        listing for listing in listings if listing.id == exclusions[0].listing_id
+    )
+    assert excluded_listing.company_norm == "acme"
+
+
+
+# --- the search's own work mode (implicit hard filter) -------------------------
+
+
+async def _seed_work_mode_search(
+    session_factory: async_sessionmaker[AsyncSession], work_mode: str
+) -> int:
+    """One enabled search whose only criterion is a work mode."""
+    now = datetime(2026, 9, 1, tzinfo=UTC)
+    async with session_factory() as session:
+        search = Search(
+            name=f"{work_mode} roles",
+            enabled=True,
+            criteria_json={"keywords": "python", "work_mode": work_mode},
+            version=6,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(search)
+        await session.commit()
+        return int(search.id)
+
+
+async def _run_work_mode(
+    session_factory: async_sessionmaker[AsyncSession], work_mode: str
+) -> tuple[int, list[str]]:
+    """Seed `remote`/`onsite`/`hybrid`/`any`, fetch one listing per flag, return ids excluded."""
+    await _register_sources(session_factory, "linkedin", "indeed", "adzuna")
+    await _seed_work_mode_search(session_factory, work_mode)
+    adapters = [
+        OneListingAdapter(
+            "linkedin",
+            _raw(
+                "linkedin",
+                title="Remote Role",
+                company="Acme",
+                description="Remote.",
+                is_remote=True,
+            ),
+        ),
+        OneListingAdapter(
+            "indeed",
+            _raw(
+                "indeed",
+                title="Onsite Role",
+                company="Globex",
+                description="Onsite.",
+                is_remote=False,
+            ),
+        ),
+        OneListingAdapter(
+            "adzuna",
+            _raw("adzuna", title="Unknown Role", company="Initech", description="?"),
+        ),
+    ]
+    run_id = await run_pipeline("manual", None, session_factory, adapters=adapters)
+    async with session_factory() as session:
+        exclusions = (await session.execute(select(ListingExclusion))).scalars().all()
+        listings = (await session.execute(select(Listing).order_by(Listing.id))).scalars().all()
+    by_id = {listing.id: listing for listing in listings}
+    excluded = sorted(by_id[row.listing_id].company_norm for row in exclusions)
+    return run_id, excluded
+
+
+async def test_work_mode_remote_excludes_only_a_known_non_remote_listing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    run_id, excluded = await _run_work_mode(session_factory, "remote")
+
+    assert excluded == ["globex"], "only the remote=False listing is excluded"
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        rows = (await session.execute(select(ListingExclusion))).scalars().all()
+
+    assert run is not None and run.filtered_count == 1
+    assert len(rows) == 1
+    assert rows[0].rule_kind == "remote"
+    assert rows[0].detail_json == {"remote_flag": False, "require": True}
+    assert rows[0].criteria_version == 6
+
+
+async def test_work_mode_onsite_excludes_only_a_known_remote_listing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    run_id, excluded = await _run_work_mode(session_factory, "onsite")
+
+    assert excluded == ["acme"], "only the remote=True listing is excluded"
+
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+        rows = (await session.execute(select(ListingExclusion))).scalars().all()
+
+    assert run is not None and run.filtered_count == 1
+    assert rows[0].detail_json == {"remote_flag": True, "require": True}
+
+
+async def test_work_mode_hybrid_filters_nothing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    run_id, excluded = await _run_work_mode(session_factory, "hybrid")
+
+    assert excluded == [], "hybrid is a ranking hint, never a filter"
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+    assert run is not None and run.filtered_count == 0
+
+
+async def test_work_mode_any_is_a_no_op(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    run_id, excluded = await _run_work_mode(session_factory, "any")
+
+    assert excluded == [], "any filters nothing"
+    async with session_factory() as session:
+        run = await session.get(Run, run_id)
+    assert run is not None and run.filtered_count == 0
+

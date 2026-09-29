@@ -7,6 +7,7 @@ database months later, so the observation is persisted, not just the conclusion.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -26,6 +27,32 @@ from app.domain.models import NormalisedListing
 from app.sources.base import RawListing
 
 NORMALISE_STAGE = "normalise"
+
+#: Deliberately conservative title heuristic, used ONLY when the board gave no
+#: `job_level`. It matches word-boundary tokens so `internal` is not read as
+#: `intern`, and it deliberately does NOT include `manager`: tagging a manager role
+#: as senior or junior would silently hide a job the user asked to see. Anything
+#: unmatched stays `None`, and the seniority filter's default policy is
+#: unknown-passes — an unknown must never be excluded.
+_JUNIOR_TITLE_RE = re.compile(
+    r"\b(?:intern|trainee|graduate|junior)\b|\bentry[\s-]*level\b"
+)
+_SENIOR_TITLE_RE = re.compile(
+    r"\b(?:principal|staff|lead|director|senior|sr)\b"
+    r"|\bhead\s+of\b"
+    r"|\bvp\b"
+    r"|\bvice\s+president\b"
+)
+
+
+def _seniority_from_title(title: str) -> str | None:
+    """A conservative level guess from the title, or `None` when it is not obvious."""
+    lowered = title.casefold()
+    if _JUNIOR_TITLE_RE.search(lowered):
+        return "junior"
+    if _SENIOR_TITLE_RE.search(lowered):
+        return "senior"
+    return None
 
 
 @dataclass
@@ -81,6 +108,10 @@ def normalise_listing(
         raw.salary_min, raw.salary_max, raw.salary_interval, raw.salary_currency
     )
 
+    # The board's own level wins; only when it gave nothing do we fall back to the
+    # conservative title heuristic (which itself may return `None`).
+    seniority = raw.seniority or _seniority_from_title(raw.title)
+
     return NormalisedListing(
         canonical_url=canonical,
         source=raw.source,
@@ -105,6 +136,7 @@ def normalise_listing(
         salary_source=raw.salary_source,
         posted_at=raw.posted_at,
         is_remote=raw.is_remote,
+        seniority=seniority,
         source_url=raw.source_url,
         canonical_source_url=canonical,
         direct_url=raw.direct_url,

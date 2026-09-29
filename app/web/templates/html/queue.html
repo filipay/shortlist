@@ -161,7 +161,18 @@
   </p>
   {% endif %}
 
-  <div id="queue-list" aria-live="polite">
+  {# Refresh the fragment when a run reaches terminal. The run-status poll returns 286
+     and stops, firing `run-finished`; this listener catches it and re-fetches the queue
+     carrying the current filters. innerHTML (not outerHTML) so #queue-list survives to
+     receive later swaps. `#queue-filters` is the real form id — it holds every
+     predicate (q/toggles/sort/min_score), so run-finished reuses the user's filters. #}
+  <div id="queue-list"
+       aria-live="polite"
+       hx-get="/queue/list"
+       hx-trigger="run-finished from:body"
+       hx-include="#queue-filters"
+       hx-target="#queue-list"
+       hx-swap="innerHTML">
     {% include "html/queue_list.html" %}
   </div>
 </section>

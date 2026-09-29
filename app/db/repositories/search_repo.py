@@ -53,6 +53,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FilterRule, Listing, ListingDupe, Run, Search
+from app.domain.criteria import WORK_MODES
 from app.domain.filter import LOCATION_MODES, RULE_KINDS, ListingFacts
 from app.domain.sanitize import sanitize_short_field
 
@@ -400,7 +401,13 @@ def _sanitise_value(value: Any) -> Any:
 
 
 def _sanitise_criteria(criteria: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """The stored `criteria_json`: free-text keys sanitised, the rest as supplied."""
+    """The stored `criteria_json`: free-text keys sanitised, the rest as supplied.
+
+    The work mode is an allow-listed enum: a value outside `WORK_MODES` is dropped
+    at the storage boundary so an unexpected value cannot flow through (the form
+    already rejects it; a direct API caller must not bypass that). A missing key is
+    left missing — `any` is the documented default.
+    """
     if not isinstance(criteria, Mapping):
         return None
     cleaned = {str(key): value for key, value in criteria.items()}
@@ -411,6 +418,9 @@ def _sanitise_criteria(criteria: Mapping[str, Any] | None) -> dict[str, Any] | N
     seniority = cleaned.get("seniority")
     if isinstance(seniority, (list, tuple)):
         cleaned["seniority"] = [_sanitise_text(item) for item in seniority if isinstance(item, str)]
+    work_mode = cleaned.get("work_mode")
+    if work_mode is not None and work_mode not in WORK_MODES:
+        cleaned.pop("work_mode", None)
     return cleaned
 
 
