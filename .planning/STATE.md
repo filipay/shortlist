@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 Phase: 06 (Tailoring + Verification) — EXECUTING
 Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-09-25 — Phase 06 execution started
+Last activity: 2026-09-29 - Completed quick task 260929-i46: Extract the required years of experience from each listing's description as a soft ranking hint
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
 
@@ -185,6 +185,12 @@ None yet.
 - [Phase 3] Security enforcement is enabled but no `03-SECURITY.md` exists — run `/gsd-secure-phase 03` before advancing if the threat model matters here.
 - [Phase 5] No real CV fact store exists yet, so a ranking pass takes the documented `fact_store_absent` skip — the ranking path is exercised end-to-end only once a `cv.yaml` is supplied. The skip and the exact loader path are now disclosed on `/settings`, the queue and `/health` (05-10), so this reads as a missing prerequisite, not a silent failure.
 - [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 6 reuses the action-surface pattern.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260929-i46 | Extract the required years of experience from each listing's description as a soft ranking hint | 2026-09-29 | 6ebc31b | [260929-i46-extract-the-required-years-of-experience](./quick/260929-i46-extract-the-required-years-of-experience/) |
 
 ## Deferred Items
 
