@@ -34,7 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.db.models import CvArtifact, CvDraft
 from app.db.repositories import cv_artifact_repo, cv_repo
+from app.db.repositories.cv_artifact_repo import CvArtifactRecord
 from app.domain.cv import (
+    PAGE_TRIM_REASON_TEMPLATE,
     BulletWeight,
     DemoteBullet,
     DropBullet,
@@ -57,9 +59,7 @@ BULLET3 = "bul/northwind-labs-2021/3"
 HIDDEN_RE = re.compile(r'name="(patch_json|base_cv_version_id|fact_store_hash)" value="([^"]*)"')
 
 #: One requirement-coverage row: its class, status and requirement text.
-REQ_ROW_RE = re.compile(
-    r'<li class="(req-[a-z]+)">\s*<strong>([^<]+)</strong> — ([^<\n]+)', re.S
-)
+REQ_ROW_RE = re.compile(r'<li class="(req-[a-z]+)">\s*<strong>([^<]+)</strong> — ([^<\n]+)', re.S)
 
 
 class ReviewStubBackend:
@@ -97,17 +97,20 @@ class StubEngine:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        #: Optional per-compile page counts, popped in order; empty means page_count 1.
+        self.page_counts: list[int] = []
 
     async def compile(self, *, tex: str, workdir: Path) -> CompileResult:
         self.calls.append(tex)
         workdir.mkdir(parents=True, exist_ok=True)
         pdf = workdir / "cv.pdf"
         pdf.write_bytes(b"%PDF-1.4 stub\n")
+        page_count = self.page_counts.pop(0) if self.page_counts else 1
         return CompileResult(
             ok=True,
             engine="stub",
             pdf_path=str(pdf),
-            page_count=1,
+            page_count=page_count,
             tex_hash="a" * 64,
             pdf_hash="b" * 64,
             compile_log="ok",
@@ -126,6 +129,7 @@ def _reset_stubs() -> None:
     _BACKEND.calls.clear()
     _BACKEND.patch = TailoringPatch(listing_id=1)
     _ENGINE.calls.clear()
+    _ENGINE.page_counts.clear()
 
 
 @pytest_asyncio.fixture
@@ -650,6 +654,93 @@ async def test_the_disabled_switch_is_not_a_one_way_trip(
     rows = await _artifact_rows(session_factory)
     assert len(rows) == 1
     assert rows[0].compile_status == "ok"
+
+
+# --- 260929-pan: the compile response discloses every page trim ----------------
+
+
+def _record(change_log: list[dict[str, str]]) -> CvArtifactRecord:
+    return CvArtifactRecord(
+        id=7,
+        listing_id=42,
+        base_cv_version_id=None,
+        patch_json={},
+        change_log_json=change_log,
+        tex_path="/tmp/cv.tex",
+        pdf_path="/tmp/cv.pdf",
+        tex_hash=None,
+        pdf_hash=None,
+        compiled_at=NOW,
+        compile_status="ok",
+        compile_log=None,
+        verification_json={"passed": True},
+        page_count=2,
+        ats_checks_json=None,
+        backend="opencode_server",
+        provider=None,
+        model=None,
+        created_at=NOW,
+    )
+
+
+def test_compiled_fragment_names_every_drop_and_ignores_other_ops() -> None:
+    from app.api.tailoring import _compiled_fragment
+
+    reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=2)
+    body = _compiled_fragment(
+        42,
+        _record(
+            [
+                {"op": "drop_bullet", "target_id": "bul/x/3", "detail": reason},
+                {"op": "reweight_bullet", "target_id": "bul/x/1", "detail": "2.0"},
+                {"op": "drop_bullet", "target_id": "bul/x/2", "detail": reason},
+            ]
+        ),
+    )
+
+    assert 'data-status="ok"' in body
+    assert 'href="/listings/42/cv/pdf"' in body
+    assert "bul/x/3" in body
+    assert "bul/x/2" in body, "not only the first drop is disclosed"
+    assert body.count(reason) == 2
+    assert "bul/x/1" not in body, "a non-drop change is not shown as a trim"
+
+
+def test_compiled_fragment_with_no_drops_is_the_unchanged_download_fragment() -> None:
+    from app.api.tailoring import _compiled_fragment
+
+    body = _compiled_fragment(42, _record([]))
+
+    assert 'data-status="ok"' in body
+    assert "Compiled." in body
+    assert 'href="/listings/42/cv/pdf"' in body
+    assert "Download PDF" in body
+    assert "page-trims" not in body
+
+
+async def test_the_compile_response_names_every_page_trim(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    listing_id = await _seed_scored_listing(session_factory, title="Trim Disclosure Role")
+    fields = _hidden_fields(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+    # Three page counts for three compiles: over budget, over budget, still over.
+    _ENGINE.page_counts = [5, 4, 3]
+
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'data-status="ok"' in body
+    rows = await _artifact_rows(session_factory)
+    assert rows[0].compile_status == "ok"
+    assert rows[0].page_count == 3
+    assert BULLET3 in body, "the first trimmed bullet is named"
+    assert BULLET2 in body, "the second trimmed bullet is named"
+    reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=2)
+    assert body.count(reason) == 2
 
 
 if __name__ == "__main__":  # pragma: no cover

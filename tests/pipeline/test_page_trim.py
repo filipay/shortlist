@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Listing
 from app.db.repositories.cv_artifact_repo import CvArtifactRecord
-from app.domain.cv import DropBullet, TailoringPatch, apply_patch
+from app.domain.cv import (
+    PAGE_TRIM_REASON_TEMPLATE,
+    Bullet,
+    DropBullet,
+    TailoringPatch,
+    apply_patch,
+)
 from app.latex.base import CompileResult, EngineProbe
 from app.pipeline import tailor as tailor_module
 from app.pipeline.tailor import MAX_PAGE_TRIM_PASSES, compile_tailored
@@ -81,17 +87,19 @@ async def _compile(
     patch: TailoringPatch,
     outcomes: list[int | None | str],
     extract: str = "base_extract.txt",
+    facts=None,
+    text: str | None = None,
 ) -> tuple[int, CvArtifactRecord, ScriptedEngine]:
     listing_id = await _add_listing(session_factory, title=title)
-    text = (VERIFY_FIXTURES / extract).read_text(encoding="utf-8")
-    monkeypatch.setattr(tailor_module, "extract_pdf_text", lambda path: text)
+    payload = text if text is not None else (VERIFY_FIXTURES / extract).read_text(encoding="utf-8")
+    monkeypatch.setattr(tailor_module, "extract_pdf_text", lambda path: payload)
     engine = ScriptedEngine(outcomes)
     async with session_factory() as session:
         listing = await session.get(Listing, listing_id)
         record = await compile_tailored(
             session,
             listing=listing,
-            facts=load_standin_facts(),
+            facts=facts if facts is not None else load_standin_facts(),
             patch=patch,
             base_cv_version_id=None,
             engine=engine,
@@ -393,6 +401,66 @@ async def test_the_trim_removes_whole_bullets_and_never_rewrites_text(
             assert entry.org and entry.title and entry.dates, "the header is never orphaned"
             for bullet in entry.bullets:
                 assert bullet.text == source[bullet.id], "bullet text is immutable"
+
+
+# --- the persisted audit across several trims -----------------------------------
+
+
+def _facts_with_a_fourth_bullet():
+    """The stand-in with one extra no-digit bullet, so three trims can fit the budget."""
+    facts = load_standin_facts()
+    section = facts.sections[0]
+    entry = section.entries[0]
+    extra = Bullet(
+        id="bul/northwind-labs-2021/4", text="Owned the on-call rota", evidence="verbatim"
+    )
+    updated_entry = entry.model_copy(update={"bullets": [*entry.bullets, extra]})
+    updated_section = section.model_copy(update={"entries": [updated_entry]})
+    return facts.model_copy(update={"sections": [updated_section, *facts.sections[1:]]})
+
+
+def _extract_with_a_fourth_bullet() -> str:
+    text = (VERIFY_FIXTURES / "base_extract.txt").read_text(encoding="utf-8")
+    return text.replace("Skills\n", "Owned the on-call rota\nSkills\n")
+
+
+async def test_several_trims_each_persist_a_reasoned_drop(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, record, engine = await _compile(
+        session_factory,
+        tmp_path,
+        monkeypatch,
+        title="Several Trims",
+        patch=TailoringPatch(listing_id=1),
+        outcomes=[5, 4, 3, 2],
+        facts=_facts_with_a_fourth_bullet(),
+        text=_extract_with_a_fourth_bullet(),
+    )
+
+    assert record.compile_status == "ok"
+    assert record.page_count == 2, "the final compile's page count is stored"
+    assert len(engine.calls) == 4, "one initial compile plus three trims"
+
+    ops = record.patch_json["ops"]
+    assert [op["op"] for op in ops] == ["drop_bullet", "drop_bullet", "drop_bullet"]
+    assert [op["bullet_id"] for op in ops] == [BULLET3.replace("/3", "/4"), BULLET3, BULLET2]
+    reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=2)
+    assert all(op["reason"] == reason for op in ops)
+
+    changes = record.change_log_json
+    assert [change["target_id"] for change in changes] == [
+        BULLET3.replace("/3", "/4"),
+        BULLET3,
+        BULLET2,
+    ]
+    assert all(change["op"] == "drop_bullet" and change["detail"] == reason for change in changes)
+
+    # The stored patch is the effective one: the input ops (none) followed by the drops.
+    effective = TailoringPatch.model_validate(record.patch_json)
+    assert effective.listing_id == 1
 
 
 if __name__ == "__main__":  # pragma: no cover
