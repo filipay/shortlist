@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.config import settings
 from app.cv.import_tex import _org_id, _parse_date_range, _title_id
@@ -77,6 +77,11 @@ CV_EXTRACT_SYSTEM_PROMPT = (
     "entity, and never fill org with a role, a degree or a tech stack. "
     "A section that is a flat list of skills or languages, with no employer, job title "
     "or dates, must be emitted as skills with no entries. "
+    "Every skill is a {label, group} object: put the skill's own text in label, and "
+    "in group copy the label the document itself uses for that skill's grouping, "
+    "verbatim (for example Languages, Frameworks, Tools, Data). Do NOT invent a "
+    "group: if the document gives no grouping at all, use a single group named "
+    "'skills' for every skill in the section. "
     "Put the whole CV as a JSON document in the cv_json string field. "
     "Every list must be a JSON ARRAY: use [] for an empty list, never an empty string "
     "and never a bare string. "
@@ -89,9 +94,17 @@ CV_EXTRACT_SYSTEM_PROMPT = (
     '"entries": [{"org": "Globex Inc", "title": "Thing One", '
     '"dates": "2026 - present", "location": null, '
     '"bullets": ["What was actually done"]}], "skills": []}, '
-    '{"heading": "SKILLS", "entries": [], "skills": ["Python", "Go"]}]} '
+    '{"heading": "SKILLS", "entries": [], "skills": '
+    '[{"label": "Python", "group": "Languages"}, {"label": "Go", "group": "Languages"}]}]} '
     "Output only the requested JSON object with the cv_json field."
 )
+
+
+#: The honest fallback group for a skill the extractor cannot attach to a
+#: document-grounded group. It is NOT a claim about the document: when the model
+#: supplies no group (a bare-string skill) or an ungrounded one, this is the single
+#: default the store uses and the renderer emits as the row label.
+DEFAULT_SKILL_GROUP = "skills"
 
 
 class _ExtractedMeta(BaseModel):
@@ -118,6 +131,20 @@ class _ExtractedEntry(BaseModel):
     bullets: list[str]
 
 
+class _ExtractedSkill(BaseModel):
+    """One skill plus the group the document itself groups it under.
+
+    ``label`` is the skill's own text and ``group`` is the document's grouping
+    label, both VERBATIM. A group not present in the source is rejected by the
+    compile guard and falls back to :data:`DEFAULT_SKILL_GROUP`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    group: str
+
+
 class _ExtractedSection(BaseModel):
     """One document heading and what sits under it. ``heading`` is VERBATIM."""
 
@@ -125,7 +152,26 @@ class _ExtractedSection(BaseModel):
 
     heading: str
     entries: list[_ExtractedEntry]
-    skills: list[str]
+    skills: list[_ExtractedSkill]
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_bare_skill_labels(cls, value: object) -> object:
+        """Accept the pre-grouping wire shape: a bare label string is an ungrouped skill.
+
+        The schema asks for ``{label, group}`` objects, but a bare ``"Python"`` — an
+        older payload, or a hand-written literal — must keep validating. It compiles
+        to :data:`DEFAULT_SKILL_GROUP`. Non-list values are passed through untouched
+        so the normal coercion/validation path still reports the shape error.
+        """
+        if not isinstance(value, list):
+            return value
+        return [
+            {"label": item, "group": DEFAULT_SKILL_GROUP}
+            if isinstance(item, str)
+            else item
+            for item in value
+        ]
 
 
 class _ExtractedCv(BaseModel):
@@ -499,6 +545,43 @@ def _string_list(value: object) -> list[str]:
     return out
 
 
+def _normalise_skills(value: object) -> list[dict[str, str]]:
+    """Coerce whatever skill shape the model produced into ``{label, group}`` dicts.
+
+    Accepts a list (or single value) of bare label strings and/or ``{label, group}``
+    objects. A missing or empty group defaults to :data:`DEFAULT_SKILL_GROUP`; the
+    grounding guard in :func:`_to_facts_dict` decides what survives. An item with no
+    usable ``label`` is dropped here — it names nothing.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (str, dict)):
+        items: list[object] = [value]
+    elif isinstance(value, list):
+        items = list(value)
+    else:
+        items = [value]
+    out: list[dict[str, str]] = []
+    for item in items:
+        if isinstance(item, str):
+            if item.strip():
+                out.append({"label": item, "group": DEFAULT_SKILL_GROUP})
+        elif isinstance(item, dict):
+            label = item.get("label")
+            if not isinstance(label, str):
+                continue
+            group = item.get("group")
+            out.append(
+                {
+                    "label": label,
+                    "group": group
+                    if isinstance(group, str) and group
+                    else DEFAULT_SKILL_GROUP,
+                }
+            )
+    return out
+
+
 def _normalise_entry(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "org": _string_or_none(item.get("org")) or "",
@@ -547,7 +630,7 @@ def _normalise_sections(value: object) -> list[dict[str, Any]]:
             {
                 "heading": heading,
                 "entries": _normalise_entries(item.get("entries")),
-                "skills": _string_list(item.get("skills")),
+                "skills": _normalise_skills(item.get("skills")),
             }
         )
     return out
@@ -644,7 +727,7 @@ def _to_facts_dict(
     # mapping to the same key merge into one section.
     key_order: list[str] = []
     entries_by_key: dict[str, list[dict[str, Any]]] = {}
-    skills_by_key: dict[str, list[str]] = {}
+    skills_by_key: dict[str, list[dict[str, str]]] = {}
     for section in extracted.sections:
         key = _section_key(section.heading)
         if key is None:
@@ -717,9 +800,23 @@ def _to_facts_dict(
                 }
             )
 
-        for label in section.skills:
-            if label and label.strip() and label not in skills_by_key[key]:
-                skills_by_key[key].append(label)
+        for skill in section.skills:
+            label = skill.label
+            if not (label and label.strip()):
+                continue
+            if any(existing["label"] == label for existing in skills_by_key[key]):
+                continue
+            # Ground the group exactly like org/title: a group the document does not
+            # contain is dropped and reported, and the honest default takes its place.
+            # The default itself is not a model claim, so it is never "dropped".
+            group = skill.group
+            if group != DEFAULT_SKILL_GROUP and not _appears(grounded, rendered, group):
+                drops.append(
+                    f"dropped skill.group {group!r} for skill {label!r}: "
+                    "not found in the document"
+                )
+                group = DEFAULT_SKILL_GROUP
+            skills_by_key[key].append({"label": label, "group": group})
 
     # (d) enumerations and ids, reusing the importer's helpers so bare-year IDs stay
     # stable and slug collisions are handled the same way.
@@ -748,21 +845,24 @@ def _to_facts_dict(
         # The stored `Entry` shape has org_id/title_id, not the model's free strings.
         del entry["org"], entry["title"]
 
-    # (e) sections in document order, with the fixture's skills shape. The model
-    # schema carries bare labels only, so every skill gets the honest single default
-    # group "skills" and the neutral weight 1.0.
+    # (e) sections in document order. Each skill carries the document-grounded group
+    # the extractor attached (an ungrounded group is dropped and replaced by the one
+    # honest default) plus the neutral weight 1.0.
     sections: list[dict[str, Any]] = []
     seen_skill_ids: set[str] = set()
     for index, key in enumerate(key_order):
         entries = entries_by_key[key]
         skills: list[dict[str, Any]] = []
-        for label in skills_by_key[key]:
+        for skill in skills_by_key[key]:
+            label = skill["label"]
             skill_id = f"skill.{slugify(label)}"
             if skill_id in seen_skill_ids:
                 drops.append(f"dropped duplicate skill {label!r}")
                 continue
             seen_skill_ids.add(skill_id)
-            skills.append({"id": skill_id, "label": label, "group": "skills", "weight": 1.0})
+            skills.append(
+                {"id": skill_id, "label": label, "group": skill["group"], "weight": 1.0}
+            )
         if not entries and not skills:
             continue
         sections.append(

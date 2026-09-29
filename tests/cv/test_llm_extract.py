@@ -17,6 +17,7 @@ import yaml
 
 from app.cv.factstore import load_facts
 from app.cv.llm_extract import (
+    DEFAULT_SKILL_GROUP,
     ExtractionError,
     _appears,
     _ExtractedCv,
@@ -24,6 +25,7 @@ from app.cv.llm_extract import (
     _ExtractedEnvelope,
     _ExtractedMeta,
     _ExtractedSection,
+    _ExtractedSkill,
     _normalise,
     _normalise_latex,
     extract_facts,
@@ -231,10 +233,82 @@ async def test_a_real_shaped_document_compiles_into_a_loadable_store(
         "Go",
         "SQL",
     }
+    # A bare-string skill (the pre-grouping literal shape) still validates and
+    # compiles to the one honest default group.
+    assert {
+        skill.group for section in facts.sections for skill in section.skills
+    } == {DEFAULT_SKILL_GROUP}
     # The model chose no ids: every entry id is derived from org + start year.
     assert all(entry.id.startswith("exp/") for entry in facts.all_entries())
     assert result.report[0] == "extracted from LaTeX with model assistance"
     assert any("kept 5 section(s), 5 entry/entries" in line for line in result.report)
+
+
+# --- 1b. skills carry a document-derived group --------------------------------
+
+
+#: A document whose skills are grouped with the document's own labels (Languages,
+#: Databases), so a grounded group is available to attach.
+_GROUPED_TEX = (
+    "Alex Example\n"
+    "\\section*{WORK EXPERIENCE}\n"
+    "\\workentry{Senior Backend Engineer}{Northwind Labs}{2021 - 2023}"
+    "{Built the ingest path}\n"
+    "\\section*{CODING PROFICIENCY}\n"
+    "Languages: Python, Go\n"
+    "Databases: SQL\n"
+)
+
+
+async def test_a_document_group_reaches_the_store_and_an_ungrounded_one_falls_back(
+    tmp_path: Path,
+) -> None:
+    """The group the model emits is grounded; a group the document lacks is dropped."""
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(name="Alex Example"),
+        sections=[
+            _ExtractedSection(
+                heading="WORK EXPERIENCE",
+                entries=[
+                    _ExtractedEntry(
+                        org="Northwind Labs",
+                        title="Senior Backend Engineer",
+                        dates="2021 - 2023",
+                        bullets=["Built the ingest path"],
+                    )
+                ],
+                skills=[],
+            ),
+            _ExtractedSection(
+                heading="CODING PROFICIENCY",
+                entries=[],
+                skills=[
+                    _ExtractedSkill(label="Python", group="Languages"),
+                    _ExtractedSkill(label="Go", group="Languages"),
+                    _ExtractedSkill(label="SQL", group="Invented Group"),
+                ],
+            ),
+        ],
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=_GROUPED_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    groups = {
+        skill.label: skill.group for section in facts.sections for skill in section.skills
+    }
+    assert groups == {
+        "Python": "Languages",
+        "Go": "Languages",
+        "SQL": DEFAULT_SKILL_GROUP,
+    }
+    # The invented group is named in the report; the grounded one is not.
+    assert any(
+        "dropped skill.group 'Invented Group'" in line for line in result.report
+    ), result.report
+    assert not any(
+        "dropped skill.group 'Languages'" in line for line in result.report
+    ), result.report
 
 
 # --- 2. the grounding guard fails closed ---------------------------------------
