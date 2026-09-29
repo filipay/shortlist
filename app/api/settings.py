@@ -105,14 +105,21 @@ RESET_CONFIRM_TOKEN = "DELETE"
 #: creates orphans. `sources`, `searches`, `filter_rules` and `cv_versions` are
 #: deliberately absent: `sources` is the board lookup the next run's upsert needs, and
 #: the rest are the user's own configuration.
+#:
+#: `cv_artifacts` (a compiled artifact) and `cv_drafts` (the live generated draft,
+#: migration 0005) are DERIVED and regenerable from a listing, so a corpus reset
+#: deletes them rather than refusing. `cv_artifacts` also references `cv_versions`,
+#: a KEPT table — its rows are simply left behind, which is fine. Both must precede
+#: `listings` (their parent). Note the reset is DB-only and never touches the files
+#: under `artifacts_dir`, so deleting artifact rows leaves orphaned PDF/`.tex` files
+#: on disk (known, accepted follow-up).
 RESET_DELETE_ORDER: tuple[str, ...] = (
     "scores",
     "listing_exclusions",
     "listing_events",
     "listing_dupes",
     "listing_sources",
-    # The live generated draft (migration 0005): regenerable per-listing work, so a
-    # corpus reset deletes it rather than refusing. Must precede `listings` (its parent).
+    "cv_artifacts",
     "cv_drafts",
     "listings",
     "llm_calls",
@@ -133,12 +140,15 @@ RESET_KEPT_TABLES: tuple[str, ...] = (
 )
 
 #: Tables that reference `listings` and are NOT deleted: a reset refuses while any of
-#: them holds a row, so a later phase fails loudly instead of corrupting tracked work.
-RESET_BLOCKING_TABLES: tuple[str, ...] = ("applications", "cv_artifacts")
+#: them holds a row. `applications` is genuine user work — the tracker has no
+#: regeneration path — so the reset refuses rather than corrupt it. (`cv_artifacts`
+#: used to be here; it is derived and regenerable, so it moved to
+#: `RESET_DELETE_ORDER`.)
+RESET_BLOCKING_TABLES: tuple[str, ...] = ("applications",)
 
 
 async def _counts(session: AsyncSession) -> list[dict[str, Any]]:
-    """Row counts for the page, one query per table (11 + 3, all trivial)."""
+    """Row counts for the page, one query per table (13 + 4, all trivial)."""
     rows: list[dict[str, Any]] = []
     for table in (*RESET_DELETE_ORDER, *RESET_KEPT_TABLES):
         count = await session.scalar(

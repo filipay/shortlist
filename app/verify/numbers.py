@@ -208,18 +208,21 @@ def _allowed_for_entry(entry: RenderedEntry) -> set[str]:
 def non_entry_structured_strings(plan: RenderPlan) -> list[str]:
     """Every structured string the plan carries that no entry owns (GAP 1 / CR-01).
 
-    The identity block (``name`` / ``contact_email`` / ``contact_links``), each
-    section ``title``, and each ``skill.group`` / ``skill.label``. ``_allowed_for_entry``
-    enumerates only an entry's own fields, so a digit in one of these strings would
-    otherwise be a surplus candidate in the region the template renders it into
-    (a section's skills table is emitted after its last entry). Empty values are
-    skipped, so a ``None`` name or an empty label contributes nothing.
+    The identity block (``name`` / ``contact_email`` / ``contact_location`` /
+    ``contact_links``), each section ``title``, and each ``skill.group`` /
+    ``skill.label``. ``_allowed_for_entry`` enumerates only an entry's own fields, so
+    a digit in one of these strings would otherwise be a surplus candidate in the
+    region the template renders it into (a section's skills table is emitted after
+    its last entry). Empty values are skipped, so a ``None`` name or an empty label
+    contributes nothing.
     """
     strings: list[str] = []
     if plan.name:
         strings.append(plan.name)
     if plan.contact_email:
         strings.append(plan.contact_email)
+    if plan.contact_location:
+        strings.append(plan.contact_location)
     strings.extend(link for link in plan.contact_links if link)
     for section in plan.sections:
         if section.title:

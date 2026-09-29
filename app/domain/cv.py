@@ -168,6 +168,10 @@ class Contact(_Forbid):
 class Meta(_Forbid):
     name: str | None = None
     contact: Contact | None = None
+    #: The candidate's location (typically "City, Country"). Optional: a CV without
+    #: one is not a load failure. Stored grounded by the extractor and rendered in
+    #: the document header.
+    location: str | None = None
     #: THIS IS the PLAT-04 configuration surface for the page budget (CV-R3). It
     #: lives here as *data*, not as a second `Settings` field, because two sources
     #: for one limit is a defect.
@@ -381,6 +385,7 @@ class RenderPlan(_Forbid):
     #: ``RenderPlan`` (and therefore cannot reach the fact store or a clock).
     name: str | None = None
     contact_email: str | None = None
+    contact_location: str | None = None
     contact_links: list[str] = Field(default_factory=list)
 
 
@@ -592,6 +597,7 @@ def _identity_plan(facts: CvFacts) -> RenderPlan:
         changes=[],
         name=facts.meta.name,
         contact_email=contact.email if contact else None,
+        contact_location=facts.meta.location,
         contact_links=list(contact.links) if contact else [],
     )
 
@@ -809,6 +815,7 @@ def _build_plan(facts: CvFacts, patch: TailoringPatch) -> RenderPlan:
         changes=[_change_for(op) for op in patch.ops],
         name=facts.meta.name,
         contact_email=contact.email if contact else None,
+        contact_location=facts.meta.location,
         contact_links=list(contact.links) if contact else [],
     )
 

@@ -338,5 +338,20 @@ def test_the_widened_section_vocabulary_resolves_and_validates() -> None:
         assert section.resolved_title != key
 
 
+def test_meta_accepts_a_location_and_still_rejects_unknown_keys() -> None:
+    data = _facts_dict()
+    data["meta"]["location"] = "Exampleville, Exampleland"
+    assert CvFacts.model_validate(data).meta.location == "Exampleville, Exampleland"
+
+    # Absent is valid and defaults to None.
+    assert CvFacts.model_validate(_facts_dict()).meta.location is None
+
+    # `_Forbid` still holds: an unknown meta key is rejected.
+    bad = _facts_dict()
+    bad["meta"]["bogus_key"] = "surprise"
+    with pytest.raises(ValidationError):
+        CvFacts.model_validate(bad)
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])

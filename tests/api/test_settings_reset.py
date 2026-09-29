@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api import settings
 from app.api.settings import RESET_DELETE_ORDER, RESET_KEPT_TABLES
 from app.db.models import (
+    Application,
     CvArtifact,
+    CvDraft,
     CvVersion,
     FilterRule,
     Listing,
@@ -118,7 +120,8 @@ async def _seed_corpus(
     second = await _seed_listing(session_factory, index=2, run_id=run_id)
 
     async with session_factory() as session:
-        session.add(CvVersion(label="Base", created_at=NOW))
+        version = CvVersion(label="Base", created_at=NOW)
+        session.add(version)
         session.add(QueueState(updated_at=NOW))
         # The global ranking weights document is a KEPT table (D-99): a corpus reset
         # must not discard the user's own configuration, so it gets a row here too.
@@ -155,6 +158,26 @@ async def _seed_corpus(
                 occurred_at=NOW,
                 kind="search",
                 ok=True,
+            )
+        )
+        await session.flush()
+        version_id = int(version.id)
+        # `cv_artifacts` and `cv_drafts` are DERIVED, regenerable side-tables of a
+        # listing and live in `RESET_DELETE_ORDER`, so a reset must delete them.
+        session.add(
+            CvArtifact(
+                listing_id=first,
+                base_cv_version_id=version_id,
+                compile_status="ok",
+                created_at=NOW,
+            )
+        )
+        session.add(
+            CvDraft(
+                listing_id=second,
+                base_cv_version_id=version_id,
+                patch_json={"ops": []},
+                created_at=NOW,
             )
         )
         await session.commit()
@@ -253,21 +276,18 @@ async def test_a_run_in_flight_blocks_the_reset(client, session_factory) -> None
     assert await _count(session_factory, "listings") == 2
 
 
-async def test_tracked_work_blocks_the_reset(client, session_factory) -> None:
+async def test_an_application_blocks_the_reset(client, session_factory) -> None:
+    """`applications` is genuine user work, so a reset still refuses while it exists."""
     await _seed_corpus(session_factory)
     async with session_factory() as session:
-        session.add(CvVersion(label="Base", created_at=NOW))
-        await session.commit()
-    async with session_factory() as session:
-        version = await session.scalar(select(CvVersion))
         listing = await session.scalar(select(Listing))
-        assert version is not None and listing is not None
+        assert listing is not None
         session.add(
-            CvArtifact(
+            Application(
                 listing_id=listing.id,
-                base_cv_version_id=version.id,
-                compile_status="ok",
+                status="queued",
                 created_at=NOW,
+                updated_at=NOW,
             )
         )
         await session.commit()
@@ -275,7 +295,29 @@ async def test_tracked_work_blocks_the_reset(client, session_factory) -> None:
     response = await client.post("/settings/reset", data={"confirm": "DELETE"})
 
     assert response.status_code == 409
+    assert await _count(session_factory, "applications") == 1
+    # Refused before the first delete: nothing was removed.
+    assert await _count(session_factory, "listings") == 2
     assert await _count(session_factory, "cv_artifacts") == 1
+
+
+async def test_a_compiled_cv_artifact_does_not_block_and_is_deleted(
+    client, session_factory
+) -> None:
+    """A `cv_artifacts` row is derived/regenerable, so the reset deletes it, not refuses."""
+    await _seed_corpus(session_factory)
+    assert await _count(session_factory, "cv_artifacts") == 1
+    assert await _count(session_factory, "cv_drafts") == 1
+    versions_before = await _count(session_factory, "cv_versions")
+    assert versions_before > 0
+
+    response = await client.post("/settings/reset", data={"confirm": "DELETE"})
+
+    assert response.status_code == 200
+    assert await _count(session_factory, "cv_artifacts") == 0
+    assert await _count(session_factory, "cv_drafts") == 0
+    # `cv_versions` is a KEPT table: the artifact's FK does not force its deletion.
+    assert await _count(session_factory, "cv_versions") == versions_before
 
 
 async def test_a_terminal_run_does_not_block_the_reset(client, session_factory) -> None:

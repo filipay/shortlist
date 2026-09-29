@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -59,6 +60,21 @@ CV_EXTRACT_SYSTEM_PROMPT = (
     "do NOT map a heading to any other vocabulary. "
     "Each entry's org, title and dates must come from the SAME entry construct in the "
     "document — never pair one entry's date with another entry's employer. "
+    "Copy each value's text contiguously: never insert a separator, punctuation or "
+    "whitespace the document does not itself contain. "
+    "An entry's org and its location are SEPARATE fields: copy each verbatim from its "
+    "own argument. Never append the location to the org, and never join two source "
+    "fragments with a comma. "
+    "Map each section's naming entity into org and its descriptor into title even "
+    "when the document gives them in one argument: for a WORK EXPERIENCE row org is "
+    "the employer and title is the job title; for a PROJECTS row org is the project's "
+    "own name and title is its tech stack or description; for an EDUCATION row org is "
+    "the institution and title is the degree or programme; for a VOLUNTEERING row org "
+    "is the organisation and title is the role. If a row names the employer or "
+    "institution inside the title or in a parenthetical, still put that employer or "
+    "institution in org and keep the qualification (a degree, a certificate) as title, "
+    "copying both verbatim. Leave org empty only when the row genuinely names no such "
+    "entity, and never fill org with a role, a degree or a tech stack. "
     "A section that is a flat list of skills or languages, with no employer, job title "
     "or dates, must be emitted as skills with no entries. "
     "Put the whole CV as a JSON document in the cv_json string field. "
@@ -194,15 +210,159 @@ _OPEN_END = frozenset({"present", "now", "current"})
 
 
 def _normalise(value: str) -> str:
-    """Casefold, collapse whitespace, strip — the one normalisation for grounding."""
-    return _WHITESPACE_RE.sub(" ", value.casefold()).strip()
+    """Casefold, neutralise the multiplication separators, collapse whitespace, strip.
+
+    THE one normalisation for grounding. It is applied to BOTH source views and the
+    model value, so folding identically on both sides keeps the comparison a literal
+    substring test (never a fuzzy or token match).
+
+    NFKC canonicalises compatibility forms; each multiplication glyph is then
+    neutralised to a SPACE, because the source's own representation of that separator
+    is whitespace — the spacing commands (``\\hfill`` and friends) drop to nothing
+    and collapse to a single space, so the model's visible sign
+    (``(1:1) × Level 9``) and the reduced view's space (``(1:1) Level 9``) must
+    compare equal. A glyph only ever bridges whitespace that already exists inside
+    one run; a separator between two macro arguments (which the reducer glues with
+    NO space) is never rescued. Ordinary letters and digits are never folded.
+    """
+    text = unicodedata.normalize("NFKC", value)
+    for glyph in _MULTIPLICATION_GLYPHS:
+        text = text.replace(glyph, _MULTIPLICATION_NEUTRAL)
+    return _WHITESPACE_RE.sub(" ", text.casefold()).strip()
 
 
-def _appears(grounded_source: str, value: str | None) -> bool:
-    """True when ``value`` appears verbatim in the already-grounded source text."""
+#: The canonical form ``_normalise_latex`` emits for a ``\\times``/``\\texttimes``
+#: separator, so the visible rendered text keeps its sign. The outer ``_normalise``
+#: then neutralises this sign to a space like every other variant.
+_MULTIPLICATION_CANONICAL = "\u00d7"  # × MULTIPLICATION SIGN
+#: What `_normalise` neutralises each separator glyph TO: whitespace. The source's own
+#: representation of that separator is whitespace (the spacing commands drop and
+#: collapse to one space), so the model's sign and the reduced view must compare equal.
+_MULTIPLICATION_NEUTRAL = " "
+#: The separator glyphs a model (or a document) may use. NFKC maps ``＊`` U+FF0A to
+#: ASCII ``*`` first, hence the ``*`` entry.
+_MULTIPLICATION_GLYPHS: tuple[str, ...] = (
+    "\u00d7",  # × MULTIPLICATION SIGN
+    "\u2a2f",  # ⨯ VECTOR OR CROSS PRODUCT
+    "\u2715",  # ✕ MULTIPLICATION X
+    "\u2716",  # ✖ HEAVY MULTIPLICATION X
+    "\u22c5",  # ⋅ DOT OPERATOR
+    "\u00b7",  # · MIDDLE DOT
+    "*",  # NFKC image of ＊ U+FF0A
+)
+
+
+#: The escape sequences that appear in real CVs and mean a plain character. Applied
+#: after comment stripping so a literal ``\%`` is never read as a comment. ``\$`` is
+#: handled separately (see :data:`_DOLLAR_SENTINEL`) so an escaped dollar is not read
+#: as a math shift.
+_LATEX_ESCAPE_DECODE: tuple[tuple[str, str], ...] = (
+    (r"\&", "&"),
+    (r"\%", "%"),
+    (r"\_", "_"),
+    (r"\#", "#"),
+)
+#: A ``\$`` (a literal dollar) is parked here before math shifts are stripped.
+_DOLLAR_SENTINEL = "\x03"
+#: Math-mode bar/pipe commands, mapped to a literal ``|``. A bare ``\command`` is
+#: DROPPED by the generic rule below, which would delete the separator entirely.
+_LATEX_MATH_BAR_RE = re.compile(r"\\(?:[lr]?vert|Vert|mid|textbar)(?![A-Za-z])")
+#: Thin/medium math spacing; ``\!`` is negative (removed), the rest become a space.
+_LATEX_MATH_SPACING_RE = re.compile(r"\\qquad|\\quad|\\[,;:]|\\!")
+#: Escaped braces are parked on sentinels so the generic brace pass cannot eat them.
+_LBRACE_SENTINEL = "\x01"
+_RBRACE_SENTINEL = "\x02"
+#: An UNESCAPED percent starts a comment.
+_LATEX_COMMENT_RE = re.compile(r"(?<!\\)%.*")
+#: ``\href{URL}{LABEL}`` -> the visible label, handled BEFORE generic commands.
+_LATEX_HREF_RE = re.compile(r"\\href\s*\{[^{}]*\}\s*\{([^{}]*)\}")
+_LATEX_TIMES_RE = re.compile(r"\\(?:text)?times(?![A-Za-z])")
+#: A generic ``\command{...}`` whose (single-level) argument survives.
+_LATEX_CMD_BRACE_RE = re.compile(r"\\[A-Za-z@]+\*?\s*\{([^{}]*)\}")
+#: A bare ``\command`` with no argument — dropped entirely.
+_LATEX_BARE_CMD_RE = re.compile(r"\\[A-Za-z@]+\*?")
+_LATEX_LINEBREAK_RE = re.compile(r"\\\\")
+#: Bounds the generic reduce loop: a document nested deeper than this keeps its
+#: outer braces rather than scanning without limit (the BOUNDED-importer posture,
+#: ``app/cv/import_tex.py``'s module docstring).
+_LATEX_REDUCE_PASSES = 12
+
+
+def _math_spacing(match: re.Match[str]) -> str:
+    """``\\!`` (negative space) vanishes; every other thin/medium space becomes one."""
+    return "" if match.group(0) == r"\!" else " "
+
+
+def _normalise_latex(source: str) -> str:
+    """A render-ish plain-text view of ``source``, for grounding only.
+
+    The model returns what the document RENDERS to, so a value proved by the markup
+    (``\\&`` for ``&``, ``\\texttimes`` for ``×``, an ``\\href`` label, or a math-mode
+    pipe) is not a literal substring of the raw source. This reduces the markup to the
+    rendered text so the guard can compare against what a reader would see. It is a
+    bounded, single-purpose reduction — NOT a LaTeX parser:
+
+    - ``%`` comments are stripped to end-of-line (an escaped ``\\%`` survives);
+    - ``\\href{URL}{LABEL}`` becomes ``LABEL`` before any generic handling;
+    - ``\\texttimes`` / ``\\times`` become ``×``;
+    - math mode: a math shift ``$`` is removed, ``\\vert``/``\\mid``/``\\lvert``/
+      ``\\rvert``/``\\Vert``/``\\|``/``\\textbar`` become a literal ``|``, and
+      ``\\,``/``\\;``/``\\:``/``\\quad``/``\\qquad`` become a space (``\\!`` nothing);
+    - ``\\&``/``\\%``/``\\_``/``\\#`` decode to their character and ``\\$`` to ``$``;
+    - a generic ``\\command{...}`` keeps its argument, a bare ``\\command`` is dropped,
+      and remaining ``{``/``}`` grouping is removed (nesting handled iteratively,
+      bounded by :data:`_LATEX_REDUCE_PASSES`);
+    - ``\\`` and ``~`` become spaces, then whitespace is collapsed.
+
+    It never invents text: every surviving character came from the source, and the
+    resulting view is only ever used as a SUBSTRING target, never as stored content.
+    """
+    text = _LATEX_COMMENT_RE.sub("", source)
+    text = _LATEX_HREF_RE.sub(r"\1", text)
+    text = _LATEX_TIMES_RE.sub(_MULTIPLICATION_CANONICAL, text)
+    # Math mode. A bar command must be MAPPED (not merely stripped): the generic rule
+    # drops a bare ``\command``, which would delete the separator and still fail.
+    text = _LATEX_MATH_BAR_RE.sub("|", text)
+    text = text.replace(r"\|", "|")
+    text = _LATEX_MATH_SPACING_RE.sub(_math_spacing, text)
+    # A math shift `$` is markup; an escaped `\$` is a literal, parked first.
+    text = text.replace(r"\$", _DOLLAR_SENTINEL)
+    text = text.replace("$", "")
+    for markup, plain in _LATEX_ESCAPE_DECODE:
+        text = text.replace(markup, plain)
+    text = text.replace(r"\{", _LBRACE_SENTINEL)
+    text = text.replace(r"\}", _RBRACE_SENTINEL)
+
+    for _ in range(_LATEX_REDUCE_PASSES):
+        reduced = _LATEX_CMD_BRACE_RE.sub(r"\1", text)
+        reduced = _LATEX_BARE_CMD_RE.sub("", reduced)
+        reduced = reduced.replace("{", "").replace("}", "")
+        if reduced == text:
+            break
+        text = reduced
+
+    text = text.replace(_LBRACE_SENTINEL, "{")
+    text = text.replace(_RBRACE_SENTINEL, "}")
+    text = text.replace(_DOLLAR_SENTINEL, "$")
+    text = _LATEX_LINEBREAK_RE.sub(" ", text)
+    text = text.replace("~", " ")
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _appears(grounded_source: str, rendered_source: str, value: str | None) -> bool:
+    """True when ``value`` appears verbatim in EITHER source view.
+
+    ``grounded_source`` is the raw source; ``rendered_source`` is
+    :func:`_normalise_latex` reduced first. Both are already casefolded and
+    whitespace-collapsed. Passing on either is still document-traceability — the
+    value must exist in the document's markup or its rendered form — so this is
+    strictly more permissive than the raw-only test without weakening the
+    guarantee. A falsy value is still ``False``: a blank org/title must drop.
+    """
     if not value:
         return False
-    return _normalise(value) in grounded_source
+    needle = _normalise(value)
+    return needle in grounded_source or needle in rendered_source
 
 
 def _section_key(heading: str) -> str | None:
@@ -439,39 +599,42 @@ def _to_facts_dict(
     (Rule letters below match the module's task spec.)
     """
     grounded = _normalise(tex_source)
+    rendered = _normalise(_normalise_latex(tex_source))
     drops: list[str] = []
 
-    # (e) meta. `Meta` has no location field, so a model-supplied location cannot be
-    # stored — it is reported rather than silently discarded.
+    # (e) meta. Every field is grounded the same way; nothing is invented.
     meta: dict[str, Any] = {"max_pages": 2}
     if extracted.meta.name:
-        if _appears(grounded, extracted.meta.name):
+        if _appears(grounded, rendered, extracted.meta.name):
             meta["name"] = extracted.meta.name
         else:
             drops.append(
-                f"dropped meta.name {extracted.meta.name!r}: not found verbatim in the source"
+                f"dropped meta.name {extracted.meta.name!r}: not found in the document"
             )
     if extracted.meta.location:
-        drops.append(
-            f"dropped meta.location {extracted.meta.location!r}: "
-            "the fact-store meta has no location field"
-        )
+        if _appears(grounded, rendered, extracted.meta.location):
+            meta["location"] = extracted.meta.location
+        else:
+            drops.append(
+                f"dropped meta.location {extracted.meta.location!r}: "
+                "not found in the document"
+            )
 
     contact: dict[str, Any] = {}
     for field in ("email", "phone"):
         value = getattr(extracted.meta, field)
         if not value:
             continue
-        if _appears(grounded, value):
+        if _appears(grounded, rendered, value):
             contact[field] = value
         else:
-            drops.append(f"dropped meta.{field} {value!r}: not found verbatim in the source")
+            drops.append(f"dropped meta.{field} {value!r}: not found in the document")
     links: list[str] = []
     for link in extracted.meta.links:
-        if _appears(grounded, link):
+        if _appears(grounded, rendered, link):
             links.append(link)
         else:
-            drops.append(f"dropped meta link {link!r}: not found verbatim in the source")
+            drops.append(f"dropped meta link {link!r}: not found in the document")
     if links:
         contact["links"] = links
     if contact:
@@ -495,17 +658,24 @@ def _to_facts_dict(
             skills_by_key[key] = []
 
         for entry in section.entries:
-            # (b) grounding guard — org AND title must both be present verbatim.
-            unmatched = [
-                value for value in (entry.org, entry.title) if not _appears(grounded, value)
-            ]
+            # (b) grounding guard — org AND title must each be present in the raw
+            # or rendered source. `_appears` keeps falsy->False, so an EMPTY org or
+            # title still fails; the drop message NAMES the failing field(s) and
+            # says explicitly when a field was left empty, so a report is
+            # self-diagnosing.
+            unmatched: list[str] = []
+            if not entry.org or not entry.org.strip():
+                unmatched.append(
+                    "org was empty (no employer, institution or project named)"
+                )
+            elif not _appears(grounded, rendered, entry.org):
+                unmatched.append(f"org {entry.org!r} not found in the document")
+            if not entry.title or not entry.title.strip():
+                unmatched.append("title was empty")
+            elif not _appears(grounded, rendered, entry.title):
+                unmatched.append(f"title {entry.title!r} not found in the document")
             if unmatched:
-                missing = ", ".join(
-                    f"{value!r} not found verbatim in the source" for value in unmatched
-                )
-                drops.append(
-                    f"dropped entry {entry.org!r} — {entry.title!r}: {missing}"
-                )
+                drops.append(f"dropped entry: {', '.join(unmatched)}")
                 continue
             # (c) dates — delegate to the importer's machinery plus the bare-year wrap.
             dates = _parse_dates(entry.dates)
@@ -515,7 +685,27 @@ def _to_facts_dict(
                     f"unparseable dates {entry.dates!r}"
                 )
                 continue
-            start, end, location = dates
+            start, end, dates_location = dates
+
+            # (c') location. `_ExtractedEntry.location` was previously DEAD here: the
+            # schema and the prompt example carried it, but the compile never read it,
+            # so a document with org and location in separate arguments (awesome-cv's
+            # `\cventry` shape) left the model no field for the location and it glued
+            # `org + ", " + location` instead — an invented string the guard then
+            # (correctly) rejected. Prefer the model's own location, grounded exactly
+            # like org/title. `Entry.location` is optional and not identity-bearing:
+            # an ungrounded location is reported and the dates-suffix fallback applies,
+            # NEVER a reason to drop the entry.
+            location = dates_location
+            if entry.location and entry.location.strip():
+                if _appears(grounded, rendered, entry.location):
+                    location = entry.location
+                else:
+                    drops.append(
+                        f"dropped entry.location {entry.location!r}: "
+                        "not found in the document"
+                    )
+
             entries_by_key[key].append(
                 {
                     "org": entry.org,

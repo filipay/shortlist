@@ -34,6 +34,30 @@ def _render_fixture_bytes() -> bytes:
     return render_plan_to_tex(apply_patch(facts)).encode("utf-8")
 
 
+def test_a_meta_location_renders_in_the_header_and_the_baseline_is_unchanged() -> None:
+    """A location-less store keeps the golden; a set location reaches the header."""
+    facts = load_facts(FIXTURE)
+    assert facts.meta.location is None
+
+    # No location -> byte-identical to the committed golden baseline.
+    assert _render_fixture_bytes() == GOLDEN.read_bytes()
+
+    located = facts.model_copy(
+        update={
+            "meta": facts.meta.model_copy(
+                update={"location": "Exampleville, Exampleland"}
+            )
+        }
+    )
+    rendered = render_plan_to_tex(apply_patch(located))
+
+    assert "Exampleville, Exampleland" in rendered
+    header = rendered.split("\\end{center}", 1)[0]
+    assert "Exampleville, Exampleland" in header
+    # The header changed, so the baseline is provably sensitive to the new field.
+    assert rendered != GOLDEN.read_text(encoding="utf-8")
+
+
 def test_the_rendered_tex_matches_the_committed_golden_baseline() -> None:
     # A BYTES read, not a text read: an encoding or line-ending difference is
     # exactly the class of regression this exists to catch.

@@ -44,6 +44,9 @@
 \BLOCK{ if plan.name }
 \begin{center}
   {\LARGE\bfseries \VAR{plan.name}}\\
+\BLOCK{ if plan.contact_location }
+  \VAR{plan.contact_location}\\
+\BLOCK{ endif }
 \BLOCK{ if plan.contact_email }
   \VAR{plan.contact_email}\\
 \BLOCK{ endif }

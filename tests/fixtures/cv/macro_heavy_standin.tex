@@ -1,0 +1,88 @@
+% =============================================================================
+% macro_heavy_standin.tex — a SYNTHETIC stand-in, NOT anyone's CV.
+%
+% It exists to reproduce the macro/escape shapes that defeat a raw-substring
+% grounding test: an \href{URL}{label} whose visible label is only contiguous
+% after rendering, a \texttimes that renders to ×, a \& that renders to &, a
+% heading set spanning experience, projects, education and volunteering, and an
+% awesome-cv \cventry shape whose org and location sit in SEPARATE adjacent
+% arguments. The people, employers, schools and links below are invented and use
+% the reserved .invalid TLD, so none can ever resolve.
+%
+% NO REAL CV CONTENT MAY EVER BE ADDED TO THIS FILE (D-58).
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{hyperref}
+
+\newcommand{\workentry}[4]{%
+  \noindent\textbf{#1} --- \textit{#2} \hfill #3\par
+  #4
+}
+% awesome-cv shape: title, org, location and dates are separate arguments.
+\newcommand{\cventry}[5]{%
+  \noindent\textbf{#1} --- \textit{#2} \hfill #3 \hfill #4\par
+  #5
+}
+\newenvironment{highlights}{\begin{itemize}}{\end{itemize}}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE \textbf{Alex Example}}\\[2pt]
+  alex.example@example.invalid\\
+  \href{https://example.invalid/alex}{example.invalid/alex}
+\end{center}
+
+\section*{WORK EXPERIENCE}
+
+\workentry{Operations Analyst \& Co-Founder}{Globex \& Sons}{2021 - 2023}{%
+\begin{highlights}
+  \item Ran the fake operations desk
+\end{highlights}}
+
+\workentry{\href{https://example.invalid/lab}{Thing One} | github/example-lab}{Initech}{2026 - present}{%
+\begin{highlights}
+  \item Maintained the synthetic lab
+\end{highlights}}
+
+\section*{PROJECTS}
+
+\workentry{MSc in Data Analytics (1:1) \texttimes{} Level 9}{Widget Kit}{2026}{%
+\begin{highlights}
+  \item Shipped a synthetic widget
+\end{highlights}}
+
+% A title-first project row: the project's own name is the org (per the
+% section-aware rule) and the tech stack is the title.
+\workentry{Thing One Dashboards}{Python, Go}{2027}{%
+\begin{highlights}
+  \item Built a synthetic dashboard
+\end{highlights}}
+
+\section*{EDUCATION}
+
+\workentry{BSc Example Studies}{Example University}{2024}{%
+\begin{highlights}
+  \item Imaginary degree
+\end{highlights}}
+
+\cventry{Research Assistant}{Northgate Institute of Technology}{Exampleland}{2023}{%
+\begin{highlights}
+  \item Assisted with synthetic research
+\end{highlights}}
+
+\section*{VOLUNTEERING}
+
+\workentry{Mentor}{Example Code Club}{2021 - 2023}{%
+\begin{highlights}
+  \item Mentored imaginary people
+\end{highlights}}
+
+\section*{CODING PROFICIENCY}
+
+Python, Go, SQL
+
+\end{document}

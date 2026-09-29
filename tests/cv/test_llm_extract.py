@@ -18,11 +18,14 @@ import yaml
 from app.cv.factstore import load_facts
 from app.cv.llm_extract import (
     ExtractionError,
+    _appears,
     _ExtractedCv,
     _ExtractedEntry,
     _ExtractedEnvelope,
     _ExtractedMeta,
     _ExtractedSection,
+    _normalise,
+    _normalise_latex,
     extract_facts,
 )
 from app.domain.cv import iter_fact_ids
@@ -31,6 +34,8 @@ from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
 # ---------------------------------------------------------------------------
 # a canned document mirroring the user's real shape
 # ---------------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 REAL_TEX = r"""\documentclass{article}
 \newcommand{\workentry}[4]{\textbf{#1} \textit{#2} \hfill #3 #4}
@@ -615,3 +620,754 @@ async def test_a_non_json_or_non_object_cv_string_raises_extraction_error(
 ) -> None:
     with pytest.raises(ExtractionError):
         await extract_facts(StubBackend(cv_json=raw), tex_source=REAL_TEX)
+
+
+# --- 9. grounding against the RENDERED source view (macro-heavy) ---------------
+
+MACRO_TEX = (
+    PROJECT_ROOT / "tests" / "fixtures" / "cv" / "macro_heavy_standin.tex"
+).read_text(encoding="utf-8")
+
+
+def _macro_extraction() -> _ExtractedCv:
+    """The values a model returns for `MACRO_TEX`, in rendered form."""
+    return _ExtractedCv(
+        meta=_ExtractedMeta(name="Alex Example", email="alex.example@example.invalid"),
+        sections=[
+            _ExtractedSection(
+                heading="WORK EXPERIENCE",
+                entries=[
+                    _ExtractedEntry(
+                        org="Globex & Sons",
+                        title="Operations Analyst & Co-Founder",
+                        dates="2021 - 2023",
+                        bullets=["Ran the fake operations desk"],
+                    ),
+                    _ExtractedEntry(
+                        org="Initech",
+                        title="Thing One | github/example-lab",
+                        dates="2026 - present",
+                        bullets=["Maintained the synthetic lab"],
+                    ),
+                ],
+                skills=[],
+            ),
+            _ExtractedSection(
+                heading="PROJECTS",
+                entries=[
+                    _ExtractedEntry(
+                        org="Widget Kit",
+                        title="MSc in Data Analytics (1:1) × Level 9",
+                        dates="2026",
+                        bullets=["Shipped a synthetic widget"],
+                    ),
+                    # Section-aware rule: the project's own name is the org and the
+                    # tech stack is the title (both verbatim from the source).
+                    _ExtractedEntry(
+                        org="Thing One Dashboards",
+                        title="Python, Go",
+                        dates="2027",
+                        bullets=["Built a synthetic dashboard"],
+                    ),
+                ],
+                skills=[],
+            ),
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Example University",
+                        title="BSc Example Studies",
+                        dates="2024",
+                        bullets=["Imaginary degree"],
+                    ),
+                    # awesome-cv shape: org and location in SEPARATE source args.
+                    _ExtractedEntry(
+                        org="Northgate Institute of Technology",
+                        title="Research Assistant",
+                        dates="2023",
+                        location="Exampleland",
+                        bullets=["Assisted with synthetic research"],
+                    ),
+                ],
+                skills=[],
+            ),
+            _ExtractedSection(
+                heading="VOLUNTEERING",
+                entries=[
+                    _ExtractedEntry(
+                        org="Example Code Club",
+                        title="Mentor",
+                        dates="2021 - 2023",
+                        bullets=["Mentored imaginary people"],
+                    )
+                ],
+                skills=[],
+            ),
+            _ExtractedSection(
+                heading="CODING PROFICIENCY", entries=[], skills=["Python", "Go", "SQL"]
+            ),
+        ],
+    )
+
+
+def test_normalise_latex_reduces_markup_to_rendered_text() -> None:
+    assert _normalise_latex(r"\href{https://example.invalid/x}{label}") == "label"
+    assert _normalise_latex(r"\&") == "&"
+    assert _normalise_latex(r"\texttimes") == "×"
+    assert _normalise_latex(r"\times") == "×"
+    assert _normalise_latex(r"\{x\}") == "{x}"
+    assert _normalise_latex("alpha % a comment\nbeta") == "alpha beta"
+    assert _normalise_latex(r"\textbf{bold} text") == "bold text"
+
+
+async def test_href_times_and_ampersand_values_are_grounded_and_stored(
+    tmp_path: Path,
+) -> None:
+    result = await extract_facts(StubBackend(_macro_extraction()), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert not any("dropped entry" in line for line in result.report), result.report
+    assert len(facts.sections) == 5
+    assert len(facts.all_entries()) == 7
+    org_names = {org.name for org in facts.orgs}
+    title_names = {title.name for title in facts.titles}
+    assert "Globex & Sons" in org_names
+    assert "Operations Analyst & Co-Founder" in title_names
+    assert "Thing One | github/example-lab" in title_names
+    assert "MSc in Data Analytics (1:1) × Level 9" in title_names
+    assert len({section.title_key for section in facts.sections}) == 5
+
+
+async def test_a_value_absent_from_both_views_is_still_dropped_and_named(
+    tmp_path: Path,
+) -> None:
+    """The guard was not weakened: an invented org is dropped and reported."""
+    extraction = _macro_extraction()
+    # Append a fabricated org whose string is nowhere in the document.
+    extraction.sections[0].entries.append(
+        _ExtractedEntry(
+            org="Nonesuch Fabricated Ltd",
+            title="Operations Analyst & Co-Founder",
+            dates="2021 - 2023",
+            bullets=[],
+        )
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert "Nonesuch Fabricated Ltd" not in {org.name for org in facts.orgs}
+    assert any("Nonesuch Fabricated Ltd" in line for line in result.report), result.report
+    assert any("dropped entry" in line for line in result.report)
+
+
+async def test_the_drop_message_names_the_failing_field(tmp_path: Path) -> None:
+    extraction = _macro_extraction()
+    extraction.sections[0].entries.append(
+        _ExtractedEntry(
+            org="Globex & Sons",
+            title="Chief Wizard of Nowhere",
+            dates="2021 - 2023",
+            bullets=[],
+        )
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+
+    assert any(
+        line.startswith("dropped entry:") and "title 'Chief Wizard of Nowhere'" in line
+        for line in result.report
+    ), result.report
+    # `org` is grounded, so it must NOT be named as the failure.
+    assert not any(
+        "org 'Globex & Sons'" in line for line in result.report
+    ), result.report
+
+
+async def test_every_kept_entity_appears_in_the_raw_or_rendered_source(
+    tmp_path: Path,
+) -> None:
+    raw = _normalise(MACRO_TEX)
+    rendered = _normalise(_normalise_latex(MACRO_TEX))
+
+    result = await extract_facts(StubBackend(_macro_extraction()), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    org_names = {org.id: org.name for org in facts.orgs}
+    title_names = {title.id: title.name for title in facts.titles}
+    for entry in facts.all_entries():
+        for value in (org_names[entry.org_id], title_names[entry.title_id]):
+            needle = _normalise(value)
+            assert needle in raw or needle in rendered, value
+        # A stored location must satisfy the SAME invariant.
+        if entry.location:
+            assert _appears(raw, rendered, entry.location), entry.location
+
+    # Mutation control: an absent location must not be stored.
+    mutated = _macro_extraction()
+    mutated.sections[2].entries[0].location = "Nonesuchville"
+    mutated_result = await extract_facts(StubBackend(mutated), tex_source=MACRO_TEX)
+    mutated_facts = _write_and_load(mutated_result.facts, tmp_path)
+    assert all(
+        entry.location != "Nonesuchville" for entry in mutated_facts.all_entries()
+    )
+
+
+async def test_a_separate_location_argument_is_stored_not_glued(
+    tmp_path: Path,
+) -> None:
+    """The dead `location` field is wired: org and location stay separate.
+
+    The awesome-cv `\\cventry` entry carries org and location in separate source
+    arguments, so the glued `'org, location'` string is nowhere in the document.
+    """
+    result = await extract_facts(StubBackend(_macro_extraction()), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/northgate-institute-of-technology-2023")
+    assert entry is not None
+    assert entry.location == "Exampleland"
+    org_names = {org.name for org in facts.orgs}
+    assert "Northgate Institute of Technology" in org_names
+    glued = "Northgate Institute of Technology, Exampleland"
+    assert glued not in org_names
+    assert glued not in {title.name for title in facts.titles}
+    assert "Exampleland" not in org_names
+
+
+async def test_a_model_location_on_a_bare_year_is_stored(tmp_path: Path) -> None:
+    """The model can put a location in its own field, independent of `dates`."""
+    tex = (
+        "\\section*{EDUCATION}\n"
+        "\\workentry{BSc Example Studies}{Example University}{2024}{Example City}\n"
+    )
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Example University",
+                        title="BSc Example Studies",
+                        dates="2024",
+                        location="Example City",
+                        bullets=[],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=tex)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/example-university-2024")
+    assert entry is not None
+    assert entry.location == "Example City"
+    assert entry.start == "2024-01"
+
+
+async def test_an_ungrounded_location_is_dropped_but_the_entry_survives(
+    tmp_path: Path,
+) -> None:
+    """Location is optional and not identity-bearing: never drop the entry for it."""
+    extraction = _macro_extraction()
+    # The BSc entry has `dates="2024"` with no location suffix, so the fallback is None.
+    extraction.sections[2].entries[0].location = "Nonesuchville"
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/example-university-2024")
+    assert entry is not None, "the entry must survive an ungrounded location"
+    assert entry.location is None
+    assert any("Nonesuchville" in line for line in result.report), result.report
+    assert any(
+        "dropped entry.location 'Nonesuchville'" in line for line in result.report
+    ), result.report
+
+
+async def test_a_grounded_location_prefers_the_model_field_over_the_dates_suffix(
+    tmp_path: Path,
+) -> None:
+    """A separate grounded location wins over a `dates`-suffix fallback."""
+    tex = (
+        "\\section*{EDUCATION}\n"
+        "\\workentry{BSc Example Studies}{Example University}{2024, Testville}{Sampletown}\n"
+    )
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Example University",
+                        title="BSc Example Studies",
+                        dates="2024, Testville",
+                        location="Sampletown",
+                        bullets=[],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=tex)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/example-university-2024")
+    assert entry is not None
+    # The dates suffix (`Testville`) is the fallback; the grounded model field wins.
+    assert entry.location == "Sampletown"
+
+
+async def test_a_joined_value_still_drops_as_a_named_residual() -> None:
+    """TASK 3 residual: a value JOINED from separate source fragments still drops.
+
+    Neither the raw nor the rendered view contains `'Globex & Sons, Initech'` as a
+    contiguous string — the join exists only in the model's output. Token-level or
+    order-insensitive matching would accept it and weaken anti-fabrication, so it
+    is deliberately left dropping.
+    """
+    extraction = _macro_extraction()
+    joined_org = "Globex & Sons, Initech"
+    extraction.sections[0].entries.append(
+        _ExtractedEntry(
+            org=joined_org,
+            title="Operations Analyst & Co-Founder",
+            dates="2021 - 2023",
+            bullets=[],
+        )
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+
+    assert any(joined_org in line for line in result.report), result.report
+    assert any("dropped entry" in line for line in result.report)
+
+
+# --- 10. meta.location is grounded and stored ----------------------------------
+
+_LOCATION_TEX = (
+    "Alex Example\n"
+    "Exampleville, Exampleland\n"
+    "\\section*{WORK EXPERIENCE}\n"
+    "\\workentry{Senior Backend Engineer}{Northwind Labs}{2021 - 2023}{Built the ingest path}\n"
+)
+
+
+def _location_extraction(location: str | None) -> _ExtractedCv:
+    return _ExtractedCv(
+        meta=_ExtractedMeta(name="Alex Example", location=location),
+        sections=[
+            _ExtractedSection(
+                heading="WORK EXPERIENCE",
+                entries=[
+                    _ExtractedEntry(
+                        org="Northwind Labs",
+                        title="Senior Backend Engineer",
+                        dates="2021 - 2023",
+                        bullets=["Built the ingest path"],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+
+async def test_a_grounded_meta_location_is_stored(tmp_path: Path) -> None:
+    result = await extract_facts(
+        StubBackend(_location_extraction("Exampleville, Exampleland")),
+        tex_source=_LOCATION_TEX,
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert facts.meta.location == "Exampleville, Exampleland"
+    assert facts.meta.name == "Alex Example"
+    assert facts.all_entries(), "the entry behaviour is unchanged"
+    assert not any("dropped meta.location" in line for line in result.report)
+
+
+async def test_an_ungrounded_meta_location_is_dropped_and_named(tmp_path: Path) -> None:
+    result = await extract_facts(
+        StubBackend(_location_extraction("Atlantis")),
+        tex_source=_LOCATION_TEX,
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert facts.meta.location is None
+    assert any("dropped meta.location 'Atlantis'" in line for line in result.report)
+    assert any("not found in the document" in line for line in result.report)
+    # The grounded fields and the entry are unaffected by the location drop.
+    assert facts.meta.name == "Alex Example"
+    assert facts.all_entries()
+
+
+# --- 11. section-aware org rule, multiplication glyphs, empty-org message -------
+
+
+async def test_a_project_row_uses_the_project_name_as_org(tmp_path: Path) -> None:
+    """The section-aware rule: project name -> org, tech stack -> title."""
+    result = await extract_facts(StubBackend(_macro_extraction()), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/thing-one-dashboards-2027")
+    assert entry is not None, "the project row must survive"
+    orgs = {org.id: org.name for org in facts.orgs}
+    titles = {title.id: title.name for title in facts.titles}
+    assert orgs[entry.org_id] == "Thing One Dashboards"
+    assert titles[entry.title_id] == "Python, Go"
+    # The tech stack is not in org and the project name is not in title.
+    assert "Python, Go" not in orgs.values()
+    assert "Thing One Dashboards" not in titles.values()
+    # The location stays in its own (here absent) field, never glued onto the org.
+    assert entry.location is None
+    assert not any(
+        "Thing One Dashboards" in line and line.startswith("dropped entry")
+        for line in result.report
+    ), result.report
+
+
+def test_normalise_neutralises_the_multiplication_glyph_class_to_whitespace() -> None:
+    for variant in (
+        "\u00d7",  # ×
+        "\u2a2f",  # ⨯
+        "\u2715",  # ✕
+        "\u2716",  # ✖
+        "\u22c5",  # ⋅
+        "\u00b7",  # ·
+        "\uff0a",  # ＊ (NFKC -> *)
+    ):
+        assert _normalise(f"a {variant} b") == "a b", repr(variant)
+    # Ordinary letters and digits are never folded.
+    assert _normalise("Level 9") == "level 9"
+    assert _normalise("Cats") == "cats"
+    # `_normalise_latex` still emits the VISIBLE canonical token for both commands;
+    # the outer `_normalise` then neutralises it to whitespace like any other variant.
+    assert _normalise_latex(r"\texttimes") == "\u00d7"
+    assert _normalise_latex(r"\times") == "\u00d7"
+    assert _normalise(_normalise_latex(r"\texttimes")) == ""
+
+
+async def test_a_model_multiplication_glyph_variant_still_grounds(
+    tmp_path: Path,
+) -> None:
+    """Task 2 (i): the source's `\\texttimes` and the model's U+2A2F now agree."""
+    extraction = _macro_extraction()
+    variant_title = "MSc in Data Analytics (1:1) \u2a2f Level 9"
+    extraction.sections[1].entries[0].title = variant_title
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert not any(
+        "MSc in Data Analytics" in line and line.startswith("dropped entry")
+        for line in result.report
+    ), result.report
+    # The model's string is stored verbatim; only the COMPARISON is folded.
+    assert variant_title in {title.name for title in facts.titles}
+
+
+_INSERTED_SEPARATOR_TEX = (
+    "\\section*{EDUCATION}\n"
+    "\\workentry{BSc Example Studies}{Example University}{2024}{Level 8}\n"
+    "\\workentry{MSc Example Studies}{Northgate Institute of Technology}{2025}{Level 9}\n"
+)
+
+
+async def test_a_model_inserted_separator_still_drops() -> None:
+    """Task 3 (ii): a separator present in no source view cannot be fixed by folding.
+
+    The two runs exist in the document, but the model joined them with a glyph that
+    is nowhere in the source; the joined string is not a contiguous substring of
+    either view, so it is deliberately left dropping (no window/fuzzy matching).
+    """
+    joined_title = "BSc Example Studies \u2a2f Level 8"
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Example University",
+                        title=joined_title,
+                        dates="2024",
+                        bullets=[],
+                    ),
+                    _ExtractedEntry(
+                        org="Northgate Institute of Technology",
+                        title="MSc Example Studies",
+                        dates="2025",
+                        bullets=[],
+                    ),
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(
+        StubBackend(extraction), tex_source=_INSERTED_SEPARATOR_TEX
+    )
+
+    assert any(joined_title in line for line in result.report), result.report
+    assert any("dropped entry" in line for line in result.report), result.report
+
+
+async def test_an_empty_org_drops_with_a_self_explanatory_message() -> None:
+    """An empty org says so explicitly, instead of 'org '' not found'."""
+    extraction = _macro_extraction()
+    # The project row's org is left empty (the real PROJECTS failure shape).
+    extraction.sections[1].entries[1].org = ""
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+
+    assert any(
+        "org was empty (no employer, institution or project named)" in line
+        for line in result.report
+    ), result.report
+    assert any("dropped entry" in line for line in result.report), result.report
+
+
+# --- 12. the separator fold: accept inside a run, reject across a boundary ------
+
+_MULTIPLICATION_VARIANTS = (
+    "\u00d7",  # ×
+    "\u2a2f",  # ⨯
+    "\u2715",  # ✕
+    "\u2716",  # ✖
+    "\u22c5",  # ⋅
+    "\u00b7",  # ·
+    "\uff0a",  # ＊ (NFKC -> *)
+)
+
+#: A cventry-shaped row whose title carries a course, a grade, a `\hfill` and a level
+#: token — the reported degree-row shape. The source's own separator is the spacing
+#: command, which the reducer drops and collapses to a single space.
+_GLYPH_TITLE_TEX = (
+    "\\section*{EDUCATION}\n"
+    "\\cventry{MSc in Data Analytics (1:1) \\hfill Level 9}"
+    "{Northgate Institute of Technology}{Exampleland}{2024}{%\n"
+    "\\begin{highlights}\n"
+    "  \\item Synthetic study\n"
+    "\\end{highlights}}\n"
+)
+
+
+@pytest.mark.parametrize(
+    "glyph", [*_MULTIPLICATION_VARIANTS, None], ids=lambda glyph: repr(glyph)
+)
+async def test_a_title_separator_inside_one_run_is_stored(
+    tmp_path: Path, glyph: str | None
+) -> None:
+    """The reported drop: a model-inserted separator inside one run now grounds."""
+    separator = " " if glyph is None else f" {glyph} "
+    title = f"MSc in Data Analytics (1:1){separator}Level 9"
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Northgate Institute of Technology",
+                        title=title,
+                        dates="2024",
+                        location="Exampleland",
+                        bullets=["Synthetic study"],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=_GLYPH_TITLE_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/northgate-institute-of-technology-2024")
+    assert entry is not None, "the degree row must survive"
+    assert title in {candidate.name for candidate in facts.titles}
+    assert not any(
+        title in line and line.startswith("dropped entry") for line in result.report
+    ), result.report
+
+
+@pytest.mark.parametrize(
+    "joiner", [*_MULTIPLICATION_VARIANTS, " "], ids=lambda joiner: repr(joiner)
+)
+async def test_a_cross_entity_join_is_rejected_for_every_joiner(
+    tmp_path: Path, joiner: str
+) -> None:
+    """Every joiner the fold touches must still reject two glued employers."""
+    joined = f"Globex & Sons{joiner}Initech"
+    extraction = _macro_extraction()
+    extraction.sections[0].entries.append(
+        _ExtractedEntry(
+            org=joined,
+            title="Operations Analyst & Co-Founder",
+            dates="2021 - 2023",
+            bullets=[],
+        )
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert joined not in {org.name for org in facts.orgs}
+    assert any(joined in line for line in result.report), result.report
+    assert any("dropped entry" in line for line in result.report), result.report
+
+
+def test_the_separator_fold_never_bridges_a_cross_argument_boundary() -> None:
+    """Two brace groups are glued with NO space, so a glyph cannot rescue a join."""
+    source = "\\section*{WORK EXPERIENCE}\n\\workentry{Alpha}{Beta}{2024}{}\n"
+    grounded = _normalise(source)
+    rendered = _normalise(_normalise_latex(source))
+
+    for value in ("Alpha Beta", "Alpha \u00d7 Beta", "Alpha\u2a2fBeta", "Alpha \u2a2f Beta"):
+        assert not _appears(grounded, rendered, value), value
+
+
+# --- 13. math-mode pipes, and the parenthetical-institution shape ---------------
+
+#: Every separator spelling the reducer maps to a literal `|`.
+_MATH_PIPE_SPELLINGS = (
+    "$|$",
+    "$\\vert$",
+    "$\\mid$",
+    "$\\lvert$",
+    "$\\rvert$",
+    "$\\Vert$",
+    "$\\|$",
+    "$\\textbar$",
+    "\\vert{}",
+    "\\mid",
+    "\\Vert",
+    "\\|",
+    "\\textbar{}",
+    "|",
+)
+
+
+@pytest.mark.parametrize("spelling", _MATH_PIPE_SPELLINGS, ids=lambda s: repr(s))
+async def test_a_math_mode_pipe_before_an_href_grounds(
+    tmp_path: Path, spelling: str
+) -> None:
+    """The reported project shape: a tech-stack arg with a math pipe and an href."""
+    tex = (
+        "\\section*{PROJECTS}\n"
+        "\\workentry{Thing One Dashboards}"
+        "{Python, Docker " + spelling
+        + " \\href{https://example.invalid/repo-a}{github/example-repo-a}}"
+        "{2027}{%\n"
+        "\\begin{highlights}\n"
+        "  \\item Shipped a synthetic dashboard\n"
+        "\\end{highlights}}\n"
+    )
+    title = "Python, Docker | github/example-repo-a"
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="PROJECTS",
+                entries=[
+                    _ExtractedEntry(
+                        org="Thing One Dashboards",
+                        title=title,
+                        dates="2027",
+                        bullets=["Shipped a synthetic dashboard"],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=tex)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert title in {candidate.name for candidate in facts.titles}
+    assert not any(
+        title in line and line.startswith("dropped entry") for line in result.report
+    ), result.report
+    assert facts.entry_by_id("exp/thing-one-dashboards-2027") is not None
+
+
+def test_the_reduced_view_keeps_a_literal_math_pipe() -> None:
+    assert _normalise_latex(r"Docker $|$ github/repo") == "Docker | github/repo"
+    assert _normalise_latex(r"Docker $\vert$ github/repo") == "Docker | github/repo"
+    assert _normalise_latex(r"Docker \mid{} github/repo") == "Docker | github/repo"
+    assert _normalise_latex(r"Docker \,|\, github/repo") == "Docker | github/repo"
+    # An escaped dollar stays a literal; math shifts vanish.
+    assert _normalise_latex(r"Cost \$5, not $x$") == "Cost $5, not x"
+    # `|` is NOT folded in the comparison normaliser (the cross-entity control needs it).
+    assert _normalise("a | b") == "a | b"
+
+
+async def test_a_pipe_join_of_two_entities_still_drops(tmp_path: Path) -> None:
+    """The math-pipe reduction must not weaken the cross-entity control."""
+    joined = "Globex & Sons | Initech"
+    extraction = _macro_extraction()
+    extraction.sections[0].entries.append(
+        _ExtractedEntry(
+            org=joined,
+            title="Operations Analyst & Co-Founder",
+            dates="2021 - 2023",
+            bullets=[],
+        )
+    )
+
+    result = await extract_facts(StubBackend(extraction), tex_source=MACRO_TEX)
+    facts = _write_and_load(result.facts, tmp_path)
+
+    assert joined not in {org.name for org in facts.orgs}
+    assert any(joined in line for line in result.report), result.report
+    assert any("dropped entry" in line for line in result.report), result.report
+
+
+_PARENTHETICAL_ORG_TEX = (
+    "\\section*{EDUCATION}\n"
+    "\\cventry{Certificate in Software Engineering "
+    "(Northgate Institute of Technology \\& Widget Co)}{2024}{}{}{}\n"
+)
+
+
+async def test_an_institution_inside_a_title_parenthetical_grounds_when_split(
+    tmp_path: Path,
+) -> None:
+    """The prompt puts the parenthetical institution in org; the compile accepts it."""
+    extraction = _ExtractedCv(
+        meta=_ExtractedMeta(),
+        sections=[
+            _ExtractedSection(
+                heading="EDUCATION",
+                entries=[
+                    _ExtractedEntry(
+                        org="Northgate Institute of Technology",
+                        title="Certificate in Software Engineering",
+                        dates="2024",
+                        bullets=[],
+                    )
+                ],
+                skills=[],
+            )
+        ],
+    )
+
+    result = await extract_facts(
+        StubBackend(extraction), tex_source=_PARENTHETICAL_ORG_TEX
+    )
+    facts = _write_and_load(result.facts, tmp_path)
+
+    entry = facts.entry_by_id("exp/northgate-institute-of-technology-2024")
+    assert entry is not None, "the certificate row must survive"
+    assert "Northgate Institute of Technology" in {org.name for org in facts.orgs}
+    assert "Certificate in Software Engineering" in {t.name for t in facts.titles}

@@ -28,6 +28,7 @@ from app.domain.cv import (
 )
 from app.domain.tex import squash
 from app.latex.render import render_plan_to_tex
+from app.verify.numbers import digit_cores, non_entry_structured_strings
 from tests.verify.fixtures import load_standin_facts
 
 #: Distinctive, lowercase canaries. Defined HERE and never repeated in prose.
@@ -85,11 +86,70 @@ def test_no_render_plan_field_reaches_a_canary() -> None:
     _, plan, _ = _facts_and_plan()
 
     render_strings = list(_strings([section.model_dump(mode="json") for section in plan.sections]))
-    render_strings += [plan.name or "", plan.contact_email or "", *plan.contact_links]
+    render_strings += [
+        plan.name or "",
+        plan.contact_email or "",
+        plan.contact_location or "",
+        *plan.contact_links,
+    ]
     squashed = squash(" ".join(render_strings))
 
     for canary in CANARIES:
         assert squash(canary) not in squashed
+
+
+def test_the_identity_enumeration_covers_the_contact_location() -> None:
+    """A canary in `contact_location` WOULD be caught — the guard can actually fail."""
+    _, plan, _ = _facts_and_plan()
+    planted = plan.model_copy(update={"contact_location": REQUIREMENT_CANARY})
+
+    render_strings = list(
+        _strings([section.model_dump(mode="json") for section in planted.sections])
+    )
+    render_strings += [
+        planted.name or "",
+        planted.contact_email or "",
+        planted.contact_location or "",
+        *planted.contact_links,
+    ]
+    squashed = squash(" ".join(render_strings))
+
+    assert squash(REQUIREMENT_CANARY) in squashed
+    # The un-planted plan's enumeration does not carry the canary, so the only
+    # source above was `contact_location`.
+    unplanted = [
+        plan.name or "",
+        plan.contact_email or "",
+        plan.contact_location or "",
+        *plan.contact_links,
+    ]
+    assert squash(REQUIREMENT_CANARY) not in squash(" ".join(unplanted))
+
+
+def test_non_entry_structured_strings_includes_a_contact_location() -> None:
+    """A header location is structured data, so its digits are not 'unsupported'.
+
+    Without this enumeration, a page number or metric inside the rendered location
+    would be charged as surplus content by the region check.
+    """
+    located = RenderPlan(
+        sections=[],
+        name="Alex Example",
+        contact_email="alex@example.invalid",
+        contact_location="Exampleville 12, Exampleland",
+        contact_links=["https://example.invalid/alex"],
+    )
+
+    strings = non_entry_structured_strings(located)
+
+    assert "Exampleville 12, Exampleland" in strings
+    location_digits = set(digit_cores("Exampleville 12, Exampleland"))
+    enumerated_digits = {core for value in strings for core in digit_cores(value)}
+    assert location_digits <= enumerated_digits
+    # An absent location contributes nothing.
+    assert "Exampleville 12, Exampleland" not in non_entry_structured_strings(
+        RenderPlan(sections=[], name="Alex Example")
+    )
 
 
 def test_the_change_log_still_carries_the_reasons() -> None:
