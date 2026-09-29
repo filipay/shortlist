@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 Phase: 06 (Tailoring + Verification) — EXECUTING
 Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-09-29 - Completed quick task 260929-i46: Extract the required years of experience from each listing's description as a soft ranking hint
+Last activity: 2026-09-29 - Completed quick task 260929-m1j: Fix the skills section so each extracted skill carries a document-derived group and the template renders one labelled line per group
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
 
@@ -191,6 +191,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260929-i46 | Extract the required years of experience from each listing's description as a soft ranking hint | 2026-09-29 | 6ebc31b | [260929-i46-extract-the-required-years-of-experience](./quick/260929-i46-extract-the-required-years-of-experience/) |
+| 260929-m1j | Fix the skills section: widen the model-assisted CV extraction schema so each skill carries a group, update the extraction prompt to ask for it, and group the rendered skills by group in the LaTeX template so the section renders as labelled lines instead of one row per skill | 2026-09-29 | 3dbaecd | [260929-m1j-fix-the-skills-section-widen-the-model-a](./quick/260929-m1j-fix-the-skills-section-widen-the-model-a/) |
 
 ## Deferred Items
 
