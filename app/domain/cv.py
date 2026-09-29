@@ -370,6 +370,20 @@ class RenderedSection(_Forbid):
     entries: list[RenderedEntry] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
 
+    @property
+    def skills_by_group(self) -> list[tuple[str, list[Skill]]]:
+        """The section's skills collapsed by ``group``, in first-seen group order.
+
+        Groups appear in the order they are first seen in ``self.skills``, each with
+        its skills in declaration order. A pure derivation over the carried-through
+        ``Skill`` objects, so this is not a model field: ``extra="forbid"`` and every
+        ``skills=list(section.skills)`` construction site stay untouched.
+        """
+        groups: dict[str, list[Skill]] = {}
+        for skill in self.skills:
+            groups.setdefault(skill.group, []).append(skill)
+        return list(groups.items())
+
 
 class RenderPlan(_Forbid):
     """A pure ordered projection of the fact store.

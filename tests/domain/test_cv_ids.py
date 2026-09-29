@@ -23,6 +23,7 @@ from app.domain.cv import (
     qualify_entry_ids,
     slugify,
 )
+from app.latex.render import render_plan_to_tex
 
 
 def _entry_dict(*, entry_id: str = "exp/northwind-labs-2021") -> dict:
@@ -351,6 +352,38 @@ def test_meta_accepts_a_location_and_still_rejects_unknown_keys() -> None:
     bad["meta"]["bogus_key"] = "surprise"
     with pytest.raises(ValidationError):
         CvFacts.model_validate(bad)
+
+
+# --- Test 18: the grouped skills render ---------------------------------------
+
+
+def test_skills_render_as_one_labelled_line_per_group() -> None:
+    """Two skills in one group collapse to ONE tabularx row (the golden has one each).
+
+    The fact-equivalence lane does not cover skills, so this is the only guard on the
+    grouped render.
+    """
+    data = _facts_dict()
+    data["sections"][1]["skills"] = [
+        {"id": "skill.python", "label": "Python", "group": "languages"},
+        {"id": "skill.go", "label": "Go", "group": "languages"},
+        {"id": "skill.postgresql", "label": "PostgreSQL", "group": "databases"},
+    ]
+
+    plan = apply_patch(CvFacts.model_validate(data))
+    section = plan.sections[1]
+
+    assert [
+        (group, [skill.label for skill in group_skills])
+        for group, group_skills in section.skills_by_group
+    ] == [("languages", ["Python", "Go"]), ("databases", ["PostgreSQL"])]
+
+    rendered = render_plan_to_tex(plan)
+    assert "  languages & Python, Go \\\\" in rendered
+    assert "  databases & PostgreSQL \\\\" in rendered
+    # Exactly one row per group: the two language skills share a single line.
+    assert rendered.count("languages &") == 1
+    assert rendered.count("databases &") == 1
 
 
 if __name__ == "__main__":  # pragma: no cover

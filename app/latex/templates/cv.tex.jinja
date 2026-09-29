@@ -72,8 +72,8 @@
 \BLOCK{ endfor }
 \BLOCK{ if section.skills }
 \begin{tabularx}{\textwidth}{@{}lX@{}}
-\BLOCK{ for skill in section.skills }
-  \VAR{skill.group} & \VAR{skill.label} \\
+\BLOCK{ for group, group_skills in section.skills_by_group }
+  \VAR{group} & \VAR{group_skills | map(attribute="label") | join(", ")} \\
 \BLOCK{ endfor }
 \end{tabularx}
 \BLOCK{ endif }
