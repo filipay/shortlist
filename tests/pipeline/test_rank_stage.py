@@ -328,6 +328,51 @@ async def test_run_ranking_threads_the_stored_work_mode_into_the_prompt(
     assert "work-mode preference" in stub.calls[0]["text"].casefold()
 
 
+# --- the required-experience ranking hint ---------------------------------------
+
+
+def test_a_stated_years_floor_adds_a_user_turn_ranking_hint() -> None:
+    facts = _facts()
+    listing = SimpleNamespace(
+        title="Senior Role",
+        company_name="Acme",
+        location_raw="Dublin, Ireland",
+        description="5+ years required.",
+        salary_min=None,
+        salary_max=None,
+    )
+    weights = {
+        "skills": 1.0,
+        "seniority": 1.0,
+        "domain": 1.0,
+        "location": 1.0,
+        "evidence": 1.0,
+        "compensation": 1.0,
+    }
+
+    text = "\n".join(build_ranking_parts(facts, listing, weights))
+
+    assert "5+ years" in text, "the matched fragment is quoted from the listing"
+    assert "floor of 5 years" in text, "the stated floor is named"
+    assert "not a hard filter" in text
+    assert "LISTING (untrusted job-board text" in text, "the listing block still builds"
+
+
+async def test_the_years_hint_never_reaches_the_system_turn(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    run_id = await _seed_run(session_factory)
+    await _add_listing(session_factory, title="Years Role", description="5+ years required.")
+
+    stub = StubBackend()
+    await run_ranking(session_factory, run_id=run_id, llm=stub, facts=_facts())
+
+    assert len(stub.calls) == 1
+    assert "STATED EXPERIENCE REQUIREMENT" in stub.calls[0]["text"]
+    assert stub.calls[0]["system"] == RANK_SYSTEM_PROMPT, (
+        "the hint travels in the user turn only, never in `system`"
+    )
+
 
 # --- the never-fabricate grounding (RANK-05) -----------------------------------
 

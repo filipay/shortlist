@@ -64,6 +64,7 @@ from app.db.repositories.search_repo import (
 from app.domain import rubric
 from app.domain.criteria import DEFAULT_WORK_MODE, work_mode_from
 from app.domain.cv import CvFacts, iter_fact_ids
+from app.domain.listing import required_experience_fragment, required_experience_years
 from app.domain.schemas.ranking import RankingResponse
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend
@@ -236,6 +237,9 @@ def build_ranking_parts(
     hint = _work_mode_hint(work_mode)
     if hint is not None:
         parts.append(hint)
+    experience_hint = _required_experience_hint(listing)
+    if experience_hint is not None:
+        parts.append(experience_hint)
     return parts
 
 
@@ -247,6 +251,29 @@ def _work_mode_hint(work_mode: str) -> str | None:
         "CANDIDATE WORK-MODE PREFERENCE (a ranking hint, not a hard filter): the "
         "candidate prefers hybrid roles. When you judge the location factor, treat "
         "a hybrid arrangement as a better match than a fully on-site one."
+    )
+
+
+def _required_experience_hint(listing: Any) -> str | None:
+    """The user-turn ranking hint for a years floor the listing itself states.
+
+    Reads only ``listing.description``. When no usable figure is present the hint is
+    omitted entirely — absence is never read as "0 required" and never a penalty. The
+    matched fragment is quoted verbatim so a misread is visible rather than silent,
+    and the hint travels in ``parts`` (user turn) only, never ``system``.
+    """
+    description = getattr(listing, "description", None)
+    years = required_experience_years(description)
+    if years is None:
+        return None
+    fragment = required_experience_fragment(description) or ""
+    return (
+        "STATED EXPERIENCE REQUIREMENT (a ranking hint, not a hard filter): the "
+        f"listing's own description states a floor of {years} years, quoted: "
+        f'"{fragment}". When you judge the seniority factor, weigh the candidate\'s '
+        "evidenced experience against that floor; a shortfall may only lower the "
+        "seniority sub-score and must be named in the rationale. This is not a hard "
+        "filter — the listing must stay in the queue."
     )
 
 

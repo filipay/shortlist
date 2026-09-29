@@ -249,6 +249,93 @@ def annualise_salary(
     )
 
 
+# --- required experience ------------------------------------------------------
+#
+# A listing's own description sometimes names a years floor the ranker has no
+# explicit sight of. These helpers surface it deterministically so the seniority
+# factor can weigh it and the rationale can name a shortfall honestly. They are a
+# SOFT signal: absence returns `None` (never "0 required"), a preference-qualified
+# figure is not a requirement, and nothing here filters or hides a listing.
+
+#: The leading captured group is the required floor; the optional tail is a plus
+#: ("+" / "plus") and/or a range (an en/em dash or "to" followed by a second number).
+_REQUIRED_EXPERIENCE_RE = re.compile(
+    r"\b(\d{1,2}(?:\.\d+)?)\s*(?:\+|\bplus\b)?\s*"
+    r"(?:(?:[-–—]|\bto\b)\s*\d{1,2}(?:\.\d+)?\s*)?"
+    r"(?:years?|yrs?)\b",
+    re.IGNORECASE,
+)
+
+#: A clause is the span around a match, split on punctuation and the coordinating
+#: words — a qualifier elsewhere in the sentence must not silence a clean clause.
+_CLAUSE_SPLIT_RE = re.compile(r"[,;.!?\n]|\band\b|\bbut\b", re.IGNORECASE)
+
+#: The designated not-required class. A figure carrying any of these is a
+#: preference, not a requirement (the single biggest error class in extraction).
+_REQUIRED_EXPERIENCE_QUALIFIERS = (
+    "preferred",
+    "ideally",
+    "desirable",
+    "nice to have",
+    "advantage",
+    "beneficial",
+    "an asset",
+    "bonus",
+    "a plus",
+)
+
+
+def _clause_spans(text: str) -> list[tuple[int, int, str]]:
+    """`(start, end, clause)` triples for `text`, in order."""
+    spans: list[tuple[int, int, str]] = []
+    start = 0
+    for match in _CLAUSE_SPLIT_RE.finditer(text):
+        spans.append((start, match.start(), text[start : match.start()]))
+        start = match.end()
+    spans.append((start, len(text), text[start:]))
+    return spans
+
+
+def _required_experience_match(description: str | None) -> re.Match[str] | None:
+    """The first usable match, or `None`.
+
+    A match with a non-positive floor ("0-2 years") is skipped as no signal, and a
+    match whose clause carries a preference qualifier is skipped. Both public
+    helpers derive from this one scan so they can never drift.
+    """
+    if not description:
+        return None
+    clause_spans = _clause_spans(description)
+    for match in _REQUIRED_EXPERIENCE_RE.finditer(description):
+        if int(float(match.group(1))) <= 0:
+            continue
+        for clause_start, clause_end, clause in clause_spans:
+            if clause_start <= match.start() < clause_end:
+                if any(q in clause.casefold() for q in _REQUIRED_EXPERIENCE_QUALIFIERS):
+                    break
+                return match
+    return None
+
+
+def required_experience_years(description: str | None) -> int | None:
+    """The stated years floor, or `None` when there is no usable signal.
+
+    The leading number of a range is the floor ("3-5 years" -> 3). `None` means the
+    description states no requirement — it is NEVER zero required and never a penalty.
+    """
+    match = _required_experience_match(description)
+    return None if match is None else int(float(match.group(1)))
+
+
+def required_experience_fragment(description: str | None) -> str | None:
+    """The exact matched substring, or `None`.
+
+    Quoting the listing's own words keeps a misread visible rather than silent.
+    """
+    match = _required_experience_match(description)
+    return None if match is None else match.group(0)
+
+
 __all__ = [
     "ANNUAL_MULTIPLIERS",
     "LEGAL_SUFFIXES",
@@ -265,4 +352,6 @@ __all__ = [
     "normalise_text",
     "normalise_title",
     "raw_fingerprint",
+    "required_experience_fragment",
+    "required_experience_years",
 ]
