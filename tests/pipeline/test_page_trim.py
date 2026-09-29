@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Listing
 from app.db.repositories.cv_artifact_repo import CvArtifactRecord
-from app.domain.cv import DropBullet, TailoringPatch
+from app.domain.cv import DropBullet, TailoringPatch, apply_patch
 from app.latex.base import CompileResult, EngineProbe
 from app.pipeline import tailor as tailor_module
 from app.pipeline.tailor import MAX_PAGE_TRIM_PASSES, compile_tailored
@@ -23,8 +23,12 @@ from tests.pipeline.test_rank_stage import _add_listing
 from tests.verify.fixtures import VERIFY_FIXTURES, load_standin_facts
 
 NOW = datetime(2026, 9, 24, tzinfo=UTC)
+BULLET1 = "bul/northwind-labs-2021/1"
 BULLET2 = "bul/northwind-labs-2021/2"
 BULLET3 = "bul/northwind-labs-2021/3"
+
+#: A compile that reports ok but produced no PDF (an engine short-circuit path).
+NO_PDF = "no-pdf"
 
 LAYER_ONE_CHECKS = {
     "id_containment",
@@ -38,7 +42,7 @@ LAYER_ONE_CHECKS = {
 class ScriptedEngine:
     """A compile whose page count follows a script; ``None`` means a failed compile."""
 
-    def __init__(self, outcomes: list[int | None]) -> None:
+    def __init__(self, outcomes: list[int | None | str]) -> None:
         self.outcomes = list(outcomes)
         self.calls: list[str] = []
 
@@ -48,13 +52,17 @@ class ScriptedEngine:
         outcome = self.outcomes.pop(0) if self.outcomes else 1
         if outcome is None:
             return CompileResult(ok=False, engine="fake", error="boom", error_kind="compile_error")
+        if outcome == NO_PDF:
+            return CompileResult(
+                ok=True, engine="fake", pdf_path=None, page_count=9, compile_log="ok"
+            )
         pdf = workdir / "cv.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake\n")
         return CompileResult(
             ok=True,
             engine="fake",
             pdf_path=str(pdf),
-            page_count=outcome,
+            page_count=int(outcome),
             tex_hash="a" * 64,
             pdf_hash="b" * 64,
             compile_log="ok",
@@ -71,7 +79,7 @@ async def _compile(
     *,
     title: str,
     patch: TailoringPatch,
-    outcomes: list[int | None],
+    outcomes: list[int | None | str],
     extract: str = "base_extract.txt",
 ) -> tuple[int, CvArtifactRecord, ScriptedEngine]:
     listing_id = await _add_listing(session_factory, title=title)
@@ -292,6 +300,99 @@ async def test_a_sole_survivor_entry_stops_the_trim(
     assert record.page_count == 3
     assert len(engine.calls) == 1, "no candidate: the entry header would be orphaned"
     assert record.patch_json == patch.model_dump(mode="json")
+
+
+async def test_a_page_count_equal_to_the_budget_does_not_trim(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, record, engine = await _compile(
+        session_factory,
+        tmp_path,
+        monkeypatch,
+        title="Exactly On Budget",
+        patch=TailoringPatch(listing_id=1),
+        outcomes=[2, 2],
+    )
+
+    assert record.compile_status == "ok"
+    assert len(engine.calls) == 1, "the budget is a ceiling, not a floor"
+    assert _check_status(record, "page_budget") == "pass"
+
+
+async def test_a_zero_pass_bound_trims_nothing(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(tailor_module, "MAX_PAGE_TRIM_PASSES", 0)
+    _, record, engine = await _compile(
+        session_factory,
+        tmp_path,
+        monkeypatch,
+        title="Zero Pass Bound",
+        patch=TailoringPatch(listing_id=1),
+        outcomes=[9, 9],
+    )
+
+    assert record.compile_status == "ok"
+    assert len(engine.calls) == 1
+    assert record.patch_json["ops"] == []
+    assert _check_status(record, "page_budget") == "warn"
+
+
+async def test_a_compile_that_reports_ok_with_no_pdf_falls_back(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, record, engine = await _compile(
+        session_factory,
+        tmp_path,
+        monkeypatch,
+        title="No Pdf Compile",
+        patch=TailoringPatch(listing_id=1),
+        outcomes=[3, NO_PDF],
+    )
+
+    assert record.compile_status == "ok"
+    assert record.page_count == 3, "the last good compile is retained"
+    assert len(engine.calls) == 2
+    assert record.patch_json["ops"] == [], "a PDF-less candidate is not accepted"
+
+
+async def test_the_trim_removes_whole_bullets_and_never_rewrites_text(
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, record, _ = await _compile(
+        session_factory,
+        tmp_path,
+        monkeypatch,
+        title="No Rewrites",
+        patch=TailoringPatch(listing_id=1),
+        outcomes=[3, 2],
+    )
+
+    facts = load_standin_facts()
+    source = {bullet.id: bullet.text for entry in facts.all_entries() for bullet in entry.bullets}
+    effective = TailoringPatch.model_validate(record.patch_json)
+    plan = apply_patch(facts, effective)
+
+    plan_ids = {
+        bullet.id
+        for section in plan.sections
+        for entry in section.entries
+        for bullet in entry.bullets
+    }
+    assert plan_ids == set(source) - {BULLET3}, "only the trimmed bullet is gone"
+    for section in plan.sections:
+        for entry in section.entries:
+            assert entry.org and entry.title and entry.dates, "the header is never orphaned"
+            for bullet in entry.bullets:
+                assert bullet.text == source[bullet.id], "bullet text is immutable"
 
 
 if __name__ == "__main__":  # pragma: no cover

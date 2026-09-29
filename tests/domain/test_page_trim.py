@@ -193,6 +193,48 @@ def test_it_returns_none_when_every_entry_has_a_single_survivor() -> None:
     assert drop is None
 
 
+# --- the selector is pure and never rebuilds text -------------------------------
+
+
+def test_it_does_not_mutate_the_plan_or_the_patch() -> None:
+    facts = _facts()
+    plan = apply_patch(facts)
+    patch = _patch(DropBullet(op="drop_bullet", bullet_id=SIDE1, reason="r"))
+    patch_before = patch.model_dump(mode="json")
+    plan_before = _shape(plan)
+
+    next_page_trim(plan, patch, max_pages=2)
+
+    assert patch.model_dump(mode="json") == patch_before
+    assert _shape(plan) == plan_before
+
+
+def test_a_trim_keeps_the_entry_header_and_never_rebuilds_bullet_text() -> None:
+    facts = _facts()
+    patch = _patch(DropBullet(op="drop_bullet", bullet_id=SIDE2, reason="trimmed"))
+    source = {bullet.id: bullet.text for entry in facts.all_entries() for bullet in entry.bullets}
+
+    plan = apply_patch(facts, patch)
+    entry = next(item for section in plan.sections for item in section.entries if item.id == SIDE)
+
+    assert entry.org
+    assert entry.title
+    assert entry.dates
+    assert [bullet.id for bullet in entry.bullets] == [SIDE1]
+    for bullet in entry.bullets:
+        assert bullet.text == source[bullet.id]
+
+
+def _shape(plan) -> list:
+    return [
+        (
+            section.id,
+            [(entry.id, [bullet.id for bullet in entry.bullets]) for entry in section.entries],
+        )
+        for section in plan.sections
+    ]
+
+
 if __name__ == "__main__":  # pragma: no cover
     import pytest
 
