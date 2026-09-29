@@ -43,6 +43,7 @@ from app.domain.cv import (
     UnknownIdError,
     apply_patch,
     facts_hash,
+    next_page_trim,
 )
 from app.latex.base import LatexEngine
 from app.latex.compile import extract_pdf_text
@@ -81,6 +82,13 @@ TAILOR_SKIP_LABELS: dict[str, str] = {
 #: sentinel keeps the shared `_reserve` call shape identical to ranking's while making
 #: the run check a guaranteed no-op.
 _CAP_RUN_UNBOUNDED = 2**31 - 1
+
+#: A loop bound, not a Settings ceiling: it caps the INTERNAL compile work one tailor
+#: may trigger (the render→compile→drop passes), so an over-budget CV cannot spin the
+#: engine without limit. It needs no config surface; the upgrade path is a Settings
+#: field if it ever becomes operator-tunable. The accepted-drop count is capped here,
+#: so an engine call count of ``MAX_PAGE_TRIM_PASSES + 1`` is the hard maximum.
+MAX_PAGE_TRIM_PASSES = 6
 
 
 def tailoring_skip_reason() -> str | None:
@@ -346,6 +354,7 @@ async def compile_tailored(
             now=now,
         )
 
+    effective_patch = patch
     tex = render_plan_to_tex(plan)
     tex_hash = hashlib.sha256(tex.encode("utf-8")).hexdigest()
     base = Path(artifacts_dir) / str(listing_id)
@@ -354,6 +363,59 @@ async def compile_tailored(
     # older artifact row's `pdf_path` is never overwritten (D-117).
     workdir = base / tex_hash[:12]
     compile_result = await engine.compile(tex=tex, workdir=workdir)
+
+    # Page-budget trim (PLAT-04 / T-260929-PAN-01..03): the rendered CV exceeds the
+    # CV's OWN ``meta.max_pages``, so drop the lowest-value surviving bullet, re-render
+    # and recompile, until it fits, the candidate list is exhausted, or the bound is
+    # hit. Only WHOLE bullets are removed and every removal is a reasoned ``DropBullet``
+    # recorded in the change log, so the trim can never be silent. Reads the compiled
+    # page count and ``facts.meta.max_pages`` ONLY — never a verification finding.
+    trims = 0
+    while (
+        compile_result.ok
+        and compile_result.pdf_path
+        and (compile_result.page_count or 0) > facts.meta.max_pages
+        and trims < MAX_PAGE_TRIM_PASSES
+    ):
+        drop = next_page_trim(plan, effective_patch, max_pages=facts.meta.max_pages)
+        if drop is None:
+            break
+        candidate_patch = TailoringPatch(
+            listing_id=effective_patch.listing_id,
+            ops=[*effective_patch.ops, drop],
+            gaps=effective_patch.gaps,
+            suggestions=effective_patch.suggestions,
+        )
+        try:
+            candidate_plan = apply_patch(facts, candidate_patch)
+        except (UnknownIdError, InvalidPatchError):  # pragma: no cover — the drop is grounded
+            break
+        candidate_tex = render_plan_to_tex(candidate_plan)
+        candidate_hash = hashlib.sha256(candidate_tex.encode("utf-8")).hexdigest()
+        candidate_tex_path = write_rendered(candidate_tex, base / f"cv-{candidate_hash[:12]}.tex")
+        candidate_result = await engine.compile(
+            tex=candidate_tex, workdir=base / candidate_hash[:12]
+        )
+        if not candidate_result.ok or not candidate_result.pdf_path:
+            # A failed trim recompile must never turn a valid over-budget CV into a
+            # failed artifact: keep the last good compile and stop trimming.
+            break
+        effective_patch = candidate_patch
+        plan = candidate_plan
+        tex = candidate_tex
+        tex_hash = candidate_hash
+        tex_path = candidate_tex_path
+        compile_result = candidate_result
+        trims += 1
+
+    if trims:
+        # The FINAL trimmed plan+patch is what is persisted and verified: the stored
+        # change log carries a reasoned drop per trim, and Layer 1 is re-run so the
+        # stored ``bullet_conservation`` check describes the plan actually compiled.
+        patch_payload = effective_patch.model_dump(mode="json")
+        change_log = [change.model_dump(mode="json") for change in plan.changes]
+        verification = verify_plan(facts, plan, effective_patch, now=now)
+        verification_json = {**verification.model_dump(mode="json"), "fact_store_hash": store_hash}
 
     if not compile_result.ok or not compile_result.pdf_path:
         # An engine failure is `failed`, NEVER `blocked`: Layer-2 verification never
@@ -472,6 +534,7 @@ async def compile_tailored(
 
 
 __all__ = [
+    "MAX_PAGE_TRIM_PASSES",
     "TAILOR_SKIP_DISABLED",
     "TAILOR_SKIP_FACT_STORE",
     "TAILOR_SKIP_LABELS",

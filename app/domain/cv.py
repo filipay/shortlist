@@ -145,8 +145,7 @@ class Section(_Forbid):
     def _title_key_is_known(cls, value: str) -> str:
         if value not in SECTION_TITLES:
             raise ValueError(
-                f"unknown section title_key {value!r};"
-                f" known keys: {sorted(SECTION_TITLES)}"
+                f"unknown section title_key {value!r}; known keys: {sorted(SECTION_TITLES)}"
             )
         return value
 
@@ -221,11 +220,7 @@ class CvFacts(_Forbid):
 
     def all_entries(self) -> list[Entry]:
         """Every entry, sections in ``order`` and entries in declaration order."""
-        return [
-            entry
-            for section in self.ordered_sections()
-            for entry in section.entries
-        ]
+        return [entry for section in self.ordered_sections() for entry in section.entries]
 
     def entry_by_id(self, entry_id: str) -> Entry | None:
         """The entry with ``entry_id``, or ``None``. Total — never raises."""
@@ -243,8 +238,7 @@ class CvFacts(_Forbid):
             for entry in section.entries:
                 if entry.org_id not in org_ids:
                     raise ValueError(
-                        f"entry {entry.id!r} names org_id {entry.org_id!r}"
-                        f" which is not in `orgs`"
+                        f"entry {entry.id!r} names org_id {entry.org_id!r} which is not in `orgs`"
                     )
                 if entry.title_id not in title_ids:
                     raise ValueError(
@@ -621,6 +615,47 @@ def _patch_is_empty(patch: TailoringPatch) -> bool:
     return not patch.ops and not patch.gaps and not patch.suggestions
 
 
+#: The reason recorded on every page-budget trim drop (T-260929-PAN-01). It is the
+#: fixed, non-empty reason a trim needs so the removal is never silent: it becomes a
+#: ``ChangeRecord`` in ``plan.changes`` and is disclosed on the compile response.
+PAGE_TRIM_REASON_TEMPLATE = "dropped to fit the {limit}-page budget"
+
+#: The ops that NAME a bullet. A trim drop on a bullet one of these already targets
+#: would be a duplicate target ``_validate_patch`` rejects, so such a bullet is skipped.
+_BULLET_TARGETING_OPS = (BulletMove, BulletWeight, DemoteBullet, DropBullet)
+
+
+def next_page_trim(plan: RenderPlan, patch: TailoringPatch, *, max_pages: int) -> DropBullet | None:
+    """The next lowest-value surviving bullet to drop to reach the page budget, or ``None``.
+
+    There is deliberately NO new score. The plan already carries a total value order:
+    :func:`_ordered_bullets` places each entry's bullets by reweight weight DESC with
+    demoted bullets last and explicit moves applied afterwards, so an entry's LAST
+    bullet is its lowest-value survivor; and ``plan.sections`` follows ``Section.order``,
+    so the document's bottom is its least-relevant tail. Walking
+    sections → entries → bullets in reverse therefore yields the lowest-value bullet
+    first.
+
+    A bullet is INELIGIBLE when it is already named by any op in ``patch.ops`` (a second
+    op on one bullet would be rejected by ``_validate_patch`` as a duplicate target), or
+    when it is its entry's ONLY surviving bullet (dropping it would leave the entry's
+    org/title/dates header with nothing under it). Returns ``None`` when nothing is
+    eligible. Pure: standard library plus the carried-through plan only — no clock, no
+    I/O, no new score.
+    """
+    targeted = {op.bullet_id for op in patch.ops if isinstance(op, _BULLET_TARGETING_OPS)}
+    reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=max_pages)
+    for section in reversed(plan.sections):
+        for entry in reversed(section.entries):
+            if len(entry.bullets) <= 1:
+                continue
+            for bullet in reversed(entry.bullets):
+                if bullet.id in targeted:
+                    continue
+                return DropBullet(op="drop_bullet", bullet_id=bullet.id, reason=reason)
+    return None
+
+
 def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
     """All-or-nothing validation (D-106): raise on the FIRST violation, never repair.
 
@@ -656,9 +691,7 @@ def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
     for gap in patch.gaps:
         for referenced in gap.evidence_ids:
             if referenced not in known_ids:
-                raise UnknownIdError(
-                    f"gap finding references unknown evidence id {referenced!r}"
-                )
+                raise UnknownIdError(f"gap finding references unknown evidence id {referenced!r}")
     for suggestion in patch.suggestions:
         for referenced in _referenced_ids(suggestion):
             if referenced not in known_ids:
@@ -685,9 +718,7 @@ def _validate_patch(facts: CvFacts, patch: TailoringPatch) -> None:
     # 3. Cross-entry move (A5, locked): a move_bullet whose before_id resolves into a
     #    different entry than its bullet_id is rejected rather than re-ordered.
     entry_of_bullet = {
-        bullet.id: entry.id
-        for entry in facts.all_entries()
-        for bullet in entry.bullets
+        bullet.id: entry.id for entry in facts.all_entries() for bullet in entry.bullets
     }
     for op in patch.ops:
         if isinstance(op, BulletMove) and op.before_id is not None:
@@ -731,9 +762,7 @@ def _ordered_bullets(
     if demoted:
         promoted = [bullet for bullet in ordered if bullet.id not in demoted]
         tail = [
-            bullet
-            for bullet in entry.bullets
-            if bullet.id in demoted and bullet.id not in dropped
+            bullet for bullet in entry.bullets if bullet.id in demoted and bullet.id not in dropped
         ]
         ordered = promoted + tail
 
@@ -779,12 +808,8 @@ def _build_plan(facts: CvFacts, patch: TailoringPatch) -> RenderPlan:
     weights = {op.bullet_id: op.weight for op in patch.ops if isinstance(op, BulletWeight)}
     demoted = {op.bullet_id for op in patch.ops if isinstance(op, DemoteBullet)}
     dropped = {op.bullet_id for op in patch.ops if isinstance(op, DropBullet)}
-    moves = [
-        (op.bullet_id, op.before_id) for op in patch.ops if isinstance(op, BulletMove)
-    ]
-    section_orders = {
-        op.section_id: op.order for op in patch.ops if isinstance(op, ReorderSection)
-    }
+    moves = [(op.bullet_id, op.before_id) for op in patch.ops if isinstance(op, BulletMove)]
+    section_orders = {op.section_id: op.order for op in patch.ops if isinstance(op, ReorderSection)}
 
     org_names = {org.id: org.name for org in facts.orgs}
     title_names = {title.id: title.name for title in facts.titles}
@@ -792,9 +817,7 @@ def _build_plan(facts: CvFacts, patch: TailoringPatch) -> RenderPlan:
     # Sections stable-sorted by the effective order (a reorder overrides the stored
     # order); declaration order is the tie-break, mirroring `CvFacts.ordered_sections`.
     sections: list[RenderedSection] = []
-    for section in sorted(
-        facts.sections, key=lambda item: section_orders.get(item.id, item.order)
-    ):
+    for section in sorted(facts.sections, key=lambda item: section_orders.get(item.id, item.order)):
         entries = [
             RenderedEntry(
                 id=entry.id,
@@ -853,6 +876,7 @@ def apply_patch(facts: CvFacts, patch: TailoringPatch | None = None) -> RenderPl
 __all__ = [
     "SECTION_TITLES",
     "SCHEMA_VERSION",
+    "PAGE_TRIM_REASON_TEMPLATE",
     "Bullet",
     "BulletMove",
     "BulletWeight",
@@ -885,6 +909,7 @@ __all__ = [
     "facts_hash",
     "find_duplicate_ids",
     "iter_fact_ids",
+    "next_page_trim",
     "qualify_entry_ids",
     "slugify",
     "verify_original_matches",

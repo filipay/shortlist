@@ -236,9 +236,7 @@ def _gap_bands(facts: CvFacts, patch: TailoringPatch) -> list[str | None]:
 _FINDING_SEVERITY = {"gap": 0, "transferable": 1, "adjacent": 1, "direct": 2}
 
 
-def _requirement_rows(
-    facts: CvFacts, patch: TailoringPatch
-) -> list[dict[str, Any]]:
+def _requirement_rows(facts: CvFacts, patch: TailoringPatch) -> list[dict[str, Any]]:
     """The ``patch.gaps`` findings paired with their band, ordered gap → partial → met.
 
     The band is positional against ``patch.gaps``, so it is paired here BEFORE the sort
@@ -247,8 +245,7 @@ def _requirement_rows(
     """
     bands = _gap_bands(facts, patch)
     rows = [
-        {"finding": finding, "band": band}
-        for finding, band in zip(patch.gaps, bands, strict=True)
+        {"finding": finding, "band": band} for finding, band in zip(patch.gaps, bands, strict=True)
     ]
     return sorted(rows, key=lambda row: _FINDING_SEVERITY.get(row["finding"].status, 3))
 
@@ -317,9 +314,7 @@ def _review_response(
     )
 
 
-def _draft_review_html(
-    listing_id: int, draft: cv_draft_repo.CvDraftRecord
-) -> str | None:
+def _draft_review_html(listing_id: int, draft: cv_draft_repo.CvDraftRecord) -> str | None:
     """The stored draft's review fragment, or `None` when it can no longer render.
 
     Degrades safely rather than 500-ing the page: a missing/unreadable fact store, an
@@ -345,11 +340,30 @@ def _draft_review_html(
     )
 
 
-def _download_fragment(listing_id: int) -> str:
+def _compiled_fragment(listing_id: int, record: cv_artifact_repo.CvArtifactRecord) -> str:
+    """The compile ``ok`` fragment: the download affordance plus every page trim.
+
+    The page-budget trim (T-260929-PAN-01) drops whole bullets, so the compile
+    response must NAME each removal and its reason — the change log's ``drop_bullet``
+    rows are the disclosure, reused rather than recomputed. No drop rows renders
+    exactly the prior fragment.
+    """
+    drops = [
+        row
+        for row in (record.change_log_json or [])
+        if isinstance(row, dict) and row.get("op") == "drop_bullet"
+    ]
+    items = "".join(
+        f"<li><code>{html.escape(str(row.get('target_id', '')))}</code> — "
+        f"{html.escape(str(row.get('detail', '')))}</li>"
+        for row in drops
+    )
+    trimmed = f'<ul class="page-trims">{items}</ul>' if items else ""
     return (
         '<div id="tailoring-review" class="tailoring-result" data-status="ok">'
         "<p>Compiled.</p>"
         f'<a class="cv-download" href="/listings/{listing_id}/cv/pdf">Download PDF</a>'
+        f"{trimmed}"
         "</div>"
     )
 
@@ -621,7 +635,7 @@ async def compile_tailored_cv(
     await session.commit()
 
     if record.compile_status == "ok":
-        return HTMLResponse(_download_fragment(listing_id))
+        return HTMLResponse(_compiled_fragment(listing_id, record))
     return HTMLResponse(_findings_fragment(record))
 
 
