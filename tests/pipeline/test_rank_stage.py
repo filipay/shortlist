@@ -374,6 +374,34 @@ async def test_the_years_hint_never_reaches_the_system_turn(
     )
 
 
+def test_a_non_requirement_adds_no_years_hint() -> None:
+    facts = _facts()
+    weights = {
+        "skills": 1.0,
+        "seniority": 1.0,
+        "domain": 1.0,
+        "location": 1.0,
+        "evidence": 1.0,
+        "compensation": 1.0,
+    }
+
+    for description in ("5+ years of experience preferred", "Build the thing.", None):
+        listing = SimpleNamespace(
+            title="Some Role",
+            company_name="Acme",
+            location_raw="Dublin, Ireland",
+            description=description,
+            salary_min=None,
+            salary_max=None,
+        )
+
+        text = "\n".join(build_ranking_parts(facts, listing, weights))
+
+        assert "STATED EXPERIENCE REQUIREMENT" not in text, (
+            f"{description!r} must add no years hint"
+        )
+
+
 # --- the never-fabricate grounding (RANK-05) -----------------------------------
 
 
