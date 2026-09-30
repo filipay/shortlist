@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 Phase: 06 (Tailoring + Verification) — EXECUTING
 Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-09-29 - Completed quick task 260929-pan: Make the tailored CV actively fit the page budget by dropping whole bullets until it fits, candidates are exhausted, or the pass bound is hit
+Last activity: 2026-09-30 - Completed quick task 260930-lay: Add three committed CV layouts (Classic default / Modern / Compact) as one remembered global preference stored beside cv.yaml and applied to the next tailored CV, with a settings picker
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
 
@@ -193,6 +193,7 @@ None yet.
 | 260929-i46 | Extract the required years of experience from each listing's description as a soft ranking hint | 2026-09-29 | 6ebc31b | [260929-i46-extract-the-required-years-of-experience](./quick/260929-i46-extract-the-required-years-of-experience/) |
 | 260929-m1j | Fix the skills section: widen the model-assisted CV extraction schema so each skill carries a group, update the extraction prompt to ask for it, and group the rendered skills by group in the LaTeX template so the section renders as labelled lines instead of one row per skill | 2026-09-29 | 3dbaecd | [260929-m1j-fix-the-skills-section-widen-the-model-a](./quick/260929-m1j-fix-the-skills-section-widen-the-model-a/) |
 | 260929-pan | Make the tailored CV actively fit the page budget: drop the lowest-value whole bullets until it fits, the candidates are exhausted, or the pass bound is hit, recording each drop as a reasoned change in the patch and the compile response | 2026-09-29 | 59ed706 | [260929-pan-make-the-tailored-cv-actively-fit-the-pa](./quick/260929-pan-make-the-tailored-cv-actively-fit-the-pa/) |
+| 260930-lay | Add three committed CV layouts (Classic default / Modern / Compact) with one remembered global preference stored as a one-token layout file beside cv.yaml, applied to the next tailored CV, failing closed to Classic, and a settings picker | 2026-09-30 | 0b8911e | [260930-lay-cv-layout-variants](./quick/260930-lay-cv-layout-variants/) |
 
 ## Deferred Items
 
