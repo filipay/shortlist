@@ -109,6 +109,26 @@
   </form>
 </section>
 
+<section class="settings-card" id="screening-questions">
+  <h3>Screening questions</h3>
+  <p class="settings-note">
+    The questions the apply package drafts answers to for each job (D-124). The tool
+    does <strong>not</strong> infer questions from a job description — they come only
+    from this list plus the ad-hoc box on a package page. One question per line; the
+    order is preserved.
+  </p>
+  <form method="post" action="/settings/screening-questions">
+    <div class="field">
+      <label class="field-label" for="screening-questions-text">Questions</label>
+      <textarea id="screening-questions-text" name="questions" rows="6" spellcheck="false">{{ screening_questions | join('\n') }}</textarea>
+      <p class="field-note">One question per line. An empty list is allowed — drafting then has nothing to answer.</p>
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="screening-questions-submit">Save questions</button>
+    </div>
+  </form>
+</section>
+
 <section class="settings-card" id="cv-fact-store">
   <h3>CV fact store</h3>
   <p class="settings-note">

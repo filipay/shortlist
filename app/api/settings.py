@@ -43,7 +43,7 @@ from app.cv.import_tex import parse_tex, write_draft
 from app.cv.layout import read_layout, write_layout
 from app.cv.llm_extract import ExtractionError, extract_facts
 from app.db.models import Base, Run
-from app.db.repositories import llm_call_repo, ranking_config_repo
+from app.db.repositories import apply_config_repo, llm_call_repo, ranking_config_repo
 from app.db.session import get_session
 from app.domain import rubric
 from app.domain.models import User
@@ -81,6 +81,10 @@ CV_UPLOAD_PATH = "/settings/cv"
 #: The CV layout picker (DESIGN.md §4). A plain full-page POST, like the weights and
 #: reset cards: no htmx swap, no model call, and it works with JavaScript off.
 CV_LAYOUT_PATH = "/settings/cv-layout"
+
+#: The screening-question editor (D-124). A plain full-page POST like the weights card:
+#: no htmx swap is involved and the route makes ZERO model calls.
+SCREENING_QUESTIONS_PATH = "/settings/screening-questions"
 
 #: The picker's grounded copy (DESIGN.md §4). Labels and notes are keyed by the
 #: renderer's own layout tokens; a token that lacks an entry still renders (its key),
@@ -222,6 +226,10 @@ async def _settings_context(
         # re-render after a save, so the pre-filled values and the note cannot disagree.
         "weights": await ranking_config_repo.read_weights(session),
         "factors": tuple((key, rubric.FACTOR_LABELS[key]) for key in rubric.FACTORS),
+        # The screening-question editor (D-124). One read backs both the initial render
+        # and the re-render after a save; the fallback for an absent row is the
+        # code-level DEFAULT_QUESTIONS, so a fresh install shows a usable list.
+        "screening_questions": await apply_config_repo.read_questions(session),
         # The CV fact-store card. The same path string and the same total probe serve
         # the settings card, the queue status line and `/health`, so the three surfaces
         # cannot disagree about where the loader reads or whether it loaded.
@@ -332,6 +340,42 @@ async def save_weights(
         request,
         SETTINGS_TEMPLATE,
         await _settings_context(session, banner="Weights saved."),
+    )
+
+
+@router.post(SCREENING_QUESTIONS_PATH, response_class=HTMLResponse)
+async def save_screening_questions(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Persist the screening-question list and re-render the settings page.
+
+    **This route makes ZERO model calls.** A plain full-page POST mirroring the weights
+    card: the list arrives either as repeated ``question`` fields or as a newline-
+    separated ``questions`` textarea. Order is preserved; blanks are dropped. An empty
+    submission stores an explicit empty list (so "no questions" is expressible) rather
+    than falling back to the defaults.
+    """
+    form = await read_form(request)
+    repeated = form.getlist("question")
+    if repeated:
+        submitted = repeated
+    else:
+        raw = form.get("questions")
+        submitted = raw.splitlines() if isinstance(raw, str) else []
+
+    stored = await apply_config_repo.write_questions(
+        session, submitted, now=datetime.now(UTC)
+    )
+    await session.commit()
+    log.info("settings.screening_questions_saved", count=len(stored))
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(
+            session, banner=f"Saved {len(stored)} screening question(s)."
+        ),
     )
 
 

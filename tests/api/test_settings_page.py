@@ -111,3 +111,35 @@ async def test_the_cv_card_reports_a_readable_store(
     assert "A readable CV fact store is loaded from" in response.text
     assert "no readable CV fact store" not in response.text
 
+
+# --- the screening-question card (D-124) ---------------------------------------
+
+
+async def test_the_screening_question_card_renders_the_defaults(client) -> None:
+    from app.db.repositories.apply_config_repo import DEFAULT_QUESTIONS
+
+    response = await client.get("/settings")
+
+    assert 'id="screening-questions"' in response.text
+    assert 'action="/settings/screening-questions"' in response.text
+    assert 'name="questions"' in response.text
+    for question in DEFAULT_QUESTIONS:
+        assert question in response.text, question
+
+
+async def test_a_post_persists_the_screening_question_list(client) -> None:
+    response = await client.post(
+        "/settings/screening-questions",
+        data={"questions": "Why this role?\nNotice period?"},
+    )
+
+    assert response.status_code == 200
+    assert "Saved 2 screening question(s)." in response.text
+    assert "Why this role?" in response.text
+    assert "Notice period?" in response.text
+
+    # A subsequent GET reads the stored list back (the write committed).
+    again = await client.get("/settings")
+    assert "Why this role?" in again.text
+    assert "Notice period?" in again.text
+
