@@ -216,5 +216,13 @@ class Settings(BaseSettings):
     tailoring_grounding_threshold: int = 80
     tailoring_grounding_review_threshold: int = 55
 
+    # --- Phase 7 screening drafting (D-125) -----------------------------------
+    #: The operator off switch for screening-answer drafting, mirroring
+    #: `tailoring_enabled`. `False` makes the drafting surface refuse before any model
+    #: call — zero `llm_calls` rows, zero `screening_drafts` writes. Deliberately NOT
+    #: a ceiling (D-119): apply-drafting spend shares the rolling-24h
+    #: `ranking_max_calls_per_day` value and mints no new numeric knob.
+    apply_drafting_enabled: bool = True
+
 
 settings = Settings()

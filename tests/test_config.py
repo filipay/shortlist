@@ -87,6 +87,9 @@ REQUIRED_SETTINGS_FIELDS = (
     # scan over `app/verify` catches a hard-coded threshold there.
     "tailoring_grounding_threshold",
     "tailoring_grounding_review_threshold",
+    # Phase 7 (D-125): the screening-drafting operator off switch. Like the two
+    # switches above it is a boolean, so it is guarded by the surface tier only.
+    "apply_drafting_enabled",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -361,6 +364,28 @@ def test_the_tailoring_switch_is_not_a_ceiling() -> None:
     """
     assert "tailoring_enabled" in REQUIRED_SETTINGS_FIELDS
     assert "tailoring_enabled" not in LIMIT_FIELDS
+
+
+def test_apply_drafting_enabled_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-125's off switch is configuration, not a code change or a call-site edit."""
+    assert Settings.model_fields["apply_drafting_enabled"].default is True
+
+    monkeypatch.setenv("APPLY_DRAFTING_ENABLED", "false")
+
+    assert Settings().apply_drafting_enabled is False
+
+
+def test_the_apply_switch_is_not_a_ceiling() -> None:
+    """The written-down asymmetry: the Phase-7 switch is not a numeric ceiling.
+
+    Guarded explicitly so a later edit cannot pull `apply_drafting_enabled` into
+    LIMIT_FIELDS, where its boolean default would fail
+    `test_every_limit_field_is_a_required_numeric_ceiling`.
+    """
+    assert "apply_drafting_enabled" in REQUIRED_SETTINGS_FIELDS
+    assert "apply_drafting_enabled" not in LIMIT_FIELDS
 
 
 def test_every_limit_field_is_a_required_numeric_ceiling() -> None:
