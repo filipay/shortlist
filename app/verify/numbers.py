@@ -18,8 +18,9 @@ match each other.
 assumption A3 needs ``2021-03`` to yield the date cores ``2021`` and ``03`` so
 they can be excluded. ``squash`` removes the hyphen and would fuse the whole
 date into ``202103``, defeating that exclusion. So an entry's region is located
-on the entry's own HEADER line — the line carrying both ``squash(org)`` and
-``squash(title)`` that is also gated by the entry's date-range needle on that
+on the entry's own HEADER line — the line carrying ``squash(org)`` first,
+``squash(title)``, and the org/title separator (a dash run between them), that is
+also gated by the entry's date-range needle on that
 line or its immediate successor — and is then read from the ORIGINAL lines,
 which preserve the date hyphen. ``squash`` remains the substrate for the
 membership checks that genuinely need it (``entity_present``, ``verbatim_integrity``).
@@ -143,7 +144,7 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     """The line index of each entry's own header line, in plan order (``-1`` when absent).
 
     Region ``i`` starts on a line that BEGINS with ``squash(org)`` (the template
-    emits the org first on the header line, ``cv.tex.jinja:58``), AND carries
+    emits the org first on the header line, ``cv.tex.jinja:61``), AND carries
     ``squash(title)``, AND carries the org/title separator (a dash run between
     them), AND has the entry's date-range needle ``squash(entry.dates)`` on that same
     line or on its immediately following line. The org-first position is the
@@ -172,9 +173,14 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     region start; the later entry is anchored there and a surplus digit still
     hard-fails. No line-granularity predicate can separate the two, so this residual
     is a hard ``fail``, not the ``warn`` the region-end bound gives an *unanchored*
-    neighbour. If extraction drops or normalises the separator on a REAL header, the
-    entry falls to ``found=False`` and check 4 reports a visible ``warn`` naming it -
-    a fail-closed loss of precision, never a false fail and never a silent skip.
+    neighbour. The gate is per-entry MONOTONE: it can only refuse an anchor, so a
+    dropped or normalised separator on a real header degrades that entry to
+    ``found=False`` and a visible ``warn`` naming it - never a silent skip. It is not,
+    however, a global no-false-fail guarantee: if such a header loses its separator so
+    the cursor does not advance past it, AND a line before it reproduces a later
+    entry's full header, that later entry anchors early and absorbs the earlier
+    entry's digit - the compound case is subsumed by the residual above, not a
+    separate class.
 
     All three needles must be non-empty: an empty ``squash`` needle would make the
     membership test vacuously true and silently restore a content-only match, so an

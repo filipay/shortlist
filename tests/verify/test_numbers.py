@@ -1130,5 +1130,51 @@ def test_a_bullet_opening_with_the_next_org_title_and_dates_never_hijacks_a_regi
         assert squash(next_dates) in squashed
 
 
+def test_a_bullet_reproducing_a_full_header_is_the_documented_hard_fail_ceiling() -> None:
+    """The accepted residual: a line reproducing the FULL header is a region start.
+
+    A bullet that literally opens ``<org> --- <title> <dates> ...`` carries the same
+    separator signature as a real header and is structurally indistinguishable from
+    one at line granularity, so it IS taken as the later entry's region start and a
+    surplus digit there is a hard ``fail`` (not the ``warn`` an unanchored neighbour
+    gives). This pins the discriminator's known ceiling: the test breaks if the gate
+    is later relaxed, and the docstring states this residual rather than a guarantee.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Acme --- Senior Engineer 2019-01 -- 2019-12 delivered 99 platform",
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (
+        "Globex Inc --- Engineer\n"
+        "2018-01 -- 2018-12\n"
+        "Acme --- Senior Engineer 2019-01 -- 2019-12 delivered 99 platform\n"
+        "Acme --- Senior Engineer\n"
+        "2019-01 -- 2019-12\n"
+        "Led 7 people\n"
+    )
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    # The full-header bullet is taken as B's start, so the surplus ``99`` is charged
+    # to B rather than downgraded to a visible warn.
+    assert [report.found for report in reports] == [True, True]
+    assert check.status == "fail"
+    assert "exp/acme-2019:99" in check.offending
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
