@@ -1,0 +1,74 @@
+% =============================================================================
+% cv-compact.tex.jinja — a selectable CV layout. Denser presentation, identical
+% facts. Rationale and selection UX: .planning/quick/260930-lay-cv-layout-variants/DESIGN.md.
+%
+% Same RenderPlan contract as cv.tex.jinja: the same sections, entries, bullets
+% and skills_by_group are emitted, with the same escaping choke point. Only the
+% typography and composition differ. No clock, no randomness, no uuid — any date
+% in the output comes from the fact store.
+%
+% Delimiters are the LaTeX-safe backslash-VAR / backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow.
+% =============================================================================
+\documentclass[10pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=0.65in}
+\hypersetup{hidelinks}
+
+% Quiet headings: base-size bold, tight spacing, no rule. Density does the work.
+\titleformat{\section}{\normalfont\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{7pt}{2pt}
+
+\setlist[itemize]{leftmargin=1em,labelsep=0.35em,itemsep=0pt,topsep=1pt,parsep=0pt}
+
+\begin{document}
+\BLOCK{ if plan.name }
+\noindent{\Large\bfseries \VAR{plan.name}}\par
+\vspace{2pt}
+\noindent{\small
+\BLOCK{ if plan.contact_location }\VAR{plan.contact_location}\BLOCK{ endif }
+\BLOCK{ if plan.contact_location and plan.contact_email } \textbullet{} \BLOCK{ endif }
+\BLOCK{ if plan.contact_email }\VAR{plan.contact_email}\BLOCK{ endif }
+\BLOCK{ if (plan.contact_location or plan.contact_email) and plan.contact_links } \textbullet{} \BLOCK{ endif }
+\BLOCK{ for link in plan.contact_links }\VAR{link}\BLOCK{ if not loop.last } \textbullet{} \BLOCK{ endif }\BLOCK{ endfor }
+}\par
+\vspace{2pt}
+\BLOCK{ endif }
+\BLOCK{ for section in plan.sections }
+\section*{\VAR{section.title}}
+\BLOCK{ for entry in section.entries }
+\noindent\textbf{\VAR{entry.org}} --- \textit{\VAR{entry.title}}\BLOCK{ if entry.location } (\VAR{entry.location})\BLOCK{ endif }\hfill \VAR{entry.dates}\\
+\BLOCK{ if entry.bullets }
+\begin{itemize}
+\BLOCK{ for bullet in entry.bullets }
+  \item \VAR{bullet.text}
+\BLOCK{ endfor }
+\end{itemize}
+\BLOCK{ endif }
+\BLOCK{ endfor }
+\BLOCK{ if section.skills }
+\noindent
+\BLOCK{ for group, group_skills in section.skills_by_group }
+\textbf{\VAR{group}:} \VAR{group_skills | map(attribute="label") | join(", ")}\BLOCK{ if not loop.last }\quad\BLOCK{ endif }
+\BLOCK{ endfor }
+\par
+\BLOCK{ endif }
+\BLOCK{ endfor }
+\end{document}

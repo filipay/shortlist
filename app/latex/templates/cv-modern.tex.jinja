@@ -1,0 +1,76 @@
+% =============================================================================
+% cv-modern.tex.jinja — a selectable CV layout. Distinct presentation, identical
+% facts. Rationale and selection UX: .planning/quick/260930-lay-cv-layout-variants/DESIGN.md.
+%
+% Same RenderPlan contract as cv.tex.jinja: the same sections, entries, bullets
+% and skills_by_group are emitted, with the same escaping choke point. Only the
+% typography and composition differ. No clock, no randomness, no uuid — any date
+% in the output comes from the fact store.
+%
+% Delimiters are the LaTeX-safe backslash-VAR / backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow.
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=1in}
+\hypersetup{hidelinks}
+
+% Editorial headings: uppercase, a hairline rule beneath, generous air above.
+\titleformat{\section}{\normalfont\large\bfseries}{}{0pt}{\MakeUppercase}[
+  \vspace{2pt}\titlerule[0.6pt]]
+\titlespacing*{\section}{0pt}{13pt}{2pt}
+
+\begin{document}
+\BLOCK{ if plan.name }
+\noindent{\Huge\bfseries \VAR{plan.name}}\par
+\vspace{3pt}
+\noindent{\small
+\BLOCK{ if plan.contact_location }\VAR{plan.contact_location}\BLOCK{ endif }
+\BLOCK{ if plan.contact_location and plan.contact_email } \textbullet{} \BLOCK{ endif }
+\BLOCK{ if plan.contact_email }\VAR{plan.contact_email}\BLOCK{ endif }
+\BLOCK{ if (plan.contact_location or plan.contact_email) and plan.contact_links } \textbullet{} \BLOCK{ endif }
+\BLOCK{ for link in plan.contact_links }\VAR{link}\BLOCK{ if not loop.last } \textbullet{} \BLOCK{ endif }\BLOCK{ endfor }
+}\par
+\vspace{3pt}
+\hrule
+\vspace{9pt}
+\BLOCK{ endif }
+\BLOCK{ for section in plan.sections }
+\section*{\VAR{section.title}}
+\BLOCK{ for entry in section.entries }
+\noindent\textbf{\VAR{entry.org}} \textperiodcentered{} \VAR{entry.title}\hfill\textit{\VAR{entry.dates}}\\
+\BLOCK{ if entry.location }
+\noindent{\small\itshape \VAR{entry.location}}\par
+\BLOCK{ endif }
+\BLOCK{ if entry.bullets }
+\begin{itemize}[leftmargin=1.1em,labelsep=0.5em,itemsep=1.5pt,topsep=2pt,parsep=0pt]
+\BLOCK{ for bullet in entry.bullets }
+  \item \VAR{bullet.text}
+\BLOCK{ endfor }
+\end{itemize}
+\BLOCK{ endif }
+\BLOCK{ endfor }
+\BLOCK{ if section.skills }
+\BLOCK{ for group, group_skills in section.skills_by_group }
+\noindent\textbf{\VAR{group}} \textbullet{} \VAR{group_skills | map(attribute="label") | join(", ")}\par
+\BLOCK{ endfor }
+\BLOCK{ endif }
+\BLOCK{ endfor }
+\end{document}

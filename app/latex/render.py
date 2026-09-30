@@ -26,24 +26,52 @@ import jinja2
 from app.domain.cv import RenderPlan
 from app.latex.env import make_latex_env
 
-#: The committed application template (D-71).
+#: The committed application template (D-71). Kept as the Classic filename for
+#: existing importers; layout selection goes through :data:`LAYOUTS`.
 TEMPLATE_NAME = "cv.tex.jinja"
 #: The templates directory that ships beside this module.
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
+#: The shipped default layout. An unset, unknown or ``None`` layout resolves here,
+#: so the baseline output can never move by accident.
+DEFAULT_LAYOUT = "classic"
+
+#: The three committed layouts, keyed by the preference token. A layout is one
+#: template file (D-71); there is no per-layout configuration beyond this map, so a
+#: newly committed template is the only thing a fourth layout would add.
+LAYOUTS: dict[str, str] = {
+    "classic": "cv.tex.jinja",
+    "modern": "cv-modern.tex.jinja",
+    "compact": "cv-compact.tex.jinja",
+}
+
+
+def _template_name(layout: str | None) -> str:
+    """Resolve a preference token to a committed template, defaulting to Classic.
+
+    Fail closed: anything that is not a key of :data:`LAYOUTS` — missing, ``None``,
+    or a hand-edited token — renders the Classic template. A bad preference must
+    never break a render.
+    """
+    return LAYOUTS.get(layout if isinstance(layout, str) else "", LAYOUTS[DEFAULT_LAYOUT])
+
 
 def render_plan_to_tex(
-    plan: RenderPlan, *, env: jinja2.Environment | None = None
+    plan: RenderPlan,
+    *,
+    layout: str | None = DEFAULT_LAYOUT,
+    env: jinja2.Environment | None = None,
 ) -> str:
     """Render ``plan`` to ``.tex`` text through the escaping choke point.
 
-    Building the environment per call is cheap (``cache_size=0`` anyway); callers
-    that render repeatedly may pass a shared ``env``. Identical input always
-    produces identical output.
+    ``layout`` selects one of the committed templates in :data:`LAYOUTS`; unknown or
+    ``None`` resolves to Classic. Building the environment per call is cheap
+    (``cache_size=0`` anyway); callers that render repeatedly may pass a shared
+    ``env``. Identical input always produces identical output.
     """
     if env is None:
         env = make_latex_env(TEMPLATES_DIR)
-    template = env.get_template(TEMPLATE_NAME)
+    template = env.get_template(_template_name(layout))
     return template.render(plan=plan)
 
 
@@ -59,4 +87,11 @@ def write_rendered(text: str, destination: Path) -> Path:
     return destination
 
 
-__all__ = ["TEMPLATES_DIR", "TEMPLATE_NAME", "render_plan_to_tex", "write_rendered"]
+__all__ = [
+    "DEFAULT_LAYOUT",
+    "LAYOUTS",
+    "TEMPLATES_DIR",
+    "TEMPLATE_NAME",
+    "render_plan_to_tex",
+    "write_rendered",
+]
