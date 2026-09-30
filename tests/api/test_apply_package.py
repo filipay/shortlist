@@ -16,18 +16,37 @@ Observable truths:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import Listing, Run, Source
+from app.db.models import Application, Listing, Run, Source
 from app.db.repositories import cv_artifact_repo, score_repo
 from app.db.repositories.listing_repo import upsert_listing_source
+from app.main import create_app
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
+from tests.conftest import OfflineLLMBackend
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+
+_FORM_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE)
+_ACTION_RE = re.compile(r'action\s*=\s*"([^"]*)"', re.IGNORECASE)
+
+
+def _route_paths(routes: Any) -> list[str]:
+    """Flatten FastAPI's `_IncludedRouter` wrappers into route path strings."""
+    paths: list[str] = []
+    for route in routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None and hasattr(inner, "routes"):
+            paths.extend(_route_paths(inner.routes))
+        else:
+            paths.append(str(getattr(route, "path", "")))
+    return paths
 
 REQUIREMENTS = [
     {"text": "Python and SQL", "verdict": "met", "evidence_id": "skill.python"},
@@ -219,3 +238,108 @@ async def test_unknown_listing_returns_a_404_fragment(client) -> None:
     response = await client.get("/listings/999999/apply")
     assert response.status_code == 404
     assert 'data-error="unknown-listing"' in response.text
+
+
+async def test_no_submit_surface(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """APPLY-02 / D-127: nothing here can submit to a portal.
+
+    Every form on the page posts to a LOCAL path (never a host or `apply_url`), the
+    outbound action is a plain anchor with the mandatory `rel`, and the app's route
+    registry contains no URL-shaped path (nothing posts out of the app).
+    """
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    response = await client.get(f"/listings/{listing_id}/apply")
+    body = response.text
+
+    # The outbound action is a real anchor, not a form, and carries rel + target.
+    anchor = re.search(r'<a[^>]*class="apply-link"[^>]*>', body)
+    assert anchor is not None, "the ready page must carry the outbound apply anchor"
+    tag = anchor.group(0)
+    assert 'target="_blank"' in tag
+    assert 'rel="noopener noreferrer"' in tag
+
+    forms = _FORM_RE.findall(body)
+    assert forms, "the ready page must carry the Record application form"
+    for form in forms:
+        match = _ACTION_RE.search(form)
+        assert match is not None, f"a form has no action: {form}"
+        action = match.group(1)
+        assert action.startswith("/"), f"non-local form action: {action}"
+        assert "://" not in action, f"a form posts to a host: {action}"
+        assert action != "https://linkedin.example.com/jobs/1"
+
+    # The route registry exposes no route that leaves the app.
+    paths = _route_paths(create_app().routes)
+    assert paths, "the route walk found nothing — the assertion would be vacuous"
+    assert all(path.startswith("/") for path in paths)
+    assert all("://" not in path for path in paths)
+    assert not any("submit" in path for path in paths)
+
+
+async def test_package_states_and_no_llm_call_on_open(
+    session_factory: async_sessionmaker[AsyncSession], client, monkeypatch
+) -> None:
+    """D-122: opening the package assembles from stored data — zero LLM calls.
+
+    The full page-state set is exercised (gated / blocked-gated / ready) while a
+    counting backend proves no call is made on GET.
+    """
+    calls: list[dict[str, Any]] = []
+    original = OfflineLLMBackend.complete_structured
+
+    async def _counting(self: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _counting)
+
+    gated_listing = await _seed_listing(session_factory, index=1)
+    blocked_listing = await _seed_listing(session_factory, index=2)
+    await _seed_artifact(session_factory, blocked_listing, status="blocked")
+    ready_listing = await _seed_listing(session_factory, index=3)
+    await _seed_artifact(session_factory, ready_listing, status="ok")
+
+    gated = await client.get(f"/listings/{gated_listing}/apply")
+    assert 'data-state="no-ok-artifact"' in gated.text
+    assert "Open the application form" not in gated.text
+
+    blocked = await client.get(f"/listings/{blocked_listing}/apply")
+    assert 'data-state="no-ok-artifact"' in blocked.text
+
+    ready = await client.get(f"/listings/{ready_listing}/apply")
+    assert "Open the application form" in ready.text
+
+    assert calls == [], "opening the package must make no LLM call (D-122)"
+
+
+async def test_record_from_the_package_links_the_ok_artifact(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """The package's record form reaches the tracker, linked to the ok artefact."""
+    listing_id = await _seed_listing(session_factory)
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
+
+    page = await client.get(f"/listings/{listing_id}/apply")
+    assert 'action="/applications/record"' in page.text
+    assert f'value="{listing_id}"' in page.text, "the form must carry the hidden listing id"
+    assert f'<option value="{ok_id}"' in page.text, "the picker must offer the ok artefact"
+
+    response = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "applied", "cv_artifact_id": str(ok_id)},
+    )
+    assert response.status_code == 200
+    assert "Applied" in response.text
+
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                select(Application).where(Application.listing_id == listing_id)
+            )
+        ).scalar_one()
+    assert row.status == "applied"
+    assert row.cv_artifact_id == ok_id
+    assert row.applied_at is not None
