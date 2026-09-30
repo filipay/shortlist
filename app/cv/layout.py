@@ -32,7 +32,9 @@ def read_layout(cv_dir: str | Path) -> str:
     path = Path(cv_dir) / LAYOUT_FILENAME
     try:
         token = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, UnicodeError):
+        # `UnicodeDecodeError` is a `ValueError`, not an `OSError`: a non-UTF-8
+        # preference file must still fail closed to Classic, never raise.
         return DEFAULT_LAYOUT
     return token if token in LAYOUTS else DEFAULT_LAYOUT
 

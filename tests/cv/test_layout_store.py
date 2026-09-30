@@ -43,6 +43,18 @@ def test_an_unreadable_path_is_classic(tmp_path: Path) -> None:
     assert read_layout(tmp_path) == DEFAULT_LAYOUT
 
 
+def test_non_utf8_bytes_are_classic(tmp_path: Path) -> None:
+    """A non-UTF-8 file is a UnicodeDecodeError (not an OSError), still Classic.
+
+    The repro from the review: raw ``\\xff\\xfe\\x80`` raises on a UTF-8 read, so a
+    guard for ``OSError`` alone would escape ``read_layout`` — and with it 500 the
+    settings page and reach ``compile_tailored``, which never raises to the route.
+    """
+    (tmp_path / LAYOUT_FILENAME).write_bytes(b"\xff\xfe\x80")
+
+    assert read_layout(tmp_path) == DEFAULT_LAYOUT
+
+
 def test_write_rejects_an_unknown_token_and_writes_nothing(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         write_layout(tmp_path, "fancy")
