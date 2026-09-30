@@ -1,138 +1,139 @@
 ---
 phase: 06-tailoring-verification
-reviewed: 2026-09-25T16:00:12Z
+reviewed: 2026-09-30T11:50:00Z
 depth: standard
-files_reviewed: 7
+files_reviewed: 5
 files_reviewed_list:
   - app/verify/numbers.py
   - app/verify/base.py
   - tests/verify/test_numbers.py
-  - tests/fixtures/verify/org_title_dates_collision_extract.txt
-  - tests/fixtures/verify/org_title_dates_merge_extract.txt
-  - tests/fixtures/verify/digit_bearing_header_extract.txt
-  - tests/fixtures/verify/identical_dates_extract.txt
+  - tests/fixtures/verify/org_first_bullet_extract.txt
+  - tests/fixtures/verify/org_first_merge_extract.txt
 findings:
   critical: 0
   warning: 0
-  info: 3
-  total: 3
+  info: 5
+  total: 5
 status: clean
 ---
 
-# Phase 6: Code Review Report (scoped re-review — plan 06-11 / criterion E)
+# Phase 6: Code Review Report (criterion E closure — final state at `3b3842b`)
 
-**Reviewed:** 2026-09-25T16:00:12Z
+**Reviewed:** 2026-09-30T11:50:00Z
 **Depth:** standard
-**Files Reviewed:** 7
+**Files Reviewed:** 5 (final reviewed surface; `3b3842b` modified 2 of them)
 **Status:** clean
-**Diff scope:** `git diff 76f270b90725d71f8c14e05f51b3587fa9f6f8c7..HEAD -- app/verify tests/verify` (+ the four committed fixtures under `tests/fixtures/verify/`)
-**Baseline:** `tests/verify` 89 passed on this tree; no persisted shape changed.
+**Criterion E verdict:** **SATISFIED at `3b3842b`.** No unresolved critical/blocker or warning finding on the changed files.
 
 ## Summary
 
-This is an independent scoped re-review of the 06-11 gap-closure fix, run to satisfy
-criterion E of `06-10-PLAN.md`. The prior review's **WR-02 (Warning)** — that an earlier
-entry's bullet co-locating a later entry's org, title **and** date-range could still
-hijack the later region and hard-fail check 4 on a correct CV — is **CLOSED**. I did not
-take the fix's claims on faith: I read the diff, traced the bound by hand, reproduced the
-pre-fix failure in-process by monkeypatching the old anchor, and re-ran the suite.
+This closes the criterion-E loop. `3b3842b` (`docs(verify): state anchor-gate residual
+honestly, pin full-header ceiling`, +58/-6 across `app/verify/numbers.py` and
+`tests/verify/test_numbers.py`) applies all four Info items from the `da06178` review.
+I confirmed the commit is **prose + test only** — no production predicate changed — and
+independently reproduced the claimed evidence.
 
-Verified claims (all six hold):
+- `.venv/bin/python -m pytest -q tests/verify/` → **97 passed**.
+- Full `.venv/bin/python -m pytest -q` → **1533 passed, 14 deselected, 2 xfailed**.
+- `ruff check app/verify` → **All checks passed**.
+- `git diff --name-only da06178..3b3842b` → exactly the two files named above; no
+  forbidden path touched.
 
-1. **Org-first anchor** — `_entry_lines` now requires
-   `line.startswith(squash(org))` **and** `title in line` **and** date adjacency
-   (`app/verify/numbers.py:173-178`). I reconstructed the pre-fix predicate
-   (`org in line or title in line`) in-process against the WR-02 repro and confirmed
-   the behavioural flip: old → `exp/acme-2019` candidates `['5','7']` (the false fail);
-   new → `exp/globex-2018` absorbs only its own `['2019','2019','5']` and
-   `exp/acme-2019` candidates `['7']`.
-2. **Region-end bound is containment** — `any(needle in line for needle in needles)`
-   (`numbers.py:350`), not equality, and never below the header
-   (`end = max(position + 1, min(end, candidate_index))`, `:351`). Covers own-line
-   headers, merged header/date lines and digit-bearing headers.
-3. **Own date excluded BY POSITION** (`excluded_indices` from `position` or
-   `position + 1`, `numbers.py:319-328`); own `location`/bullets by squash equality
-   (`own_value_squashes`, `:329-333`, applied at `:348`). A shared identical date-range
-   therefore no longer suppresses the bound (proven by the `identical_dates` test).
-4. **IN-01 removed** — the unanchored branch is now exactly
-   `allowed = _allowed_for_entry(entry)` (`numbers.py:301`); `_region_structured_cores(plan, "")`
-   provably returned `set()` (`:245-247`), so this is behaviour-preserving.
-5. **Version** — `VERIFIER_VERSION = "1.0.4"` exactly once (`app/verify/base.py:22`);
-   no `1.0.3` / `1.0.2` remains in `app/` or `tests/`; `RegionReport` and
-   `VerificationResult` shapes are unchanged.
-6. **Prose** — the `_entry_lines` residual is now stated explicitly rather than hidden
-   (`numbers.py:135-141`); the old "a bullet never carries the entry's own date-range"
-   absolute guarantee is gone. Three minor stale-prose items remain (Info, below); none
-   is a safety guarantee the code fails to deliver.
+## Finding resolution (IN-01..IN-04 from the `da06178` review)
 
-Anti-weakening (no regression — all reproduced green):
+### IN-01 — RESOLVED. The "never a false fail" overclaim is replaced with an honest, bounded statement.
 
-| Control | Result |
+`app/verify/numbers.py:173-183` now states the three-part position, and it matches the
+code and my reproduced counterexample exactly:
+
+1. **Per-entry monotone, and no silent skip.** "The gate is per-entry MONOTONE: it can
+   only refuse an anchor, so a dropped or normalised separator on a real header degrades
+   that entry to `found=False` and a visible `warn` naming it - never a silent skip."
+   True: the guard is an added `continue` (`:213`), so an anchor can only be refused or
+   stay; `found=False` feeds `check_metric_containment`'s `unanchored` branch, which can
+   only yield `warn` or `fail`, never `pass` (`app/verify/text_checks.py:95-115`).
+2. **Explicitly NOT a global no-false-fail guarantee.** "It is not, however, a global
+   no-false-fail guarantee: if such a header loses its separator so the cursor does not
+   advance past it, AND a line before it reproduces a later entry's full header, that
+   later entry anchors early and absorbs the earlier entry's digit - the compound case
+   is subsumed by the residual above, not a separate class." This is precisely the
+   counterexample I raised, now stated rather than hidden.
+3. **No new absolute/false guarantee.** I re-read the full paragraph and found no
+   unconditional safety claim the code fails to deliver. "never a silent skip" is
+   delivered in the sense that matters (a `found=False` region can never silently pass);
+   in the compound case the disposition is a hard `fail`, which is the documented
+   residual and still not a silent pass.
+
+### IN-02 — RESOLVED. `cv.tex.jinja:58` → `:61`.
+
+`app/verify/numbers.py:147` now cites `cv.tex.jinja:61`. Confirmed:
+`app/latex/templates/cv.tex.jinja:61` is the header line
+`\noindent\textbf{\VAR{entry.org}} --- \textit{\VAR{entry.title}} \hfill \VAR{entry.dates}\\`.
+
+### IN-03 — RESOLVED. The module docstring now names the separator conjunct.
+
+`app/verify/numbers.py:21-22`: "the line carrying `squash(org)` first, `squash(title)`,
+and the org/title separator (a dash run between them), that is also gated by the entry's
+date-range needle …". Accurate and complete.
+
+### IN-04 — RESOLVED (with one minor prose nit, IN-05). The ceiling is now pinned.
+
+New test `test_a_bullet_reproducing_a_full_header_is_the_documented_hard_fail_ceiling`
+(`tests/verify/test_numbers.py:1142`) is non-vacuous and correct:
+
+- The injected bullet opens `Acme --- Senior Engineer 2019-01 -- 2019-12 delivered 99
+  platform` — it carries org, separator, title and an adjacent date-range, so the gate
+  accepts it as B's region start (this is the documented residual).
+- It asserts `[report.found for report in reports] == [True, True]`, `check.status ==
+  "fail"` (explicitly not `warn`), and `"exp/acme-2019:99" in check.offending`.
+- I reproduced the mechanics: B's region is `found=True` with candidates `['99','7']`;
+  `99` is **not** in B's `allowed` (B's fields are org/title/dates/bullet `Led 7 people`)
+  while it **is** in A's `allowed` (the bullet belongs to A) — so the injection creates a
+  genuinely ungrounded digit in B's region, and the hard `fail` disposition is real.
+- It breaks if the disposition is downgraded to `warn`, or if the anchor is tightened to
+  reject a full-header reproduction (either would make B anchor at its real header and
+  leave `99` grounded in A). See IN-05 for the docstring wording.
+
+## Scope and hygiene (verified)
+
+| Check | Result |
 |---|---|
-| Anchored surplus still hard-fails | `test_a_digit_bearing_or_identical_date_neighbour...` mutated `99` → `fail ['exp/acme-2018:99']`; `test_the_region_end_bound_never_shortens...` → `fail` |
-| `page_budget`, `layout_ats` remain the ONLY warn-only checks | `text_checks.py` — `metric_containment` has both `_fail` and `_warn` (`:104-115`); `page_budget` (`:138`) and `layout_ats` (`:164`) are the only checks whose sole non-pass branch is `_warn` |
-| `novel_metric_extract.txt` still fails | `verify_text(...)` → `metric_containment: fail ['exp/northwind-labs-2021:3.12']` |
+| `tests/golden/base.rendered.tex`, render path, `app/latex/templates/cv.tex.jinja`, `app/domain/tex.py`, `alembic/` vs `da06178` | untouched (empty diff) |
+| Alembic head | unchanged by this work; repo head is `0005` (pre-existing, added by the skills-grouping quick task — the 06-VERIFICATION "0004" is stale, not a regression here) |
+| `ruff check app/verify` | clean |
+| `ruff check app/verify tests/verify` | 5 pre-existing errors only (`I001 test_numbers.py:10`, `E501 :524/:578/:686`, `I001 test_text_checks.py:9`); none introduced by `da06178` or `3b3842b` (E501 lines exist at parent `69ecb82`; import blocks unchanged; `test_text_checks.py` untouched) |
+| Focused / full test suites | 97 passed / 1533 passed, 14 deselected, 2 xfailed |
 
-Conventions: **1** — org-first is a template-positional discriminator, not arbitrary
-substring containment, and the remaining lexical residual is documented; **2** — an
-unanchored neighbour keeps `found=False` → visible `warn`, and any region truncation is
-only reachable when at least one later entry is unanchored (so a pass can never be
-silent); **3** — the literal WR-02 repro strings appear byte-for-byte in the new
-fixtures; **4** — a new property test parametrizes the org/title/**date** dimension over
-3 phrases × 2 corpora and asserts the needles; **5** — this review owns the verdict;
-**6** — see Info items; **7** — the accept side is tested (collision, merge, digit-header,
-identical-dates, own-content protection) alongside the reject side.
+## Critical / Blocker
 
-## Structural Findings (fallow)
+None.
 
-No structural pre-pass findings were provided for this scoped re-review.
+## Warnings
 
-## Narrative Findings (AI reviewer)
-
-No Critical/Blocker or Warning findings on the changed files. Three Info items.
+None.
 
 ## Info
 
-### IN-01: `_entry_lines` docstring claims the region-end mechanism is unchanged
+### IN-01 — RESOLVED (see above)
+### IN-02 — RESOLVED (see above)
+### IN-03 — RESOLVED (see above)
+### IN-04 — RESOLVED (see above)
 
-**File:** `app/verify/numbers.py:147-150`
-**Issue:** "Only how a region's START is found changes: `region_token_report` still ends
-a region at the next found start (or end-of-text for the last)". The same commit adds
-the region-end bound (`:314-352`), so "only the start changes" and "still ends … at the
-next found start" are now inaccurate and could steer a future reader away from the new
-end logic. The bound *is* documented in `region_token_report`'s own docstring
-(`:259-271`), so this is drift rather than a safety guarantee in the wrong place.
-**Fix:** replace the sentence with a pointer, e.g. "Only the START predicate changes
-here; `region_token_report` additionally bounds the end against an unanchored later
-neighbour (`:314-352`) before falling back to the next found start."
+### IN-05: The new ceiling test's docstring says "breaks if the gate is later relaxed" — inverted
 
-### IN-02: Module docstring still describes the anchor without the org-first condition
-
-**File:** `app/verify/numbers.py:17-25`
-**Issue:** The module-level "Why the region segmentation is line-based" prose says a
-region "is located on the entry's own HEADER line — the line carrying both
-`squash(org)` and `squash(title)` that is also gated by the entry's date-range needle
-…". It predates the org-first requirement and omits it. Relatedly, the sentence "a
-short or common org name ('Meta' matching 'metadata')" (`:130-131`) overstates the fix:
-`startswith("meta")` still matches a line beginning `metadata…`; the adjacent residual
-paragraph (`:135-141`) correctly covers it, but the claim itself is imprecise.
-**Fix:** mention `startswith(org)` in the module prose, and narrow the "Meta"/"metadata"
-sentence to "an org name appearing mid-line" (the case the fix actually removes).
-
-### IN-03: The documented org-first residual is not exercised by a test
-
-**File:** `app/verify/numbers.py:135-141`; `tests/verify/test_numbers.py`
-**Issue:** The residual "a line that literally begins with the org … IS taken as the
-region start" is stated but no test pins that shape (contrast the split-header and
-non-adjacent-date negative controls, which are pinned). Without it, a future tightening
-of the anchor could silently change the residual without a failing test.
-**Fix:** add a small case whose bullet line begins with the next entry's org and carries
-its title and adjacent date-range, asserting the current disposition (region starts
-there; the neighbour is bounded / the check does not hard-fail the correct CV), so the
-residual's ceiling is locked.
+**File:** `tests/verify/test_numbers.py:1140-1141`
+**Issue:** The docstring claims "This pins the discriminator's known ceiling: the test
+breaks if the gate is later relaxed". Relaxing the gate (removing the separator conjunct)
+does **not** break the test — I simulated a gate-less `_entry_lines` on this exact
+scenario and it still returns `fail ['exp/acme-2019:99']`, because the full-header bullet
+anchors either way. What the test actually pins is the **disposition** (hard `fail`, not
+`warn`); it breaks if that is downgraded, or if the anchor is tightened to reject a
+full-header reproduction. The claim is therefore inverted, not a production defect.
+**Fix:** reword to "the test breaks if a full-header reproduction is downgraded to a
+warn, or if the gate is tightened to reject it."
 
 ---
 
-_Reviewed: 2026-09-25T16:00:12Z_
+_Reviewed: 2026-09-30T11:50:00Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_

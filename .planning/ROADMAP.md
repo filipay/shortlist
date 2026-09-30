@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 11/11 plans executed (10 executed; 1 planned gap-closure)
+**Plans:** 11/11 plans executed (10 executed; 1 planned gap-closure), plus an unplanned round-5 gap-closure commit series (`da06178`/`3b3842b`/`5a667ec`) verified 2026-09-30
 
 Plans:
 **Wave 1**
@@ -302,6 +302,10 @@ Plans:
 **Gap closure (round 4)** *(planned 2026-09-25 from `06-VERIFICATION.md` (`gaps_found`, 11/12) + `06-REVIEW.md` (1 warning, WR-02); wave 1 — all prerequisites above are executed)*
 
 - [x] 06-11-PLAN.md — WR-02 residual / criterion E: check 4's region start must BEGIN with the entry's org (the template emits org first) and an anchored region's end is bounded at a later unanchored entry's lone date-range line, so a valid CV whose earlier bullet co-locates a later entry's org, title AND date-range no longer false-fails and an extractor line-merge yields a visible `warn` instead of a false fail; the false docstring absolute is replaced by an explicit residual; `VERIFIER_VERSION` recorded once at 1.0.4
+
+**Gap closure (round 5)** *(planned 2026-09-30 from `06-VERIFICATION.md` (`gaps_found`, 15/18) + `06-REVIEW.md` (3 info); no plan file — executed as direct fix commits, wave 1 — all prerequisites above are executed)*
+
+- [x] 06-12 (no plan file) — truths 6 / 15: check 4's region anchor now requires the template's org/title separator (`_dash_fold` keeps one hyphen per folded dash run, so `-`, `--`, `---`, en- and em-dash all satisfy; a candidate line must start with `org_dash + '-'`), so an earlier entry's bullet carrying a later entry's org+title+dates can no longer hijack that region; the gate is monotone-stricter (it can only refuse an anchor) so a real header losing its separator degrades to a visible `warn`, never a silent skip. The two falsified absolute docstrings are replaced and the full-header reproduction is pinned by a test as the documented hard-fail ceiling; `VERIFIER_VERSION` recorded once at 1.0.5 (commits `da06178` / `3b3842b` / `5a667ec`). Independent scoped review returned clean (0 Critical / 0 Warning / 5 Info, all resolved) and satisfied criterion E; independent verification returned 17/18 with `gaps_remaining: []` and `regressions: []`, leaving only the two container-only Tectonic UAT items open
 
 **UI hint**: yes
 

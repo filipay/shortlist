@@ -4,10 +4,10 @@ current_phase: 06
 current_phase_name: Tailoring + Verification
 status: executing
 stopped_at: Completed 06-11-PLAN.md
-last_updated: "2026-09-25T15:35:16.264Z"
-last_activity: 2026-09-25
-last_activity_desc: Phase 06 execution started
-state_head: 67113848fd6511e8377118885ac33c8afc342c84
+last_updated: "2026-09-30T12:02:22.000Z"
+last_activity: 2026-09-30
+last_activity_desc: Phase 06 gap-closure round 5 verified (truths 6 and 15 closed)
+state_head: 5a667ecf9e229e908c21f17f49a59d56c0b0b089
 progress:
   total_phases: 8
   completed_phases: 0
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 06 (Tailoring + Verification) — EXECUTING
-Plan: 2 of 11
+Plan: 11 of 11 (rounds 1–4); gap-closure round 5 (truths 6 and 15) verified clean
 Status: Ready to execute
-Last activity: 2026-09-30 - Completed quick task 260930-lay: Add three committed CV layouts (Classic default / Modern / Compact) as one remembered global preference stored beside cv.yaml and applied to the next tailored CV, with a settings picker
+Last activity: 2026-09-30 - Gap-closure round 5: region anchor now requires the org/title separator (da06178/3b3842b/5a667ec); review clean with criterion E satisfied, verification 17/18 with only the two container-only Tectonic UAT items open
 
 Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
 
@@ -172,6 +172,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-11: region_token_report bounds an anchored region's end at the first line whose squash CONTAINS a later unanchored entry's org, title or date-range (containment), excluding the anchored entry's own date line BY POSITION and its own location/bullet lines by squash equality, never below the header — so an unanchored neighbour surfaces as a visible warn, not a false fail on the preceding region
 - [Phase 06]: 06-11: both falsified absolute docstring guarantees are removed and the line-granularity residual is stated explicitly (ast docstring scan clean); the always-empty structured-cores operand is removed (IN-01) and candidate assertions use exact set membership (IN-02)
 - [Phase 06]: 06-11: VERIFIER_VERSION bumped once to 1.0.4 for the org-first anchor + region-end bound; no schema/Alembic (head 0004) or dependency change. Criterion E closure remains owned by the independent scoped review, not the fix author
+- [Phase 06]: round 5 (unplanned gap-closure): _entry_lines now requires the template's org/title separator — a `_dash_fold` keeps one hyphen per folded dash run (em/en dash and `--`/`---` all satisfy) and the candidate line must start with `org_dash + '-'`, so an earlier entry's bullet carrying a later entry's org+title+dates can no longer hijack that region (truth 6). The gate is monotone-stricter: it can only refuse an anchor, never move one, so a real header that loses its separator degrades to a visible warn (fail-closed), never a silent skip
+- [Phase 06]: round 5: the two falsified absolution docstrings are replaced with honest wording and the full-header reproduction (a bullet literally repeating `ORG --- TITLE <dates>`) is pinned by a test as the documented hard-fail ceiling (truth 15); VERIFIER_VERSION bumped once to 1.0.5, no schema/Alembic change
+- [Phase 06]: round 5: three commits da06178 (fix) / 3b3842b (docs+ceiling) / 5a667ec (docs, IN-05); independent scoped review returned clean (0 Critical / 0 Warning / 5 Info, all resolved) and satisfied criterion E, and independent verification returned 17/18 with gaps_remaining [] and regressions []. Criterion E closure was owned by the independent review, not the fix author
 
 ### Pending Todos
 
@@ -205,6 +208,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T15:35:15.736Z
-Stopped at: Completed 06-11-PLAN.md
+Last session: 2026-09-30T12:02:22.000Z
+Stopped at: Phase 06 gap-closure round 5 verified (truths 6 and 15 closed; review clean)
 Resume file: None
