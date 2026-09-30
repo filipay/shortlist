@@ -40,6 +40,7 @@ from app.api.searches import read_form
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, fact_store_report, load_facts
 from app.cv.import_tex import parse_tex, write_draft
+from app.cv.layout import read_layout, write_layout
 from app.cv.llm_extract import ExtractionError, extract_facts
 from app.db.models import Base, Run
 from app.db.repositories import llm_call_repo, ranking_config_repo
@@ -47,6 +48,7 @@ from app.db.session import get_session
 from app.domain import rubric
 from app.domain.models import User
 from app.domain.schemas.probe import ProbeResult
+from app.latex.render import LAYOUTS
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend, StructuredCallResult
 from app.llm.contract import STRUCTURED_RESPONSE_PATH
@@ -75,6 +77,30 @@ WEIGHTS_PATH = "/settings/weights"
 #: NOT a dependency, so the `.tex` source travels as an ordinary text field
 #: (`cv_tex`), not a multipart file upload.
 CV_UPLOAD_PATH = "/settings/cv"
+
+#: The CV layout picker (DESIGN.md §4). A plain full-page POST, like the weights and
+#: reset cards: no htmx swap, no model call, and it works with JavaScript off.
+CV_LAYOUT_PATH = "/settings/cv-layout"
+
+#: The picker's grounded copy (DESIGN.md §4). Labels and notes are keyed by the
+#: renderer's own layout tokens; a token that lacks an entry still renders (its key),
+#: so a newly committed layout can never be silently omitted from the picker.
+LAYOUT_OPTION_LABELS: dict[str, str] = {
+    "classic": "Classic (default)",
+    "modern": "Modern",
+    "compact": "Compact",
+}
+#: Plain names for the confirmation banner ("Layout set to Modern.").
+LAYOUT_NAMES: dict[str, str] = {
+    "classic": "Classic",
+    "modern": "Modern",
+    "compact": "Compact",
+}
+LAYOUT_NOTES: dict[str, str] = {
+    "classic": "centred header, section rules under headings, skills in a table.",
+    "modern": "left header with a rule, uppercase ruled headings, stacked skills.",
+    "compact": "smaller type, tighter spacing, fewer dropped bullets per page.",
+}
 
 #: The system prompt is a **module-level constant** with no f-string, no `%`, no
 #: `.format` and no concatenation of any request-derived value. This IS the trust
@@ -151,9 +177,7 @@ async def _counts(session: AsyncSession) -> list[dict[str, Any]]:
     """Row counts for the page, one query per table (13 + 4, all trivial)."""
     rows: list[dict[str, Any]] = []
     for table in (*RESET_DELETE_ORDER, *RESET_KEPT_TABLES):
-        count = await session.scalar(
-            select(func.count()).select_from(Base.metadata.tables[table])
-        )
+        count = await session.scalar(select(func.count()).select_from(Base.metadata.tables[table]))
         rows.append({"table": table, "count": int(count or 0)})
     return rows
 
@@ -196,6 +220,12 @@ async def _settings_context(
         # the settings card, the queue status line and `/health`, so the three surfaces
         # cannot disagree about where the loader reads or whether it loaded.
         "cv": fact_store_report(Path(settings.cv_dir) / CV_FILENAME),
+        # The layout picker (DESIGN.md §4). Read through the same fail-closed accessor
+        # the render path uses, so the selected option and the next render agree.
+        "layout": read_layout(settings.cv_dir),
+        "layout_options": [
+            (key, LAYOUT_OPTION_LABELS.get(key, key), LAYOUT_NOTES.get(key, "")) for key in LAYOUTS
+        ],
         # The selftest surface (D-48/D-52). `probe_error_kind` and the observation
         # are only available on the immediate render — `llm_calls` has no column for
         # either, so a reload shows D-52's PERSISTED detail only.
@@ -255,9 +285,7 @@ async def settings_page(
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     """State exactly what a reset deletes, what it keeps, and how to recover."""
-    return templates.TemplateResponse(
-        request, SETTINGS_TEMPLATE, await _settings_context(session)
-    )
+    return templates.TemplateResponse(request, SETTINGS_TEMPLATE, await _settings_context(session))
 
 
 @router.post(WEIGHTS_PATH, response_class=HTMLResponse)
@@ -312,9 +340,7 @@ def _publish_cv(draft: dict[str, Any]) -> tuple[str, str]:
     """
     destination = Path(settings.cv_dir) / CV_FILENAME
     destination.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(
-        dir=destination.parent, prefix=".cv-upload-", suffix=".yaml"
-    )
+    fd, temp_name = tempfile.mkstemp(dir=destination.parent, prefix=".cv-upload-", suffix=".yaml")
     os.close(fd)
     temp = Path(temp_name)
     try:
@@ -426,8 +452,7 @@ async def upload_cv(
                 report=[
                     *report_lines,
                     "parsed directly from the LaTeX",
-                    f"model-assisted pass failed ({exc}); "
-                    "kept the deterministic result",
+                    f"model-assisted pass failed ({exc}); kept the deterministic result",
                 ],
             )
         return await _render_cv_upload(
@@ -460,8 +485,63 @@ async def _rendered_refusal(
     )
 
 
+@router.post(CV_LAYOUT_PATH, response_class=HTMLResponse)
+async def save_cv_layout(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Persist the chosen CV layout and re-render the settings page with a banner.
+
+    A plain full-page POST, like the weights and reset cards: no htmx swap, no model
+    call. The token is validated against the renderer's own key set before any write,
+    so an unknown or hand-edited value writes nothing and is reported rather than
+    silently accepted. The preference affects only *future* tailored CVs.
+    """
+    form = await read_form(request)
+    raw = form.get("layout")
+    token = raw if isinstance(raw, str) else ""
+    if token not in LAYOUTS:
+        log.info("settings.layout_rejected")
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(
+                session, banner="Nothing was saved: choose one of the listed layouts.", error=True
+            ),
+            status_code=400,
+        )
+
+    try:
+        write_layout(settings.cv_dir, token)
+    except OSError as exc:
+        log.warning("settings.layout_write_failed", error=type(exc).__name__)
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(
+                session,
+                banner=f"Nothing was saved: the layout could not be written ({exc}).",
+                error=True,
+            ),
+            status_code=500,
+        )
+
+    log.info("settings.layout_saved", layout=token)
+    label = LAYOUT_NAMES.get(token, token)
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(
+            session,
+            banner=f"Layout set to {label}. The next tailored CV will use it.",
+        ),
+    )
+
+
 class ResetRefused(Exception):
     """A guard declined the reset. Nothing has been deleted."""
+
 
 def snapshot_database(*, db_path: Path, backups_dir: Path, moment: datetime) -> Path:
     """Copy the live database with `VACUUM INTO`. Returns the snapshot path.
@@ -500,9 +580,7 @@ async def _running_run_id(session: AsyncSession) -> int | None:
 async def _blocking_row(session: AsyncSession) -> str | None:
     """The first blocking table that holds a row, or None."""
     for table in RESET_BLOCKING_TABLES:
-        count = await session.scalar(
-            select(func.count()).select_from(Base.metadata.tables[table])
-        )
+        count = await session.scalar(select(func.count()).select_from(Base.metadata.tables[table]))
         if int(count or 0):
             return table
     return None
@@ -758,9 +836,7 @@ async def test_llm_backend(
     # The observation of THIS call (success criterion 4): the returned part TYPE
     # names and the `info` KEY names — names only, never text or values.
     structured_present = bool(
-        result.ok
-        and result.info_keys
-        and STRUCTURED_RESPONSE_PATH[-1] in result.info_keys
+        result.ok and result.info_keys and STRUCTURED_RESPONSE_PATH[-1] in result.info_keys
     )
     return templates.TemplateResponse(
         request,

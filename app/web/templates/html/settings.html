@@ -181,6 +181,27 @@
   </div>
   {% endif %}
 
+  <form method="post" action="/settings/cv-layout">
+    <div class="field">
+      <label for="cv-layout">CV layout</label>
+      <p class="field-note">
+        Which committed layout the tailored CV is rendered with. This affects the next
+        tailored CV, not ones already generated.
+      </p>
+      <select id="cv-layout" name="layout">
+        {% for key, label, note in layout_options %}
+        <option value="{{ key }}"{% if key == layout %} selected{% endif %}>{{ label }}{% if note %} — {{ note }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      {% if layout == 'classic' %}
+      <p class="field-note">Using the default.</p>
+      {% endif %}
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="cv-layout-submit">Save layout</button>
+    </div>
+  </form>
+
   <p class="settings-note">
     Fallback, without the form: put your LaTeX CV at <code>cv/base.tex</code> in the
     project checkout, run <code>bash scripts/cv-tex-spike.sh</code>, review the draft
