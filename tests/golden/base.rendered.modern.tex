@@ -1,0 +1,60 @@
+% =============================================================================
+% cv-modern.tex.jinja — a selectable CV layout. Distinct presentation, identical
+% facts. Rationale and selection UX: .planning/quick/260930-lay-cv-layout-variants/DESIGN.md.
+%
+% Same RenderPlan contract as cv.tex.jinja: the same sections, entries, bullets
+% and skills_by_group are emitted, with the same escaping choke point. Only the
+% typography and composition differ. No clock, no randomness, no uuid — any date
+% in the output comes from the fact store.
+%
+% Delimiters are the LaTeX-safe backslash-VAR / backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow.
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=1in}
+\hypersetup{hidelinks}
+
+% Editorial headings: uppercase, a hairline rule beneath, generous air above.
+\titleformat{\section}{\normalfont\large\bfseries}{}{0pt}{\MakeUppercase}[
+  \vspace{2pt}\titlerule[0.6pt]]
+\titlespacing*{\section}{0pt}{13pt}{2pt}
+
+\begin{document}
+\noindent{\Huge\bfseries Alex Example}\par
+\vspace{3pt}
+\noindent{\small
+alex.example@example.invalid \textbullet{} https://example.invalid/alex}\par
+\vspace{3pt}
+\hrule
+\vspace{9pt}
+\section*{Experience}
+\noindent\textbf{Northwind Labs} \textperiodcentered{} Senior Engineer\hfill\textit{2021-03 -- 2024-09}\\
+\noindent{\small\itshape Dublin, IE}\par
+\begin{itemize}[leftmargin=1.1em,labelsep=0.5em,itemsep=1.5pt,topsep=2pt,parsep=0pt]
+  \item Reduced p99 latency 40\% by rewriting the ingest path
+  \item Led the migration to a single-writer queue
+  \item Mentored four engineers through their first on-call rotation
+\end{itemize}
+\section*{Skills}
+\noindent\textbf{languages} \textbullet{} Python\par
+\noindent\textbf{databases} \textbullet{} PostgreSQL\par
+\noindent\textbf{infrastructure} \textbullet{} Terraform\par
+\end{document}

@@ -1,0 +1,57 @@
+% =============================================================================
+% cv-compact.tex.jinja — a selectable CV layout. Denser presentation, identical
+% facts. Rationale and selection UX: .planning/quick/260930-lay-cv-layout-variants/DESIGN.md.
+%
+% Same RenderPlan contract as cv.tex.jinja: the same sections, entries, bullets
+% and skills_by_group are emitted, with the same escaping choke point. Only the
+% typography and composition differ. No clock, no randomness, no uuid — any date
+% in the output comes from the fact store.
+%
+% Delimiters are the LaTeX-safe backslash-VAR / backslash-BLOCK forms (see
+% app/latex/env.py). Literal braces are ordinary text; a BLOCK body stays pure
+% control flow.
+% =============================================================================
+\documentclass[10pt]{article}
+
+\usepackage{fontspec}
+\usepackage{geometry}
+\usepackage{tabularx}
+\usepackage{paracol}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{hyperref}
+
+\setmainfont{texgyrepagella}[
+  Extension      = .otf,
+  UprightFont    = *-regular,
+  ItalicFont     = *-italic,
+  BoldFont       = *-bold,
+  BoldItalicFont = *-bolditalic,
+]
+
+\geometry{margin=0.65in}
+\hypersetup{hidelinks}
+
+% Quiet headings: base-size bold, tight spacing, no rule. Density does the work.
+\titleformat{\section}{\normalfont\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{7pt}{2pt}
+
+\setlist[itemize]{leftmargin=1em,labelsep=0.35em,itemsep=0pt,topsep=1pt,parsep=0pt}
+
+\begin{document}
+\noindent{\Large\bfseries Alex Example}\par
+\vspace{2pt}
+\noindent{\small
+alex.example@example.invalid \textbullet{} https://example.invalid/alex}\par
+\vspace{2pt}
+\section*{Experience}
+\noindent\textbf{Northwind Labs} --- \textit{Senior Engineer} (Dublin, IE)\hfill 2021-03 -- 2024-09\\
+\begin{itemize}
+  \item Reduced p99 latency 40\% by rewriting the ingest path
+  \item Led the migration to a single-writer queue
+  \item Mentored four engineers through their first on-call rotation
+\end{itemize}
+\section*{Skills}
+\noindent
+\textbf{languages:} Python\quad\textbf{databases:} PostgreSQL\quad\textbf{infrastructure:} Terraform\par
+\end{document}
