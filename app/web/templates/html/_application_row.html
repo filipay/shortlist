@@ -20,6 +20,45 @@
   <td class="{% if row.is_overdue %}next-overdue{% endif %}">{{ row.next_action_at | format_datetime }}</td>
   <td class="truncate" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
   <td class="listing-actions">
+    {# The guided transition (D-128/D-129). A refused transition returns the same
+       `<tr id="application-row-N">` with `data-error`, swapped in place. Selecting
+       `applied` reveals — and the server REQUIRES — an ok-only artefact picker
+       (`row.ok_artifacts`, SQL-filtered to `compile_status = 'ok'`). With JS off the
+       picker renders always and the server ignores it unless `status = applied`. #}
+    <form class="listing-action"
+          hx-post="/applications/{{ row.id }}/status"
+          hx-target="#application-row-{{ row.id }}"
+          hx-swap="outerHTML"
+          x-data="{ stage: '{{ row.status }}' }">
+      <label class="field-label" for="application-status-{{ row.id }}">Move to</label>
+      <select id="application-status-{{ row.id }}" name="status" x-model="stage">
+        {% for status in statuses %}
+        <option value="{{ status }}" {% if status == row.status %}selected{% endif %}>{{ status | human_label }}</option>
+        {% endfor %}
+      </select>
+      <label class="field-label" for="application-cv-{{ row.id }}" x-show="stage === 'applied'">CV you sent</label>
+      <select id="application-cv-{{ row.id }}" name="cv_artifact_id" x-show="stage === 'applied'">
+        {% for option in row.ok_artifacts %}
+        <option value="{{ option.id }}" {% if option.id == row.cv_artifact_id %}selected{% endif %}>{{ option.id }} — {{ option.created_at | format_datetime }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Update status</button>
+    </form>
+    {# Notes + next action are ordinary mutable columns (D-135): saving appends NO
+       event. An absent/blank next action clears the date. The applied date is never
+       an input here — it is stamped by the transition (D-130). #}
+    <form class="listing-action"
+          hx-post="/applications/{{ row.id }}"
+          hx-target="#application-row-{{ row.id }}"
+          hx-swap="outerHTML">
+      <label class="field-label" for="application-notes-{{ row.id }}">Notes</label>
+      <input type="text" id="application-notes-{{ row.id }}" name="notes" value="{{ row.notes or '' }}">
+      <label class="field-label" for="application-next-{{ row.id }}">Next action</label>
+      <input type="date" id="application-next-{{ row.id }}" name="next_action_at" value="{{ row.next_action_date }}">
+      <button type="submit">Save notes</button>
+    </form>
+    {# The inline timeline (D-134). Fetched from the partial on first expand; the
+       summary count is the row's server-computed event count, never a client recount. #}
     <details class="stage-log"
              id="application-history-{{ row.id }}"
              hx-get="/applications/{{ row.id }}/history"

@@ -236,7 +236,50 @@ async def transition_application_route(
     updated = await application_repo.read_application(
         session, application_id, now=datetime.now(UTC)
     )
-    return templates.TemplateResponse(request, ROW_TEMPLATE, {"row": updated})
+    return templates.TemplateResponse(
+        request, ROW_TEMPLATE, {"row": updated, "statuses": application_repo.APPLICATION_STATUSES}
+    )
+
+
+# NOTE: still AFTER `POST /applications/record` — the dynamic path must never
+# shadow the static `/applications/record` path (declaration-order matching).
+@router.post("/applications/{application_id}", response_class=HTMLResponse)
+async def update_application_route(
+    application_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Edit notes and the next-action date in place — NO event is appended (D-135).
+
+    These are ordinary mutable columns; only a status change is an append-only event.
+    An absent/blank `next_action_at` clears it. Never trusts a form clock for
+    `applied_at`/`occurred_at`.
+    """
+    form = await read_form(request)
+
+    updated_id = await application_repo.update_application(
+        session,
+        application_id=application_id,
+        notes=_text(form.get("notes")),
+        next_action_at=application_repo.parse_next_action(form.get("next_action_at")),
+        now=datetime.now(UTC),
+    )
+    if updated_id is None:
+        return _row_error(
+            application_id,
+            reason="unknown-application",
+            message="Unknown application.",
+            status_code=404,
+        )
+
+    await session.commit()
+    updated = await application_repo.read_application(
+        session, application_id, now=datetime.now(UTC)
+    )
+    return templates.TemplateResponse(
+        request, ROW_TEMPLATE, {"row": updated, "statuses": application_repo.APPLICATION_STATUSES}
+    )
 
 
 __all__ = ["router"]

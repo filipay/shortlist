@@ -15,6 +15,7 @@ from app.api import settings
 from app.api.settings import RESET_DELETE_ORDER, RESET_KEPT_TABLES
 from app.db.models import (
     Application,
+    ApplyConfig,
     CvArtifact,
     CvDraft,
     CvVersion,
@@ -127,6 +128,11 @@ async def _seed_corpus(
         # must not discard the user's own configuration, so it gets a row here too.
         session.add(
             RankingConfig(id=1, weights_json={"evidence": 1.0}, updated_at=NOW)
+        )
+        # The screening-question document (migration 0006) is the same kind of kept
+        # user config, so it gets a row too.
+        session.add(
+            ApplyConfig(id=1, questions_json={"questions": ["Why this role?"]}, updated_at=NOW)
         )
         session.add(
             Score(listing_id=first, run_id=run_id, criteria_version=1, created_at=NOW)

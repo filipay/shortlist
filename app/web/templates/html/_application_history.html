@@ -12,9 +12,9 @@
 <div class="stage-entry">
   <span class="stage-name">{{ (event.from_status | human_label) or 'created' }} &#8594; {{ event.to_status | human_label }}</span>
   <span class="reason-value">{{ event.occurred_at | format_datetime }}</span>
-  {% if event.note %}<span class="stage-note">{{ event.note }}</span>{% endif %}
+  {% if event.note %} {{ event.note }}{% endif %}
 </div>
 {% endfor %}
 {% else %}
-<p class="stage-empty">No history recorded.</p>
+<p class="detail-empty">No history recorded.</p>
 {% endif %}

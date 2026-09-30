@@ -190,3 +190,101 @@ async def test_applied_requires_ok_artifact(
     assert "Applied" in accepted.text
     assert await _counts(session_factory) == (1, 2)
 
+
+async def test_record_route_is_not_shadowed_by_the_dynamic_route(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """`POST /applications/record` must reach the record handler, not 422 as an id."""
+    listing_id = await _seed_listing(session_factory)
+    response = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "queued"},
+    )
+    assert response.status_code == 200, "the record route was shadowed by a dynamic route"
+    assert await _counts(session_factory) == (1, 1)
+
+
+async def test_notes_and_next_action_save_without_appending_an_event(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    recorded = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "shortlisted"},
+    )
+    row_id = _row_id(recorded.text)
+
+    saved = await client.post(
+        f"/applications/{row_id}",
+        data={"notes": "Follow up Friday", "next_action_at": "2026-10-09"},
+    )
+    assert saved.status_code == 200
+    assert "Follow up Friday" in saved.text
+    assert 'value="2026-10-09"' in saved.text
+    assert await _counts(session_factory) == (1, 1), "editing notes appends no event"
+
+
+async def test_clearing_the_next_action_field_clears_the_date(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    recorded = await client.post(
+        "/applications/record",
+        data={
+            "listing_id": str(listing_id),
+            "status": "queued",
+            "next_action_at": "2026-10-09",
+        },
+    )
+    row_id = _row_id(recorded.text)
+
+    cleared = await client.post(
+        f"/applications/{row_id}", data={"notes": "", "next_action_at": ""}
+    )
+    assert cleared.status_code == 200
+
+    async with session_factory() as session:
+        row = await session.get(Application, row_id)
+    assert row is not None and row.next_action_at is None
+
+
+async def test_history_partial_lists_all_events_in_order_and_count_matches(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    recorded = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "shortlisted"},
+    )
+    row_id = _row_id(recorded.text)
+    moved = await client.post(
+        f"/applications/{row_id}/status",
+        data={"status": "interviewing", "note": "Screen booked"},
+    )
+    assert moved.status_code == 200
+
+    history = await client.get(f"/applications/{row_id}/history")
+    assert history.status_code == 200
+    assert "History (2)" in history.text
+    assert history.text.count('class="stage-entry"') == 2
+    assert "created" in history.text, "a NULL from_status renders as created"
+    assert "Screen booked" in history.text
+
+
+async def test_tracker_row_renders_the_transition_and_history_controls(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    recorded = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "shortlisted"},
+    )
+    row_id = _row_id(recorded.text)
+
+    page = await client.get("/applications")
+    assert page.status_code == 200
+    assert "Move to" in page.text
+    assert f'hx-get="/applications/{row_id}/history"' in page.text
+    assert "History (1)" in page.text
+
+
