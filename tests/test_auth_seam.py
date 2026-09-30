@@ -55,8 +55,13 @@ EXPECTED_SEAM_ROUTES = frozenset(
         "/applications/{application_id}/history",
         "/applications/{application_id}/status",
         # Phase 7's apply package page (D-120): it renders the verified PDF and the
-        # user's stored job-search data, so it goes through the identity seam.
+        # user's stored job-search data, so it goes through the identity seam. The
+        # drafting/add-question/delete actions spend tokens or mutate stored drafts,
+        # so every one carries the seam too.
         "/listings/{listing_id}/apply",
+        "/listings/{listing_id}/apply/draft",
+        "/listings/{listing_id}/apply/question",
+        "/listings/{listing_id}/apply/draft/delete",
     }
 )
 

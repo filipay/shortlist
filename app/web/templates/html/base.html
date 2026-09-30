@@ -55,15 +55,17 @@
         evt.detail.isError = false;
       });
 
-      function showTailoringTransportError(evt) {
+      function showRegionTransportError(evt) {
         var target = (evt.detail && evt.detail.target) || document.getElementById('tailoring-review');
-        if (!target || target.id !== 'tailoring-review') return;
+        // The two htmx swap roots that spend a model call. A transport failure has no
+        // response body to swap, so the honest copy is stated in place.
+        if (!target || (target.id !== 'tailoring-review' && target.id !== 'apply-answers')) return;
         target.innerHTML =
           '<p class="tailoring-empty">The request did not reach the server. ' +
           'Check your connection and try again.</p>';
       }
-      document.body.addEventListener('htmx:sendError', showTailoringTransportError);
-      document.body.addEventListener('htmx:timeout', showTailoringTransportError);
+      document.body.addEventListener('htmx:sendError', showRegionTransportError);
+      document.body.addEventListener('htmx:timeout', showRegionTransportError);
     </script>
     {% block scripts %}{% endblock %}
   </body>

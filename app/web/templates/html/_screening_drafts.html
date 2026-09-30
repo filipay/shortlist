@@ -1,0 +1,86 @@
+{# The drafted screening answers region (D-124/D-126/D-127).
+
+   A self-contained fragment (`#apply-answers`): the apply page includes it, and each
+   action (draft / add-question / delete) swaps it back into the same id. It is NOT a
+   page and does not extend `base.html`.
+
+   Each block is the question text plus either the stored answer or "Not yet drafted.",
+   the evidence chips the answer cited, and — when the grounding check flagged the
+   answer — the `.answer-warning` line INSIDE the same block (a warning, never a block,
+   D-125).
+
+   The answer renders as TEXT (`<p class="answer-text">`): never `|safe`, never an input
+   value, so Jinja autoescape is the one choke point (T-07-05-01) and the answer stays
+   selectable with JavaScript off. `Copy answer` is a neutral `button` (not accent) whose
+   Alpine handler reads the adjacent `.answer-text` and flips its own label to `Copied`
+   for ~2s; a clipboard failure leaves the label and the text selectable. Consumption is
+   copy-only — nothing is auto-inserted and no submit path exists (D-127/APPLY-02). #}
+<section id="apply-answers" class="tailoring-review" aria-live="polite">
+  <h3>Drafted answers</h3>
+
+  {% if answer_rows %}
+  {% for row in answer_rows %}
+  <div>
+    <h4>{{ row.question }}</h4>
+    {% if row.answer %}
+    <p class="answer-text">{{ row.answer }}</p>
+    {% if row.evidence %}
+    <p>Evidence: {% for fact in row.evidence %}<code>{{ fact }}</code> {% endfor %}</p>
+    {% endif %}
+    {% if row.unsupported %}
+    <p class="answer-warning">⚠ This answer may go beyond your CV — check the evidence before you use it.</p>
+    {% endif %}
+    <p>
+      <button type="button" class="button"
+              x-data="{ copied: false }"
+              @click="navigator.clipboard.writeText($el.closest('div').querySelector('.answer-text').textContent).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
+              x-text="copied ? 'Copied' : 'Copy answer'">Copy answer</button>
+    </p>
+    {% if row.draft_id %}
+    {# The phase's ONLY destructive affordance (07-UI-SPEC §A.5): a plain (non-HTMX)
+       form, so it works with JavaScript off; Alpine only asks for confirmation. #}
+    <form method="post" action="/listings/{{ listing_id }}/apply/draft/delete"
+          x-data="{}"
+          @submit="if (!confirm('Delete this drafted answer?')) $event.preventDefault()">
+      <input type="hidden" name="draft_id" value="{{ row.draft_id }}">
+      <button type="submit" class="cv-delete">Delete answer</button>
+    </form>
+    <p class="field-note">The question stays in your list; only the answer is removed.</p>
+    {% endif %}
+    {% else %}
+    <p>Not yet drafted.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p>No drafted answers yet. Add a question, or draft answers to your saved questions below.</p>
+  {% endif %}
+
+  {# Add an ad-hoc question for this listing (D-124). A real form action gives the
+     no-JS degrade; HTMX swaps the region when JS is on. #}
+  <form method="post" action="/listings/{{ listing_id }}/apply/question"
+        hx-post="/listings/{{ listing_id }}/apply/question"
+        hx-target="#apply-answers" hx-swap="innerHTML">
+    <div class="field">
+      <label class="field-label" for="apply-question">Add a question</label>
+      <input type="text" id="apply-question" name="question" placeholder="e.g. Why do you want this role?">
+    </div>
+    <div class="form-actions">
+      <button type="submit">Add question</button>
+    </div>
+  </form>
+
+  {# The explicit drafting action: one guarded model call (D-122/D-125). The wait
+     survives the round-trip without looking frozen (mirrors tailoring.html). #}
+  <form method="post" action="/listings/{{ listing_id }}/apply/draft"
+        hx-post="/listings/{{ listing_id }}/apply/draft"
+        hx-target="#apply-answers" hx-swap="innerHTML"
+        hx-indicator="#draft-progress" hx-disabled-elt="find button">
+    <div class="form-actions">
+      <button type="submit">Draft answers</button>
+    </div>
+    <p id="draft-progress" class="htmx-indicator" role="status" aria-live="polite">
+      Drafting answers — this calls the model, so it can take a minute.
+    </p>
+  </form>
+</section>

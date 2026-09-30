@@ -68,7 +68,12 @@
   {% endif %}
 </section>
 
-{# 5. Record the application from the one surface that knows both the listing and its
+{# 5. The drafted screening answers (D-124/D-126/D-127): the HTMX swap root, the
+      per-question blocks, the add-question and draft actions, and copy-to-clipboard.
+      Opening the page reads stored data only — no model call (D-122). #}
+{% include "html/_screening_drafts.html" %}
+
+{# 6. Record the application from the one surface that knows both the listing and its
       verified artefact (D-129). The `applied` stage requires an ok-only picker; with JS
       off the picker renders always and the server ignores it unless `status=applied`. #}
 <section>

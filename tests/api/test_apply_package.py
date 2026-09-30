@@ -18,20 +18,27 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import Application, Listing, Run, Source
-from app.db.repositories import cv_artifact_repo, score_repo
+from app.config import settings
+from app.db.models import Application, Listing, Run, ScreeningDraft, Source
+from app.db.repositories import apply_config_repo, cv_artifact_repo, score_repo
 from app.db.repositories.listing_repo import upsert_listing_source
+from app.domain.schemas.screening import ScreeningAnswer, ScreeningDraftResponse
+from app.llm.base import StructuredCallResult
 from app.main import create_app
 from app.pipeline.stages import normalise_listing
 from app.sources.base import RawListing
 from tests.conftest import OfflineLLMBackend
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+FIXTURE = (
+    Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "cv" / "awesomecv_standin.yaml"
+)
 
 _FORM_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE)
 _ACTION_RE = re.compile(r'action\s*=\s*"([^"]*)"', re.IGNORECASE)
@@ -343,3 +350,270 @@ async def test_record_from_the_package_links_the_ok_artifact(
     assert row.status == "applied"
     assert row.cv_artifact_id == ok_id
     assert row.applied_at is not None
+
+
+# --- the drafted-answers region (D-124/D-125/D-127) ----------------------------
+
+
+async def _seed_drafts(
+    session_factory: async_sessionmaker[AsyncSession],
+    listing_id: int,
+    rows: list[dict[str, Any]],
+) -> list[int]:
+    """Insert `screening_drafts` rows directly and return their ids in order."""
+    ids: list[int] = []
+    async with session_factory() as session:
+        for row in rows:
+            record = ScreeningDraft(
+                listing_id=listing_id,
+                question_text=row["question"],
+                answer_text=row.get("answer"),
+                evidence_json=row.get("evidence", []),
+                unsupported=row.get("unsupported", False),
+                created_at=NOW,
+            )
+            session.add(record)
+            await session.flush()
+            ids.append(int(record.id))
+        await session.commit()
+    return ids
+
+
+async def test_answers_region_renders_the_defaults_not_yet_drafted(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """A fresh install has default questions, each with no stored answer."""
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.get(f"/listings/{listing_id}/apply")
+
+    assert 'id="apply-answers"' in response.text
+    assert "Not yet drafted." in response.text
+    assert "No drafted answers yet." not in response.text
+    assert "Add a question" in response.text
+    assert "Draft answers" in response.text
+
+
+async def test_answers_region_renders_the_empty_copy_when_no_questions(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    async with session_factory() as session:
+        await apply_config_repo.write_questions(session, [], now=NOW)
+        await session.commit()
+
+    response = await client.get(f"/listings/{listing_id}/apply")
+
+    assert (
+        "No drafted answers yet. Add a question, or draft answers to your saved questions below."
+        in response.text
+    )
+    assert "Add a question" in response.text
+    assert "Draft answers" in response.text
+
+
+async def test_a_stored_answer_block_renders_with_evidence_and_the_copy_control(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    await _seed_drafts(
+        session_factory,
+        listing_id,
+        [
+            {
+                "question": "Why this role?",
+                "answer": "Because I build pipelines.",
+                "evidence": ["bul/northwind-labs-2021/1"],
+            }
+        ],
+    )
+
+    response = await client.get(f"/listings/{listing_id}/apply")
+
+    assert 'class="answer-text"' in response.text
+    assert "Because I build pipelines." in response.text
+    assert "<code>bul/northwind-labs-2021/1</code>" in response.text
+    assert "Evidence:" in response.text
+    assert 'class="button"' in response.text
+    assert "Copy answer" in response.text
+    # No warning for a grounded answer; the destructive control carries its class + copy.
+    assert 'class="answer-warning"' not in response.text
+    assert 'class="cv-delete"' in response.text
+    assert "Delete this drafted answer?" in response.text
+
+
+async def test_the_unsupported_warning_renders_inside_the_block(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    await _seed_drafts(
+        session_factory,
+        listing_id,
+        [{"question": "Why this role?", "answer": "I shipped 97% of it.", "unsupported": True}],
+    )
+
+    response = await client.get(f"/listings/{listing_id}/apply")
+
+    assert 'class="answer-warning"' in response.text
+    assert "may go beyond your CV" in response.text
+
+
+async def test_the_draft_action_makes_one_call_and_persists_rows(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """One explicit action → exactly one backend call → the grounded rows persisted."""
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    calls: list[dict[str, Any]] = []
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        calls.append(kwargs)
+        return StructuredCallResult(
+            ok=True,
+            status="ok",
+            data=ScreeningDraftResponse(
+                answers=[
+                    ScreeningAnswer(
+                        question="Why this role?",
+                        answer="Because I build pipelines.",
+                        evidence_ids=[],
+                    )
+                ]
+            ),
+        )
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 200
+    assert len(calls) == 1, "the draft action makes exactly one drafting call"
+    assert "Because I build pipelines." in response.text
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    assert [r.question_text for r in rows] == ["Why this role?"]
+    assert rows[0].answer_text == "Because I build pipelines."
+
+
+async def test_a_disabled_switch_refuses_before_any_call(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        calls.append(kwargs)
+        return StructuredCallResult(ok=True, status="ok", data=ScreeningDraftResponse(answers=[]))
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+    monkeypatch.setattr(settings, "apply_drafting_enabled", False)
+
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 409
+    assert 'data-error="drafting_disabled"' in response.text
+    assert calls == [], "a refusal must not reach the backend"
+    async with session_factory() as session:
+        rows = (await session.execute(select(ScreeningDraft))).scalars().all()
+    assert rows == [], "a refusal writes no draft rows"
+
+
+async def test_add_question_appends_an_ad_hoc_row(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.post(
+        f"/listings/{listing_id}/apply/question",
+        data={"question": "Do you have a portfolio?"},
+    )
+
+    assert response.status_code == 200
+    assert "Do you have a portfolio?" in response.text
+    assert "Not yet drafted." in response.text
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    assert [r.question_text for r in rows] == ["Do you have a portfolio?"]
+    assert rows[0].answer_text is None
+
+
+async def test_per_answer_delete_removes_only_the_named_row(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    ids = await _seed_drafts(
+        session_factory,
+        listing_id,
+        [
+            {"question": "Ad-hoc Q1", "answer": "one"},
+            {"question": "Ad-hoc Q2", "answer": "two"},
+        ],
+    )
+
+    response = await client.post(
+        f"/listings/{listing_id}/apply/draft/delete", data={"draft_id": str(ids[0])}
+    )
+
+    assert response.status_code == 200
+    assert "Ad-hoc Q1" not in response.text
+    assert "Ad-hoc Q2" in response.text
+    async with session_factory() as session:
+        remaining = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    assert [r.question_text for r in remaining] == ["Ad-hoc Q2"]
+
+
+async def test_per_answer_delete_refuses_a_foreign_draft_id(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_a = await _seed_listing(session_factory, index=1)
+    await _seed_artifact(session_factory, listing_a, status="ok")
+    listing_b = await _seed_listing(session_factory, index=2)
+    await _seed_artifact(session_factory, listing_b, status="ok")
+    ids = await _seed_drafts(
+        session_factory, listing_b, [{"question": "Belongs to B", "answer": "b"}]
+    )
+
+    response = await client.post(
+        f"/listings/{listing_a}/apply/draft/delete", data={"draft_id": str(ids[0])}
+    )
+
+    assert response.status_code == 404
+    assert 'data-error="unknown-draft"' in response.text
+    async with session_factory() as session:
+        still = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_b)
+            )
+        ).scalars().all()
+    assert len(still) == 1, "a foreign draft_id must write nothing"
