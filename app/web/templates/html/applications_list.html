@@ -9,7 +9,12 @@
    recount. Jinja autoescape is the only escaping: titles/companies/notes are
    untrusted and rendered as text. The empty states mirror `queue_list.html`. #}
 {% if is_empty %}
-{% if page.query.q or page.query.stage or page.query.view %}
+{% if page.query.view == 'needs_action' %}
+<p class="empty-state filtered-empty-state" id="application-empty-filtered">
+  Nothing needs action — no overdue or upcoming next-action dates.
+  <a href="/applications" id="application-clear-filters">Clear filters</a>
+</p>
+{% elif page.query.q or page.query.stage %}
 <p class="empty-state filtered-empty-state" id="application-empty-filtered">
   No applications match these filters.
   <a href="/applications" id="application-clear-filters">Clear filters</a>

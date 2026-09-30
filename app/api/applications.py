@@ -96,10 +96,13 @@ def _parse_tracker_query(params: Mapping[str, str]) -> dict[str, Any]:
     `stage` is passed through and validated against `APPLICATION_STATUSES` **in the
     repository, before SQL**, so an unknown value raises rather than silently
     returning rows. `q` and `offset` degrade tolerantly; `limit` comes from Settings.
+    `view` is coerced to the one allow-listed literal, so `?view=bogus` degrades to no
+    view rather than reaching SQL (T-07-04-01).
     """
     return {
         "stage": (params.get("stage") or "").strip() or None,
         "q": (params.get("q") or "").strip() or None,
+        "view": "needs_action" if params.get("view") == "needs_action" else None,
         "offset": max(0, _optional_int(params.get("offset")) or 0),
     }
 

@@ -393,3 +393,44 @@ async def test_filter_controls_reset_when_a_predicate_is_set(
     assert "/applications/list?offset" not in page.text
 
 
+async def test_needs_action_view_over_http(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """`view=needs_action` surfaces dated rows and excludes terminal stages (D-133)."""
+    overdue = await _seed_listing(session_factory, index=1)
+    upcoming = await _seed_listing(session_factory, index=2, title="Data Scientist 2")
+    terminal = await _seed_listing(session_factory, index=3)
+    # Dates are far from the real clock so the read-time overdue flag is deterministic.
+    await client.post(
+        "/applications/record",
+        data={"listing_id": str(overdue), "status": "shortlisted", "next_action_at": "2020-01-01"},
+    )
+    await client.post(
+        "/applications/record",
+        data={"listing_id": str(upcoming), "status": "shortlisted", "next_action_at": "2999-01-01"},
+    )
+    await client.post(
+        "/applications/record",
+        data={"listing_id": str(terminal), "status": "rejected", "next_action_at": "2020-01-01"},
+    )
+
+    response = await client.get("/applications?view=needs_action")
+    assert response.status_code == 200
+    assert "Backend Engineer 1" in response.text, "the overdue row is present"
+    assert "Data Scientist 2" in response.text, "the upcoming row is present"
+    assert "Backend Engineer 3" not in response.text, "a rejected row is excluded"
+    assert 'id="application-toggle-needs-action"' in response.text
+
+
+async def test_needs_action_view_renders_the_nothing_needs_action_copy(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    a = await _seed_listing(session_factory, index=1)
+    await _record(client, a, status="rejected")
+
+    response = await client.get("/applications/list?view=needs_action")
+    assert response.status_code == 200
+    assert 'id="application-empty-filtered"' in response.text
+    assert "Nothing needs action" in response.text
+
+

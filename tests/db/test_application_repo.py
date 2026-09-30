@@ -400,3 +400,54 @@ def test_tracker_query_string_omits_offset_for_a_predicate_change() -> None:
     assert "stage=shortlisted" in predicate_change
     assert "view=needs_action" in predicate_change
     assert "offset=25" in query.query_string(offset=25)
+
+
+async def test_needs_action_ordering(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """D-133: overdue first ascending, then upcoming, nulls last, terminal excluded."""
+    listings = [
+        await _seed_listing(session_factory, index=index) for index in range(1, 6)
+    ]
+    older_overdue, overdue, upcoming, undated, terminal = listings
+
+    async def _app(listing_id: int, *, status: str, next_action: datetime | None) -> None:
+        async with session_factory() as session:
+            app_id = await application_repo.record_application(
+                session,
+                listing_id=listing_id,
+                status=status,
+                cv_artifact_id=None,
+                notes=None,
+                next_action_at=next_action,
+                now=NOW,
+            )
+            await session.commit()
+        assert app_id is not None
+
+    await _app(overdue, status="shortlisted", next_action=NOW - timedelta(days=2))
+    await _app(upcoming, status="shortlisted", next_action=NOW + timedelta(days=3))
+    await _app(older_overdue, status="shortlisted", next_action=NOW - timedelta(days=5))
+    await _app(undated, status="shortlisted", next_action=None)
+    await _app(terminal, status="rejected", next_action=NOW - timedelta(days=1))
+
+    async with session_factory() as session:
+        page = await application_repo.read_tracker(session, view="needs_action", now=NOW)
+
+    assert [row.listing_id for row in page.rows] == [
+        older_overdue,
+        overdue,
+        upcoming,
+        undated,
+    ]
+    assert page.total == 4, "the terminal application is excluded"
+    assert [row.is_overdue for row in page.rows] == [True, True, False, False]
+    assert all(row.listing_id != terminal for row in page.rows)
+
+
+async def test_read_tracker_unknown_view_is_a_value_error(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        with pytest.raises(ValueError):
+            await application_repo.read_tracker(session, view="urgent", now=NOW)
