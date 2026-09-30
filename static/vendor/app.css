@@ -51,3 +51,8 @@ input[type=file]::file-selector-button:hover{background-color:var(--color-surfac
 .badge-stage-withdrawn{background-color:var(--color-surface-2);color:var(--color-muted)}
 /* Overdue next-action emphasis, mirroring .req-partial / .badge-stale. */
 .next-overdue{color:var(--color-warning)}
+/* The apply package's no-submit reassurance banner (copies .merges-note). */
+.apply-assurance{background-color:var(--color-info-bg);border:1px solid var(--color-info);border-radius:var(--radius-md);color:#155e75;margin-bottom:1rem;padding:.75rem 1rem}
+/* The package's outbound primary action (copies #run-search-now). */
+.apply-link{display:inline-block;background-color:var(--color-accent);border:1px solid var(--color-accent);border-radius:var(--radius-md);color:#fff;padding:.625rem 1.25rem;font-size:1rem;text-decoration:none}
+.apply-link:hover{background-color:var(--color-accent-hover);border-color:var(--color-accent-hover)}

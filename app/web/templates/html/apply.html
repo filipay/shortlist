@@ -1,0 +1,109 @@
+{% extends "html/base.html" %}
+
+{# The apply package page (D-121 … D-123). The route computes ONE `package_state` and
+   this template branches on it only — no lookup, date arithmetic or settings read.
+
+   gated: no `ok` artefact yet — a `.tailoring-empty` panel carrying
+   `data-state="no-ok-artifact"` and the `/listings/{id}/cv` CTA, nothing else. The ready
+   blocks are absent entirely, never empty shells.
+
+   ready: the five blocks in order — the no-submit reassurance, the outbound plain anchor,
+   the verified-PDF block, the read-only gap checklist and the `Record application` form.
+
+   APPLY-02: nothing here submits to a portal. The outbound action is a plain
+   `rel="noopener noreferrer"` anchor, never a form POST. Jinja autoescape is the only
+   escaping: listing text is untrusted and no value is marked safe. #}
+
+{% block title %}Apply package — {{ listing_title }} — Job Search Copilot{% endblock %}
+
+{% block content %}
+<h2>Apply package</h2>
+
+<p><a href="/listings/{{ listing_id }}">Back to the listing</a></p>
+
+{% if package_state == 'gated' %}
+<p class="tailoring-empty" data-state="no-ok-artifact">
+  <strong>Tailor and verify a CV first</strong><br>
+  An apply package needs a verified CV for this job. Generate and compile one on the
+  tailored-CV page — once verification passes, this package opens with the exact PDF
+  you'll send.
+</p>
+<p><a class="listing-detail-link" href="/listings/{{ listing_id }}/cv">Tailor my CV for this job</a></p>
+{% else %}
+{# 1. The no-submit reassurance — the phase's product posture, never a missing button. #}
+<p class="apply-assurance">
+  Copy each answer into the application form yourself. This tool never submits anything for you.
+</p>
+
+{# 2. The outbound apply link: a plain anchor, never a form POST (APPLY-02/D-127).
+      A missing apply_url renders the fallback text, never a dead/anchorless element. #}
+{% if apply_url %}
+<p><a class="apply-link" href="{{ apply_url }}" target="_blank" rel="noopener noreferrer">Open the application form</a></p>
+{% else %}
+<p>No application link was recorded for this listing — use the source link on the job page.</p>
+{% endif %}
+
+{# 3. The verified PDF, reachable only while READY (the ok gate, D-118/D-121). #}
+<section>
+  <h3>Your verified CV</h3>
+  <p>
+    <a href="/listings/{{ listing_id }}/cv/pdf" target="_blank">Preview</a>
+    <a class="cv-download" href="/listings/{{ listing_id }}/cv/pdf?download=1">Download the exact PDF you'll send</a>
+  </p>
+</section>
+
+{# 4. The read-only gap checklist (D-123): the stored ranking gaps, no tick state. #}
+<section>
+  <h3>What this job asks for that your CV doesn't show</h3>
+  {% if gaps %}
+  <ul class="requirement-list">
+    {% for entry in gaps %}
+    <li class="{% if entry.verdict == 'partial' %}req-partial{% else %}req-gap{% endif %}">
+      <strong>{{ entry.verdict }}</strong> — {{ entry.text }}{% if entry.evidence_id %} <code>{{ entry.evidence_id }}</code>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No requirement gaps were recorded when this job was ranked.</p>
+  {% endif %}
+</section>
+
+{# 5. Record the application from the one surface that knows both the listing and its
+      verified artefact (D-129). The `applied` stage requires an ok-only picker; with JS
+      off the picker renders always and the server ignores it unless `status=applied`. #}
+<section>
+  <h3>Record application</h3>
+  <form method="post" action="/applications/record" x-data="{ stage: 'shortlisted' }">
+    <input type="hidden" name="listing_id" value="{{ listing_id }}">
+    <div class="field">
+      <label class="field-label" for="apply-status">Stage</label>
+      <select id="apply-status" name="status" x-model="stage">
+        {% for status in statuses %}
+        <option value="{{ status }}" {% if status == 'shortlisted' %}selected{% endif %}>{{ status | human_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" x-show="stage === 'applied'">
+      <label class="field-label" for="apply-cv">CV you sent</label>
+      <select id="apply-cv" name="cv_artifact_id">
+        {% for option in ok_artifacts %}
+        <option value="{{ option.id }}" {% if option.id == latest_artifact_id %}selected{% endif %}>{{ option.id }} — {{ option.created_at | format_datetime }}</option>
+        {% endfor %}
+      </select>
+      <p class="field-note">Only verified CVs are listed. Newest is preselected.</p>
+    </div>
+    <div class="field">
+      <label class="field-label" for="apply-notes">Notes</label>
+      <input type="text" id="apply-notes" name="notes">
+    </div>
+    <div class="field">
+      <label class="field-label" for="apply-next">Next action</label>
+      <input type="date" id="apply-next" name="next_action_at">
+    </div>
+    <div class="form-actions">
+      <button type="submit">Record application</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
