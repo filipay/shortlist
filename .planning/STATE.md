@@ -3,8 +3,8 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-09-30T16:04:05.219Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-09-30T17:05:00.000Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 07 execution started
 state_head: f4112908e09dcad1e3366da9028713212bf04617
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
-Last activity: 2026-09-30 — Phase 07 execution started
+Last activity: 2026-09-30 — Completed 07-02-PLAN.md
 
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0/5 plans ([░░░░░░░░░░] 0%)
+Progress: [████████░░░░░░░░░░░░] 2/5 plans ([████░░░░░░] 40%)
 
 ## Performance Metrics
 
@@ -91,6 +91,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0/5 pla
 | Phase 06 P10 | 10 min | 2 tasks | 6 files |
 | Phase 06 P11 | 18 min | 3 tasks | 7 files |
 | Phase 07 P01 | 55 min | 3 tasks | 20 files |
+| Phase 07 P02 | ~35 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,8 @@ Recent decisions affecting current work:
 - [Phase 07]: Phase 07: the applied gate resolves the artefact through cv_artifact_repo.read_for_download(ok_only=True) and a refusal writes nothing; the tracker read never re-filters the stored link on compile_status (D-118/D-129/APPLY-04)
 - [Phase 07]: Phase 07: POST /applications/record is declared before every dynamic POST /applications/{application_id} route because FastAPI matches in declaration order
 - [Phase 07]: Phase 07: migration 0006 adds the application_events append-only triggers via raw op.execute and deliberately adds no CHECK on to_status/from_status (batch-recreation hazard); the status vocabulary is validated in the repository against APPLICATION_STATUSES
+- [Phase 07]: Phase 07: the apply package gate is cv_artifact_repo.latest_for_listing(ok_only=True), so the verified-PDF block and the outbound apply link are unreachable while gated and a blocked/failed artefact reads exactly like no artefact (D-118/D-121); opening the page makes no LLM call (D-122)
+- [Phase 07]: Phase 07: the gap checklist filters stored requirements to verdict gap|partial — the heading promises only what the CV does not show, so a met requirement is excluded (D-123); the ok-only picker reuses application_repo's SQL-level ok selection so the package and tracker pickers cannot drift
 
 ### Pending Todos
 
@@ -213,6 +216,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T16:03:49.253Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-09-30T17:05:00.000Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
