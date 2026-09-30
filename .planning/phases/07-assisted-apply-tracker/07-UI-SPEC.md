@@ -1,10 +1,11 @@
 ---
 phase: "07"
 slug: "assisted-apply-tracker"
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-09-30"
+reviewed_at: "2026-09-30"
 ---
 
 # Phase 07 — UI Design Contract
@@ -373,24 +374,43 @@ stylesheet rule (the class already exists).
 
 ## UI Considerations
 
-Applicable state considerations resolved: **9 covered, 2 backstop, 0 unresolved.**
+> Shape-rooted UI *state* coverage (empty / loading / error / populated / partial / overflow /
+> zero-one-many / long-text), populated by the ui-phase step-9.5 probe over the 16 named surfaces.
+> Empty-state and error-state COPY lives in `## Copywriting Contract` above — this section covers
+> STATE coverage and references those rows rather than restating the copy.
+
+Applicable state considerations resolved: **21 covered, 2 backstop, 0 unresolved** (8 categories across 16 elements).
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
-| empty | drafted-answers block | ✅ covered | Before any draft, the block shows `No drafted answers yet. Add a question, or draft answers to your saved questions below.` with the add-question and `Draft answers` controls still present. |
-| empty | gap checklist | ✅ covered | With no stored gaps the section renders `No requirement gaps were recorded when this job was ranked.` |
-| empty | apply package (gated) | ✅ covered | No `ok` artefact → the `gated` state renders `.tailoring-empty` with `Tailor and verify a CV first` + the `/cv` CTA (D-121); the five ready blocks are absent, never empty shells. |
-| empty | tracker table | ✅ covered | Documented tracker empty copy; a filtered-to-nothing slice renders `#application-empty-filtered` (`No applications match these filters.` + `Clear filters`), mirroring `queue_list.html:44-54`. |
-| empty | inline history | ✅ covered | An application with no events renders `No history recorded.` A fresh record shows its one `created → …` transition, never a blank `<details>`. |
-| loading | `Draft answers` action | ✅ covered | `hx-indicator="#draft-progress"` + `hx-disabled-elt="find button"` + a `role="status" aria-live="polite"` line (mirrors `tailoring.html:36-41`). State survives the LLM round-trip without looking frozen. |
-| loading | `Copy answer` feedback | ✅ covered | The button flips its own label to `Copied` for ~2s; a clipboard failure keeps `Copy answer` and the text remains selectable. |
-| error | drafting action | ✅ covered | A refusal swaps into `#apply-answers` as a `data-error` fragment (the `_error_fragment` convention, `tailoring.py:253-259`); a transport failure reuses the `base.html:57-65` handler pattern (`The request did not reach the server…`). |
-| error | status transition | ✅ covered | A refused transition returns a 4xx `data-error` fragment (`routes.py:198-213`) that re-renders in the row slot; nothing is written. |
-| partial | apply package | ✅ covered | Missing `apply_url` renders the documented text instead of a dead anchor; a missing PDF is impossible in `ready` (the gate); a partial draft (some questions answered) renders per-question, not all-or-nothing. |
-| overflow | tracker table | ✅ covered | `.queue-table` ships `display:block; overflow-x:auto` — on a narrow screen the table scrolls horizontally, never clips. All-new columns keep `white-space:nowrap` off the title/note cells so text wraps instead of forcing scroll. |
-| overflow | long notes / long questions | 🧪 backstop | Latest-note cell truncates to one line with the full text in `title=""`; the inline history shows full notes. A held-out UI-state test asserts the history partial renders the complete untruncated note string. |
-| zero-one-many | tracker / counts | ✅ covered | Count copy switches on `n`: `1 application` vs `N applications`; the history toggle reads `History (1)` vs `History (N)`; stage filter options are the fixed eight. |
-| long-text | drafted answer + copy control | 🧪 backstop | Long answer wraps (no truncation) and the copy handler must reproduce the full untruncated string. A held-out UI-state test asserts copy fidelity across a multi-paragraph answer. |
+| empty | apply package (gated) | ✅ covered | No `ok` artefact → `package_state=gate` renders `.tailoring-empty` with the gated heading/body and the `/cv` CTA (D-121); the ready blocks are absent entirely, never empty shells. |
+| empty | drafted answers (`#apply-answers`) | ✅ covered | A question with no stored answer renders `Not yet drafted.`; with no questions at all the region renders the documented empty copy with the add-question and `Draft answers` controls still present. |
+| empty | gap checklist | ✅ covered | With no stored ranking gaps the section renders the documented copy (D-123) instead of an empty list. |
+| empty | tracker table | ✅ covered | Zero applications renders `#application-empty`; a filtered-to-nothing slice renders `#application-empty-filtered` with `Clear filters`, mirroring `queue_list.html:44-54`. |
+| empty | inline history | ✅ covered | An application with no events renders `No history recorded.`; a freshly recorded application always shows its one `created → …` transition, never a blank `<details>`. |
+| loading | `Draft answers` action | ✅ covered | `hx-indicator="#draft-progress"` + `hx-disabled-elt="find button"` + a `role="status" aria-live="polite"` line (mirrors `tailoring.html:36-41`), so the wait survives the LLM round-trip without looking frozen. |
+| loading | `Copy answer` feedback | ✅ covered | The button flips its own label to `Copied` for ~2s; a clipboard failure keeps `Copy answer` and the text stays selectable. |
+| loading | tracker filter/search swap (`#application-list`) | ✅ covered | The 300ms-debounced `hx-get` leaves the previous rows in place until the response replaces the region (HTMX's default swap, the `queue.html:47-55` pattern); no row is blanked mid-flight and no spinner is declared. |
+| error | drafting action | ✅ covered | A refusal swaps a `data-error` fragment into `#apply-answers` (the `_error_fragment` convention, `tailoring.py:253-259`); a transport failure reuses the `base.html:57-65` copy (`The request did not reach the server…`). |
+| error | status transition | ✅ covered | A refused transition returns a 4xx `data-error` fragment (`routes.py:198-213`) re-rendered in the row slot; nothing is written. |
+| error | tracker fragment fetch (list + history) | ✅ covered | A failed fragment fetch reuses the `base.html:57-65` transport-failure convention; with JS off every control is a real form/anchor, so the server-rendered page remains usable. |
+| populated | tracker table | ✅ covered | At a typical volume the table renders one row per application, at most the Settings-fixed page size per page, with the Stage badge column as the scanning anchor, notes truncated to one line (full text in `title=""`). |
+| populated | drafted answers (`#apply-answers`) | ✅ covered | Each stored question renders one block with its answer, evidence chips and, when applicable, the `.answer-warning` line; blocks stack in the saved question order. |
+| populated | inline history | ✅ covered | A row with a long history lists every event in chronological order inside the expandable `<details>`, and the entry count matches the summary's `History (n)`. |
+| partial | apply package | ✅ covered | A missing `apply_url` renders the documented fallback text instead of a dead anchor; a missing PDF is impossible while `ready` (the `ok` gate); a partially drafted question set renders per-question, never all-or-nothing. |
+| partial | tracker row | ✅ covered | A row with no `applied_at` or no `next_action_at` renders an em-dash rather than a fabricated date, and the empty note cell does not collapse the row. |
+| overflow | tracker table | ✅ covered | `.queue-table` ships `display:block; overflow-x:auto`, so on a narrow screen the table scrolls horizontally and never clips. |
+| overflow | long notes and long titles | 🧪 backstop | Titles and the latest-note cell wrap (`white-space:nowrap` stays off) and the note truncates to one line with the full string in `title=""`; a held-out UI-state test asserts the history partial renders the complete untruncated note string. |
+| overflow | nav and filter labels | ✅ covered | The `Applications` nav link and the filter labels use the shipped `.nav-link` / `.field` text and no fixed width, so they wrap inside `base.html`'s header rather than overflowing. |
+| zero-one-many | tracker counts and toggles | ✅ covered | Count copy switches on `n` (`1 application` vs `N applications`), the history toggle reads `History (1)` vs `History (N)`, and the stage select always lists the fixed eight. |
+| zero-one-many | drafted answers and history entries | ✅ covered | One question or one history event renders through the same per-block markup as many, with no pluralised container label beyond the documented count. |
+| long-text | drafted answer + copy control | 🧪 backstop | A long answer wraps with no truncation and the copy handler must reproduce the full untruncated string; a held-out UI-state test asserts copy fidelity across a multi-paragraph answer. |
+| long-text | tracker title/company + note cell | ✅ covered | The Listing/Company cell keeps `.listing-title` / `.listing-company` with no fixed width, so a long title wraps to a second line and the row grows instead of clipping. |
+
+<!-- Status vocabulary (locked by probe-core): ✅ covered → a plain truth string lifted into
+     must_haves.truths; 🧪 backstop → a flat scalar { statement, verification: backstop } (no
+     explicit evidence at verify time → insufficient_spec → human_needed, never a silent pass);
+     ⚠ unresolved → an explicit planner assumption. Rows are REPLACED, never appended, on a re-run. -->
 
 ---
 
@@ -404,12 +424,12 @@ Applicable state considerations resolved: **9 covered, 2 backstop, 0 unresolved.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved — gsd-ui-checker, 2026-09-30 (7/7 dimensions PASS)
