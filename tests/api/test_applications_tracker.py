@@ -157,3 +157,36 @@ async def test_history_partial_renders_no_history_recorded_for_an_eventless_row(
     assert response.status_code == 200
     assert "No history recorded." in response.text
     assert "History (0)" in response.text
+
+
+async def test_applied_requires_ok_artifact(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """D-118/D-129 over HTTP: a blocked artefact is a 4xx refusal that writes nothing; ok links."""
+    listing_id = await _seed_listing(session_factory)
+    recorded = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "shortlisted"},
+    )
+    assert recorded.status_code == 200
+    row_id = _row_id(recorded.text)
+
+    blocked_id = await _seed_artifact(session_factory, listing_id, status="blocked")
+    refused = await client.post(
+        f"/applications/{row_id}/status",
+        data={"status": "applied", "cv_artifact_id": str(blocked_id)},
+    )
+    assert refused.status_code == 409
+    assert 'data-error="applied-needs-ok-artifact"' in refused.text
+    assert f'id="application-row-{row_id}"' in refused.text
+    assert await _counts(session_factory) == (1, 1), "a refusal writes no row and no event"
+
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
+    accepted = await client.post(
+        f"/applications/{row_id}/status",
+        data={"status": "applied", "cv_artifact_id": str(ok_id)},
+    )
+    assert accepted.status_code == 200
+    assert "Applied" in accepted.text
+    assert await _counts(session_factory) == (1, 2)
+

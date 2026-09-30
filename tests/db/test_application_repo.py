@@ -192,3 +192,96 @@ async def test_read_history_is_chronological(
     assert [event.occurred_at for event in history] == sorted(
         event.occurred_at for event in history
     )
+
+
+async def _event_count(session_factory: async_sessionmaker[AsyncSession]) -> int:
+    async with session_factory() as session:
+        return int(
+            (await session.scalar(select(func.count()).select_from(ApplicationEvent))) or 0
+        )
+
+
+async def test_applied_requires_ok_artifact(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """D-118/D-129: a blocked artefact is refused and writes nothing; an ok one links."""
+    listing_id = await _seed_listing(session_factory)
+    async with session_factory() as session:
+        app_id = await application_repo.record_application(
+            session,
+            listing_id=listing_id,
+            status="shortlisted",
+            cv_artifact_id=None,
+            notes=None,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert app_id is not None
+
+    blocked_id = await _seed_artifact(session_factory, listing_id, status="blocked")
+    async with session_factory() as session:
+        refused = await application_repo.transition_application(
+            session,
+            application_id=app_id,
+            to_status="applied",
+            cv_artifact_id=blocked_id,
+            note=None,
+            now=NOW,
+        )
+        await session.commit()
+
+    assert refused is None, "a blocked artefact must not be attachable"
+    async with session_factory() as session:
+        row = await session.get(Application, app_id)
+    assert row is not None and row.status == "shortlisted"
+    assert await _event_count(session_factory) == 1, "a refusal writes no event"
+
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
+    async with session_factory() as session:
+        accepted = await application_repo.transition_application(
+            session,
+            application_id=app_id,
+            to_status="applied",
+            cv_artifact_id=ok_id,
+            note="sent",
+            now=NOW,
+        )
+        await session.commit()
+
+    assert accepted == app_id
+    async with session_factory() as session:
+        row = await session.get(Application, app_id)
+    assert row is not None
+    assert row.status == "applied"
+    assert row.cv_artifact_id == ok_id
+    assert row.applied_at is not None
+    assert await _event_count(session_factory) == 2
+
+
+async def test_tracker_read_keeps_the_stored_link_when_artifact_status_changes(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The ok-only predicate is attach-time only; the historical link is read unfiltered."""
+    listing_id = await _seed_listing(session_factory)
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
+    async with session_factory() as session:
+        app_id = await application_repo.record_application(
+            session,
+            listing_id=listing_id,
+            status="applied",
+            cv_artifact_id=ok_id,
+            notes=None,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert app_id is not None
+
+    # A later, blocked artefact must NOT make the recorded link vanish.
+    await _seed_artifact(session_factory, listing_id, status="blocked")
+
+    async with session_factory() as session:
+        rows = await application_repo.read_tracker(session, now=NOW)
+    assert len(rows) == 1
+    assert rows[0].cv_artifact_id == ok_id

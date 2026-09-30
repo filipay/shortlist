@@ -53,6 +53,7 @@ EXPECTED_SEAM_ROUTES = frozenset(
         "/applications/list",
         "/applications/record",
         "/applications/{application_id}/history",
+        "/applications/{application_id}/status",
     }
 )
 

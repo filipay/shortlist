@@ -182,4 +182,61 @@ async def application_history(
     )
 
 
+@router.post("/applications/{application_id}/status", response_class=HTMLResponse)
+async def transition_application_route(
+    application_id: int,
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Move one application to a stage, appending exactly one event, and swap the row.
+
+    The `applied` stage requires an `ok` artefact (D-118/D-129); a missing or non-`ok`
+    `cv_artifact_id` is a 4xx `data-error` fragment re-rendered in the row slot and
+    writes NOTHING — no status change, no event. `applied_at` is stamped server-side
+    (D-130), never read from the form.
+    """
+    form = await read_form(request)
+
+    to_status = str(form.get("status") or "").strip()
+    if to_status not in application_repo.APPLICATION_STATUSES:
+        return _row_error(
+            application_id, reason="unknown-status", message="Unknown stage.", status_code=422
+        )
+
+    record = await application_repo.read_application(session, application_id)
+    if record is None:
+        return _row_error(
+            application_id,
+            reason="unknown-application",
+            message="Unknown application.",
+            status_code=404,
+        )
+
+    new_id = await application_repo.transition_application(
+        session,
+        application_id=application_id,
+        to_status=to_status,
+        cv_artifact_id=_optional_int(form.get("cv_artifact_id")),
+        note=_text(form.get("note")),
+        now=datetime.now(UTC),
+    )
+    if new_id is None:
+        return _row_error(
+            application_id,
+            reason="applied-needs-ok-artifact",
+            message=(
+                "Record a verified CV first — there is no verified CV to link to "
+                "this application."
+            ),
+            status_code=409,
+        )
+
+    await session.commit()
+    updated = await application_repo.read_application(
+        session, application_id, now=datetime.now(UTC)
+    )
+    return templates.TemplateResponse(request, ROW_TEMPLATE, {"row": updated})
+
+
 __all__ = ["router"]
