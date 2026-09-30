@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.cv.factstore import CvFactStoreError, load_facts
+from app.cv.layout import read_layout
 from app.db.repositories import cv_artifact_repo, llm_call_repo
 from app.db.repositories.cv_artifact_repo import CvArtifactRecord
 from app.domain.cv import (
@@ -309,6 +310,10 @@ async def compile_tailored(
     listing_id = int(listing.id)
     patch_payload = patch.model_dump(mode="json")
     store_hash = facts_hash(facts)
+    # The remembered layout is read ONCE per compile and threaded through every render
+    # below (the initial render and each page-trim re-render), so a trimmed document
+    # keeps the chosen layout. A bad or missing preference resolves to Classic.
+    layout = read_layout(settings.cv_dir)
 
     # Re-ground the patch server-side: an invalid patch is a value, never an
     # exception to the route. Re-parsing the client form is 06-03's concern.
@@ -355,7 +360,7 @@ async def compile_tailored(
         )
 
     effective_patch = patch
-    tex = render_plan_to_tex(plan)
+    tex = render_plan_to_tex(plan, layout=layout)
     tex_hash = hashlib.sha256(tex.encode("utf-8")).hexdigest()
     base = Path(artifacts_dir) / str(listing_id)
     tex_path = write_rendered(tex, base / f"cv-{tex_hash[:12]}.tex")
@@ -390,7 +395,7 @@ async def compile_tailored(
             candidate_plan = apply_patch(facts, candidate_patch)
         except (UnknownIdError, InvalidPatchError):  # pragma: no cover — the drop is grounded
             break
-        candidate_tex = render_plan_to_tex(candidate_plan)
+        candidate_tex = render_plan_to_tex(candidate_plan, layout=layout)
         candidate_hash = hashlib.sha256(candidate_tex.encode("utf-8")).hexdigest()
         candidate_tex_path = write_rendered(candidate_tex, base / f"cv-{candidate_hash[:12]}.tex")
         candidate_result = await engine.compile(
