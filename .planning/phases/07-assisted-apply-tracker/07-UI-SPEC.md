@@ -383,7 +383,7 @@ Applicable state considerations resolved: **21 covered, 2 backstop, 0 unresolved
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
-| empty | apply package (gated) | ✅ covered | No `ok` artefact → `package_state=gate` renders `.tailoring-empty` with the gated heading/body and the `/cv` CTA (D-121); the ready blocks are absent entirely, never empty shells. |
+| empty | apply package (gated) | ✅ covered | No `ok` artefact → `package_state=gated` renders `.tailoring-empty` with the gated heading/body and the `/cv` CTA (D-121); the ready blocks are absent entirely, never empty shells. |
 | empty | drafted answers (`#apply-answers`) | ✅ covered | A question with no stored answer renders `Not yet drafted.`; with no questions at all the region renders the documented empty copy with the add-question and `Draft answers` controls still present. |
 | empty | gap checklist | ✅ covered | With no stored ranking gaps the section renders the documented copy (D-123) instead of an empty list. |
 | empty | tracker table | ✅ covered | Zero applications renders `#application-empty`; a filtered-to-nothing slice renders `#application-empty-filtered` with `Clear filters`, mirroring `queue_list.html:44-54`. |
