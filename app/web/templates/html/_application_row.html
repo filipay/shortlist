@@ -1,0 +1,31 @@
+{# One tracker row (D-132 / D-134).
+
+   Included by `applications_list.html`, so it inherits the page context (`row`).
+   It is ALSO returned standalone by the status/notes routes (outerHTML swap into
+   `#application-row-<id>`), which is why the flags it needs arrive PRECOMPUTED on
+   the row rather than via `page.*` lookups.
+
+   Jinja autoescape is the only escaping: note text is stored/user text, never
+   marked safe. #}
+<tr id="application-row-{{ row.id }}"
+    class="listing-row{% if row.is_overdue %} listing-stale{% endif %}"
+    data-status="{{ row.status }}">
+  <td class="listing-title">
+    {% if row.listing_title %}{{ row.listing_title }}{% endif %}
+    {% if row.company %}<span class="listing-company">{{ row.company }}</span>{% endif %}
+    <a class="listing-detail-link" href="/listings/{{ row.listing_id }}">Details</a>
+  </td>
+  <td><span class="badge badge-stage-{{ row.status }}">{{ row.status | human_label }}</span></td>
+  <td class="listing-posted">{{ row.applied_at | format_datetime }}</td>
+  <td class="{% if row.is_overdue %}next-overdue{% endif %}">{{ row.next_action_at | format_datetime }}</td>
+  <td class="truncate" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
+  <td class="listing-actions">
+    <details class="stage-log"
+             id="application-history-{{ row.id }}"
+             hx-get="/applications/{{ row.id }}/history"
+             hx-trigger="toggle once"
+             hx-swap="innerHTML">
+      <summary>History ({{ row.event_count }})</summary>
+    </details>
+  </td>
+</tr>

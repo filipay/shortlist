@@ -134,7 +134,9 @@ RESET_CONFIRM_TOKEN = "DELETE"
 #:
 #: `cv_artifacts` (a compiled artifact) and `cv_drafts` (the live generated draft,
 #: migration 0005) are DERIVED and regenerable from a listing, so a corpus reset
-#: deletes them rather than refusing. `cv_artifacts` also references `cv_versions`,
+#: deletes them rather than refusing. `screening_drafts` (migration 0006) is likewise
+#: a regenerable child of `listings`, so it is deleted before its parent. `cv_artifacts`
+#: also references `cv_versions`,
 #: a KEPT table — its rows are simply left behind, which is fine. Both must precede
 #: `listings` (their parent). Note the reset is DB-only and never touches the files
 #: under `artifacts_dir`, so deleting artifact rows leaves orphaned PDF/`.tex` files
@@ -147,6 +149,7 @@ RESET_DELETE_ORDER: tuple[str, ...] = (
     "listing_sources",
     "cv_artifacts",
     "cv_drafts",
+    "screening_drafts",
     "listings",
     "llm_calls",
     "source_request_log",
@@ -157,12 +160,15 @@ RESET_DELETE_ORDER: tuple[str, ...] = (
 
 #: Shown on the page as kept. `ranking_config` is the global ranking-weights
 #: document (D-99) — the user's own configuration, like `searches` and `filter_rules`,
-#: so a corpus reset must not discard the weights.
+#: so a corpus reset must not discard the weights. `apply_config` (migration 0006) is
+#: the single-row screening-question document — the same kind of user config, with no
+#: FK to `listings`, so a reset keeps it.
 RESET_KEPT_TABLES: tuple[str, ...] = (
     "searches",
     "filter_rules",
     "sources",
     "ranking_config",
+    "apply_config",
 )
 
 #: Tables that reference `listings` and are NOT deleted: a reset refuses while any of

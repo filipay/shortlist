@@ -459,6 +459,50 @@ class CvDraft(Base):
     )
 
 
+class ScreeningDraft(Base):
+    """A drafted screening answer, one row per question, per listing (D-124 / D-126).
+
+    Created by migration ``0006`` — this model mirrors that DDL, and there is
+    deliberately no ``create_all`` anywhere (the migration is the only schema
+    writer). ``evidence_json`` is a JSON column (allow-listed in
+    ``tests/db/test_no_pii_columns.py``): it carries the CV fact ids each answer
+    cited and nothing else. ``unsupported`` marks an answer whose grounding check
+    found a claim not backed by the CV/listing sources (D-125).
+    """
+
+    __tablename__ = "screening_drafts"
+
+    id = Column(Integer, primary_key=True)
+    listing_id = Column(Integer, ForeignKey("listings.id"), nullable=False)
+    question_text = Column(Text, nullable=False)
+    answer_text = Column(Text)
+    evidence_json = Column(JSON)
+    unsupported = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    created_at = Column(DateTime, nullable=False)
+
+
+class ApplyConfig(Base):
+    """The single-row screening-question document (D-124), mirroring ``ranking_config``.
+
+    Created by migration ``0006``. ``id`` is pinned to 1 by the explicitly named
+    ``ck_apply_config_singleton``, so a read can always address the one document by
+    id. ``questions_json`` is a JSON column (allow-listed in
+    ``tests/db/test_no_pii_columns.py``): it carries the user's question strings and
+    nothing else. It is user configuration, so a corpus reset keeps it
+    (``RESET_KEPT_TABLES`` in ``app/api/settings.py``).
+    """
+
+    __tablename__ = "apply_config"
+
+    id = Column(Integer, primary_key=True)
+    questions_json = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_apply_config_singleton"),
+    )
+
+
 class Application(Base):
     """Acceptance item 5: `cv_artifact_id` — the exact artefact that was sent."""
 

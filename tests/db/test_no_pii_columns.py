@@ -70,6 +70,11 @@ EXPECTED_JSON_COLUMNS: dict[str, frozenset[str]] = {
     # (fact IDs, weights, reasons — never free text, never listing content), and the
     # other columns are two integer FKs, a sha256 hex and a timestamp.
     "cv_drafts": frozenset({"patch_json"}),
+    # 0006 adds the per-question screening drafts (fact ids only) and the single-row
+    # screening-question document (user question strings only). Neither carries a
+    # recruiter/personal identifier.
+    "screening_drafts": frozenset({"evidence_json"}),
+    "apply_config": frozenset({"questions_json"}),
     "applications": frozenset(),
     "application_events": frozenset(),
     "llm_calls": frozenset(),

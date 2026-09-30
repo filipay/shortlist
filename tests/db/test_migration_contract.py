@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0005"], "expected exactly one recorded revision: 0005"
+    assert versions == ["0006"], "expected exactly one recorded revision: 0006"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0005"), head_lines[0]
+    assert head_lines[0].startswith("0006"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -580,6 +580,83 @@ def test_cv_drafts_table_and_unique_listing(migrated_db: Path) -> None:
         connection.close()
 
 
+# --- Item 17 (0006) — screening_drafts + apply_config + the two triggers -------
+def test_screening_drafts_apply_config_and_application_events_append_only(
+    migrated_db: Path,
+) -> None:
+    """D-126 / D-131: two new tables, and the history table is trigger-enforced.
+
+    The append-only guarantee is asserted against the **migrated** DDL (not the ORM),
+    mirroring ``test_listing_events_append_only``: a migration that dropped the new
+    triggers fails here even though the models would still look correct.
+    """
+    connection = _connect(migrated_db)
+    try:
+        assert _exists(connection, "table", "screening_drafts")
+        assert _exists(connection, "table", "apply_config")
+        assert _exists(connection, "trigger", "application_events_no_update")
+        assert _exists(connection, "trigger", "application_events_no_delete")
+
+        draft_columns = _table_info(connection, "screening_drafts")
+        assert {
+            "id",
+            "listing_id",
+            "question_text",
+            "answer_text",
+            "evidence_json",
+            "unsupported",
+            "created_at",
+        } <= set(draft_columns)
+        assert draft_columns["listing_id"]["notnull"] == 1
+        assert draft_columns["question_text"]["notnull"] == 1
+        assert draft_columns["unsupported"]["notnull"] == 1
+
+        config_columns = _table_info(connection, "apply_config")
+        assert {"id", "questions_json", "updated_at"} <= set(config_columns)
+        assert config_columns["questions_json"]["notnull"] == 1
+        config_sql = _master(connection, "table", "apply_config")["sql"]
+        assert "ck_apply_config_singleton" in config_sql
+
+        listing_id = _insert_listing(connection)
+        connection.execute(
+            "INSERT INTO applications (listing_id, status, created_at, updated_at) "
+            "VALUES (?, 'queued', ?, ?)",
+            (listing_id, "2026-09-30 00:00:00", "2026-09-30 00:00:00"),
+        )
+        application_id = int(
+            connection.execute("SELECT id FROM applications").fetchone()["id"]
+        )
+        connection.execute(
+            "INSERT INTO application_events "
+            "(application_id, from_status, to_status, occurred_at) "
+            "VALUES (?, NULL, 'queued', ?)",
+            (application_id, "2026-09-30 00:00:00"),
+        )
+        connection.execute(
+            "INSERT INTO apply_config (id, questions_json, updated_at) "
+            "VALUES (1, '{}', ?)",
+            ("2026-09-30 00:00:00",),
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError) as update_error:
+            connection.execute("UPDATE application_events SET to_status = 'applied'")
+        assert "append-only" in str(update_error.value)
+
+        with pytest.raises(sqlite3.IntegrityError) as delete_error:
+            connection.execute("DELETE FROM application_events")
+        assert "append-only" in str(delete_error.value)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO apply_config (id, questions_json, updated_at) "
+                "VALUES (2, '{}', ?)",
+                ("2026-09-30 00:00:00",),
+            )
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -603,7 +680,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0005"], f"expected exactly 0005, saw {versions}"
+        assert versions == ["0006"], f"expected exactly 0006, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

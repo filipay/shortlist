@@ -1,0 +1,16 @@
+{% extends "html/base.html" %}
+
+{# The /applications tracker page (D-132). Server-rendered and no-JS-reachable: the
+   table is rendered inline; HTMX only enhances the fragment swaps. The template
+   branches on PRECOMPUTED values — no date arithmetic, no lookup. #}
+
+{% block title %}Applications · Job Search Copilot{% endblock %}
+
+{% block content %}
+<section id="applications">
+  <h2>Applications</h2>
+  <div id="application-list" aria-live="polite">
+    {% include "html/applications_list.html" %}
+  </div>
+</section>
+{% endblock %}

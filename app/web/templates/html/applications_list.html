@@ -1,0 +1,32 @@
+{# The swappable tracker fragment (D-132).
+
+   Rendered two ways from ONE definition: `applications.html` includes it for the
+   initial page, and `GET /applications/list` returns it for the in-place swap.
+   A separately-recorded application re-renders this whole fragment (the record
+   route's response), so the count and every row stay consistent.
+
+   `History (n)` comes from the row's server-computed event count, never a client
+   recount. Jinja autoescape is the only escaping: titles/companies/notes are
+   untrusted and rendered as text. #}
+{% if is_empty %}
+<p class="empty-state" id="application-empty">No applications yet. Record one from a job's apply package.</p>
+{% else %}
+<p class="queue-count" id="application-count">{{ count }} application{% if count != 1 %}s{% endif %}</p>
+<table class="queue-table">
+  <thead>
+    <tr>
+      <th scope="col">Listing</th>
+      <th scope="col">Stage</th>
+      <th scope="col">Applied</th>
+      <th scope="col">Next action</th>
+      <th scope="col">Latest note</th>
+      <th scope="col">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% include "html/_application_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

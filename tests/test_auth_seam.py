@@ -46,6 +46,13 @@ EXPECTED_SEAM_ROUTES = frozenset(
         "/listings/{listing_id}/cv/generate",
         "/listings/{listing_id}/cv/compile",
         "/listings/{listing_id}/cv/pdf",
+        # Phase 7's application tracker (D-120): the tracker and its record/history
+        # routes render and mutate private job-search data, so every route carries
+        # the seam.
+        "/applications",
+        "/applications/list",
+        "/applications/record",
+        "/applications/{application_id}/history",
     }
 )
 

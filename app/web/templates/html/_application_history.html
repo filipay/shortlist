@@ -1,0 +1,20 @@
+{# The inline application-history body (D-134).
+
+   Swapped into the row's `<details class="stage-log">` on first expand, so it must
+   re-emit the `<summary>` the swap replaces. The count is server-computed from the
+   events actually rendered, so `History (n)` always matches the entries below it.
+
+   A NULL `from_status` (the first, `created` event) renders as `created`. Nothing
+   here is editable: the event table is append-only (D-131). #}
+<summary>History ({{ count }})</summary>
+{% if events %}
+{% for event in events %}
+<div class="stage-entry">
+  <span class="stage-name">{{ (event.from_status | human_label) or 'created' }} &#8594; {{ event.to_status | human_label }}</span>
+  <span class="reason-value">{{ event.occurred_at | format_datetime }}</span>
+  {% if event.note %}<span class="stage-note">{{ event.note }}</span>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p class="stage-empty">No history recorded.</p>
+{% endif %}
