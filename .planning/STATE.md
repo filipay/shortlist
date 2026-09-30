@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
-status: executing
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-09-30T17:10:08.284Z"
+status: verifying
+stopped_at: Completed 07-05-PLAN.md
+last_updated: "2026-09-30T18:15:01.372Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 07 execution started
-state_head: d006dc7974bdb595aca0e3fe38480006a80ebc09
+state_head: b82a8e2b24c2da1c187389271720fff50d371ac5
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 61
-  completed_plans: 60
+  completed_plans: 61
   percent: 0
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-09-30 — Completed 07-04-PLAN.md
+Status: Phase complete — ready for verification
+Last activity: 2026-09-30 — Completed 07-05-PLAN.md
 
-Progress: [████████████░░░░░░░░] 3/5 plans ([░░░░░░░░░░] 0%)
+Progress: [████████████████████] 5/5 plans
 
 ## Performance Metrics
 
@@ -94,6 +94,7 @@ Progress: [████████████░░░░░░░░] 3/5 pla
 | Phase 07 P02 | ~35 min | 2 tasks | 7 files |
 | Phase 07 P03 | 13 min | 3 tasks | 9 files |
 | Phase 07 P04 | 38min | 2 tasks | 6 files |
+| Phase 07 P05 | ~25 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,9 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-04: stage is validated against APPLICATION_STATUSES before SQL and raises ValueError (the route renders a 422 data-error refusal); view is coerced in the route to the one allow-listed literal
 - [Phase 07]: 07-04: q is a bounded Python casefold substring over title/company/notes (ponytail ceiling; an FTS index is the upgrade path); needs-action orders (next_action_at IS NULL), next_action_at ASC with an id tie-break and excludes TERMINAL_STATUSES
 - [Phase 07]: 07-04: tracker paging reuses Settings.queue_page_size and the queue's #queue-pager/#queue-page-position ids; an All-stages empty option is required so the stage select can represent no filter
+- [Phase 07]: 07-05: apply_config questions fall back to DEFAULT_QUESTIONS only for an ABSENT row; an explicit empty list is preserved as its own state (D-124)
+- [Phase 07]: 07-05: the apply package GET stays zero-LLM; only the explicit Draft answers action spends a call, and the stage's one audit row is committed before any refusal so an attempted call survives
+- [Phase 07]: 07-05: answers render as escaped text and consumption is copy-only (D-127); a per-answer delete is scoped by (listing_id, draft_id) and an ad-hoc question appends via replace_for_listing with no new repository surface
 
 ### Pending Todos
 
@@ -225,6 +229,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:10:08.151Z
-Stopped at: Completed 07-04-PLAN.md
+Last session: 2026-09-30T18:15:01.236Z
+Stopped at: Completed 07-05-PLAN.md
 Resume file: None

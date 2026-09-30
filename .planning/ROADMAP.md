@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 4/5 plans executed (0 executed)
+**Plans:** 5/5 plans executed (0 executed)
 **UI hint**: yes
 
 Plans:
@@ -340,7 +340,7 @@ Plans:
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
-- [ ] 07-05-PLAN.md — The drafted-answers surface: the question list, the package-page region, the draft action, and copy-to-clipboard
+- [x] 07-05-PLAN.md — The drafted-answers surface: the question list, the package-page region, the draft action, and copy-to-clipboard
 
 ### Phase 8: Operations + Polish
 
@@ -374,7 +374,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | In Progress|  |
-| 7. Assisted Apply + Tracker | 4/5 | In Progress|  |
+| 7. Assisted Apply + Tracker | 5/5 | In Progress|  |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
 ---
