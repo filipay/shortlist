@@ -72,7 +72,7 @@ Enumerated by `python3 -c "import re;print(len(set(re.findall(r'\.([a-z][a-z0-9]
 | `.reason-value` / `.reason-sentence` | `app.css` L25 | `queue.html:29-32` | Mono chip + muted sentence. Reuse for machine tokens (dates, status ids). |
 | `.queue-count` / `.ranking-strip` / `.last-run` | `app.css` L25 | `queue.html:17,149,26` | Count line + muted status strip + surface panel. |
 | `.queue-toggle` / `.queue-sort` / `.queue-threshold` | `app.css` L22 | `queue.html:60-127` | Filter-control styling. **The tracker's stage filter + needs-action toggle reuse these.** |
-| `.queue-pager` + `#queue-page-position` | `app.css` L2 | `queue_list.html:84-104` | Two-way pager markup. **Reuse for tracker pagination (D-132 discretion: follow the queue's approach).** |
+| `#queue-pager` + `#queue-page-position` | `app.css` L2 (selector is `#queue-pager{display:flex;align-items:center;gap:1rem;margin-top:1rem}`) | `queue_list.html:84-104` | Two-way pager markup. **Reuse for tracker pagination (D-132 discretion: follow the queue's approach).** |
 | `.htmx-indicator` / `.htmx-request` | `app.css` L35-36 | `tailoring.html:39` | Show-on-request status line; pairs with `hx-indicator` + `hx-disabled-elt` + `role="status" aria-live="polite"`. |
 | `.settings-banner` / `.settings-banner-error` | `app.css` L2 | `settings.html:13` | Result banner (accent left border; danger variant). Reuse for transition success/refusal. |
 | `.capability-warning` / `.capability-warnings` | `app.css` L2 | site-wide | Warning-token text + warning-bg panel. **Reuse for the unsupported-claim warning (D-125).** |
@@ -85,6 +85,7 @@ Enumerated by `python3 -c "import re;print(len(set(re.findall(r'\.([a-z][a-z0-9]
 - `.apply-link` — copies `#run-search-now` (filled accent button: `background/border: var(--color-accent); color:#fff; padding:.625rem 1.25rem; font-size:1rem`) for the outbound "Open the application form" action.
 - `.answer-warning` — copies `.capability-warning` (warning token, muted size) for the per-answer unsupported-claim line.
 - `.next-overdue` — copies `.req-partial` (`color: var(--color-warning)`) for an overdue next-action cell.
+- `.answer-text` — copies `.detail-rationale` (`max-width:65ch`) so a drafted answer gets a readable line length; the generic `p{margin:0 0 1rem}` rule still applies. This is the element the `Copy answer` handler reads, so it stays a real styled `<p>`, never an input value.
 
 ---
 
@@ -134,7 +135,7 @@ Semantic tokens available for status (existing): `--color-success` `#059669`, `-
 
 **Accent reserved for (explicit list — never "all interactive elements"):**
 1. The package page's outbound primary action — "Open the application form" (`.apply-link`, mirrors `#run-search-now`);
-2. Primary submit buttons (`button[type=submit]`: "Draft answers", "Record application", "Save", "Add question");
+2. Primary submit buttons (`button[type=submit]`: "Draft answers", "Record application", "Update status", "Save notes", "Add question");
 3. Links (`a`, `.listing-title-link`, `.listing-detail-link`, `.source-link`, `.cv-download` is bold not accent);
 4. The current-page nav marker (`.nav-current`) and the "Applications" nav entry when active;
 5. Keyboard focus rings (`:focus-visible`).
@@ -308,11 +309,20 @@ drafting call is the explicit `Draft answers` action.
   | Latest note | one-line `.truncate` with the full text duplicated into `title=""`; the inline history carries the complete notes |
   | Actions | `History (n)` toggle + the `Move to` transition control |
 
+- **Primary visual anchor:** the **Stage badge** column. It is the only colour-coded element in an
+  otherwise neutral table, so the eye lands on the current stage first and scans the column top-to-
+  bottom. The row's primary *action* is the `Update status` accent submit. In the needs-action view
+  the **overdue** next-action cell (`.next-overdue`) becomes the second focal point. Don't add a
+  competing accent to the table chrome (headers, filters, pager): accent stays with the badges'
+  semantic colours and the one submit (see §Color). The queue table's identity anchor is the
+  Listing/Company cell; the tracker keeps that cell first so the two tables read the same.
 - **Needs-action view** (D-133): overdue rows first (ascending `next_action_at`), then upcoming
   (ascending); terminal stages (offer/rejected/withdrawn) excluded. Overdue rows keep the warning
   emphasis on the next-action cell.
-- **Pagination** — reuse the two-way `.queue-pager` markup (`queue_list.html:84-104`) with
-  `id="applications-pager"`; `Settings`-fixed page size, server-side.
+- **Pagination** — reuse the two-way pager markup (`queue_list.html:84-104`) **keeping its existing
+  `id="queue-pager"`** (there is no `.queue-pager` class — the rule is `#queue-pager`), with the two
+  `hx-get` URLs pointed at `/applications/list`; `Settings`-fixed page size, server-side. The
+  position span keeps `#queue-page-position`. No new id or rule is introduced.
 - **Empty / filtered-empty** — mirror `queue_list.html:44-54` (`#application-empty` /
   `#application-empty-filtered` with a `Clear filters` link).
 - **Unknown listing on the package page** → the 404 HTML fragment convention
@@ -338,7 +348,8 @@ drafting call is the explicit `Draft answers` action.
 - Form: `hx-post="/applications/{{ id }}/status" hx-target="#application-row-{{ id }}"
   hx-swap="outerHTML"` — the route re-renders **the whole row**, the `_action_forms.html` /
   `_detail_actions.html` inline-swap pattern (no manual reload).
-- `Move to` `<select name="status">` limited to the guided set; a `Save` submit. A refused
+- `Move to` `<select name="status">` limited to the guided set; an `Update status` submit (verb +
+  noun — the shipped app never ships a bare `Save`: `Save weights`, `Save layout`, `Save search`). A refused
   transition returns the app's refused-action convention: a 4xx HTML fragment carrying
   `data-error` (`routes.py:198-213`).
 - **Applied gate (D-129):** selecting `applied` reveals — and the server **requires** — an
@@ -348,7 +359,7 @@ drafting call is the explicit `Draft answers` action.
   ignores it unless `status=applied`. A POST to `applied` with no, or a non-ok, artefact is a refusal
   fragment (`Record a verified CV first — …`) and writes nothing.
 - **Notes + next-action inline edit:** a plain form, `hx-post="/applications/{{ id }}"`, returning
-  the row; `Notes` field + `Next action` `<input type="date">` + `Save`. These are ordinary
+  the row; `Notes` field + `Next action` `<input type="date">` + `Save notes`. These are ordinary
   mutable columns (D-135); only status changes are append-only events.
 - **Applied date** is stamped by the transition (D-130) and displayed read-only — never an input.
 
