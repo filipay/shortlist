@@ -1,14 +1,65 @@
 {% extends "html/base.html" %}
 
-{# The /applications tracker page (D-132). Server-rendered and no-JS-reachable: the
-   table is rendered inline; HTMX only enhances the fragment swaps. The template
-   branches on PRECOMPUTED values — no date arithmetic, no lookup. #}
+{# The /applications tracker page (D-132 / D-133). Server-rendered and
+   no-JS-reachable: the table is rendered inline; HTMX only enhances the fragment
+   swaps. The template branches on PRECOMPUTED values — no date arithmetic, no
+   lookup — and mirrors `queue.html`'s filter form exactly. #}
 
 {% block title %}Applications · Job Search Copilot{% endblock %}
 
 {% block content %}
 <section id="applications">
   <h2>Applications</h2>
+
+  <form id="application-filters"
+        hx-get="/applications/list"
+        hx-target="#application-list"
+        hx-swap="innerHTML">
+    <label for="application-search">Search</label>
+    <input type="search"
+           id="application-search"
+           name="q"
+           placeholder="company, title or notes"
+           value="{{ page.query.q or '' }}"
+           hx-get="/applications/list"
+           hx-trigger="input changed delay:300ms, search"
+           hx-target="#application-list"
+           hx-swap="innerHTML"
+           hx-include="closest form">
+
+    {# A predicate change RESETS the page index: page 3 of a different filtered set is
+       meaningless, so these controls emit no `offset` and the tracker restarts at 0.
+       Only the pager in applications_list.html carries an offset. The empty option is
+       what lets the select represent "no stage filter" — without it the browser would
+       silently select the first stage and filter every request. #}
+    <label class="queue-sort" for="application-stage">Stage
+      <select id="application-stage"
+              name="stage"
+              hx-get="/applications/list"
+              hx-target="#application-list"
+              hx-swap="innerHTML"
+              hx-include="closest form">
+        <option value="">All stages</option>
+        {% for status in statuses %}
+        <option value="{{ status }}" {% if page.query.stage == status %}selected{% endif %}>{{ status | human_label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="queue-toggle" for="application-toggle-needs-action">
+      <input type="checkbox"
+             id="application-toggle-needs-action"
+             name="view"
+             value="needs_action"
+             {% if page.query.view == 'needs_action' %}checked{% endif %}
+             hx-get="/applications/list"
+             hx-target="#application-list"
+             hx-swap="innerHTML"
+             hx-include="closest form">
+      Needs action
+    </label>
+  </form>
+
   <div id="application-list" aria-live="polite">
     {% include "html/applications_list.html" %}
   </div>

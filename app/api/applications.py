@@ -24,6 +24,7 @@ untrusted form/stored text and are rendered as text, never marked safe.
 from __future__ import annotations
 
 import html
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
 from app.api.searches import read_form
+from app.config import settings
 from app.db.models import Listing
 from app.db.repositories import application_repo
 from app.db.session import get_session
@@ -88,13 +90,35 @@ def _row_error(
     )
 
 
-async def _list_context(session: AsyncSession) -> dict[str, Any]:
-    """The shared tracker fragment context, so the page and the list swap cannot drift."""
-    rows = await application_repo.read_tracker(session, now=datetime.now(UTC))
+def _parse_tracker_query(params: Mapping[str, str]) -> dict[str, Any]:
+    """The tracker's filter params as `read_tracker` keyword arguments.
+
+    `stage` is passed through and validated against `APPLICATION_STATUSES` **in the
+    repository, before SQL**, so an unknown value raises rather than silently
+    returning rows. `q` and `offset` degrade tolerantly; `limit` comes from Settings.
+    """
     return {
-        "rows": rows,
-        "count": len(rows),
-        "is_empty": not rows,
+        "stage": (params.get("stage") or "").strip() or None,
+        "q": (params.get("q") or "").strip() or None,
+        "offset": max(0, _optional_int(params.get("offset")) or 0),
+    }
+
+
+async def _list_context(
+    session: AsyncSession, params: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """The shared tracker fragment context, so the page and the list swap cannot drift."""
+    page = await application_repo.read_tracker(
+        session,
+        now=datetime.now(UTC),
+        limit=settings.queue_page_size,
+        **_parse_tracker_query(params or {}),
+    )
+    return {
+        "page": page,
+        "rows": page.rows,
+        "count": page.total,
+        "is_empty": page.total == 0,
         "statuses": application_repo.APPLICATION_STATUSES,
         "now": datetime.now(UTC),
     }
@@ -107,7 +131,11 @@ async def applications_page(
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     """The tracker page shell, embedding the shared list fragment."""
-    return templates.TemplateResponse(request, PAGE_TEMPLATE, await _list_context(session))
+    try:
+        context = await _list_context(session, request.query_params)
+    except ValueError:
+        return _error_fragment("unknown-stage", "Unknown stage.", 422)
+    return templates.TemplateResponse(request, PAGE_TEMPLATE, context)
 
 
 @router.get("/applications/list", response_class=HTMLResponse)
@@ -117,7 +145,11 @@ async def applications_list(
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     """The tracker table fragment, for the in-place `hx-get` swap."""
-    return templates.TemplateResponse(request, LIST_TEMPLATE, await _list_context(session))
+    try:
+        context = await _list_context(session, request.query_params)
+    except ValueError:
+        return _error_fragment("unknown-stage", "Unknown stage.", 422)
+    return templates.TemplateResponse(request, LIST_TEMPLATE, context)
 
 
 # NOTE: declared BEFORE every dynamic `POST /applications/{application_id}` route.

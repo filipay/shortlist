@@ -34,7 +34,11 @@ def _row_id(body: str) -> int:
 
 
 async def _seed_listing(
-    session_factory: async_sessionmaker[AsyncSession], *, index: int = 1
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    index: int = 1,
+    company: str = "Acme",
+    title: str | None = None,
 ) -> int:
     async with session_factory() as session:
         exists = await session.scalar(select(Source.id).where(Source.name == "linkedin"))
@@ -47,8 +51,8 @@ async def _seed_listing(
         source_listing_id=f"linkedin-{index}",
         source_url=f"https://linkedin.example.com/jobs/{index}",
         direct_url=None,
-        title=f"Backend Engineer {index}",
-        company_name="Acme",
+        title=title or f"Backend Engineer {index}",
+        company_name=company,
         location_raw="Dublin, Ireland",
         description="Build the thing.",
         posted_at=date(2026, 9, 1),
@@ -286,5 +290,106 @@ async def test_tracker_row_renders_the_transition_and_history_controls(
     assert "Move to" in page.text
     assert f'hx-get="/applications/{row_id}/history"' in page.text
     assert "History (1)" in page.text
+
+
+async def _record(
+    client,
+    listing_id: int,
+    *,
+    status: str = "queued",
+    notes: str | None = None,
+) -> str:
+    data = {"listing_id": str(listing_id), "status": status}
+    if notes:
+        data["notes"] = notes
+    response = await client.post("/applications/record", data=data)
+    assert response.status_code == 200
+    return response.text
+
+
+async def test_stage_filter_over_http(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    a = await _seed_listing(session_factory, index=1)
+    b = await _seed_listing(session_factory, index=2)
+    await _record(client, a, status="shortlisted")
+    await _record(client, b, status="queued")
+
+    shortlisted = await client.get("/applications/list?stage=shortlisted")
+    assert shortlisted.status_code == 200
+    assert "Backend Engineer 1" in shortlisted.text
+    assert "Backend Engineer 2" not in shortlisted.text
+
+    queued = await client.get("/applications/list?stage=queued")
+    assert "Backend Engineer 2" in queued.text
+    assert "Backend Engineer 1" not in queued.text
+
+
+async def test_search_filter_over_http(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """`q` matches company, title and notes (D-133)."""
+    a = await _seed_listing(session_factory, index=1, company="Acme")
+    b = await _seed_listing(session_factory, index=2, company="Globex", title="Data Scientist 2")
+    await _record(client, a, notes="referred by a friend")
+    await _record(client, b)
+
+    by_company = await client.get("/applications/list?q=globex")
+    assert "Data Scientist 2" in by_company.text
+    assert "Backend Engineer 1" not in by_company.text
+
+    by_title = await client.get("/applications/list?q=backend")
+    assert "Backend Engineer 1" in by_title.text
+    assert "Data Scientist 2" not in by_title.text
+
+    by_notes = await client.get("/applications/list?q=referred")
+    assert "Backend Engineer 1" in by_notes.text
+    assert "Data Scientist 2" not in by_notes.text
+
+
+async def test_filtered_to_nothing_renders_the_filtered_empty_state(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    a = await _seed_listing(session_factory, index=1)
+    await _record(client, a)
+
+    response = await client.get("/applications/list?q=nomatch")
+    assert response.status_code == 200
+    assert 'id="application-empty-filtered"' in response.text
+    assert "Clear filters" in response.text
+    assert 'id="application-empty"' not in response.text
+
+
+async def test_filter_controls_emit_no_offset(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """A predicate change resets the page index: no control but the pager carries offset."""
+    a = await _seed_listing(session_factory, index=1)
+    await _record(client, a)
+
+    page = await client.get("/applications")
+    assert page.status_code == 200
+    assert 'id="application-search"' in page.text
+    assert 'name="stage"' in page.text
+    assert 'name="view"' in page.text
+    assert 'id="queue-pager"' in page.text
+    assert 'id="queue-page-position"' in page.text
+    assert "/applications/list?offset" not in page.text
+
+
+async def test_filter_controls_reset_when_a_predicate_is_set(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """A predicate change still emits no offset, so the page restarts at 1."""
+    a = await _seed_listing(session_factory, index=1)
+    await _record(client, a)
+
+    # The page carries the real filter form; its controls point at the unfiltered
+    # fragment URL with no offset embedded, so changing a predicate restarts at page 1.
+    page = await client.get("/applications?q=acme&offset=25")
+    assert page.status_code == 200
+    assert 'id="application-search"' in page.text
+    assert 'hx-get="/applications/list"' in page.text
+    assert "/applications/list?offset" not in page.text
 
 

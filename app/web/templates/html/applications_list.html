@@ -1,4 +1,4 @@
-{# The swappable tracker fragment (D-132).
+{# The swappable tracker fragment (D-132 / D-133).
 
    Rendered two ways from ONE definition: `applications.html` includes it for the
    initial page, and `GET /applications/list` returns it for the in-place swap.
@@ -7,9 +7,16 @@
 
    `History (n)` comes from the row's server-computed event count, never a client
    recount. Jinja autoescape is the only escaping: titles/companies/notes are
-   untrusted and rendered as text. #}
+   untrusted and rendered as text. The empty states mirror `queue_list.html`. #}
 {% if is_empty %}
+{% if page.query.q or page.query.stage or page.query.view %}
+<p class="empty-state filtered-empty-state" id="application-empty-filtered">
+  No applications match these filters.
+  <a href="/applications" id="application-clear-filters">Clear filters</a>
+</p>
+{% else %}
 <p class="empty-state" id="application-empty">No applications yet. Record one from a job's apply package.</p>
+{% endif %}
 {% else %}
 <p class="queue-count" id="application-count">{{ count }} application{% if count != 1 %}s{% endif %}</p>
 <table class="queue-table">
@@ -29,4 +36,34 @@
     {% endfor %}
   </tbody>
 </table>
+
+{# The pager. This fragment renders a discrete PAGE, so replacing the list's CONTENTS
+   (`hx-swap="innerHTML"`) is correct: Previous and Next move between slices rather
+   than appending to one. A predicate change still resets to page 1 — this pager is the
+   ONLY control that carries an offset, forward or back.
+
+   Reuses the queue's `#queue-pager` id and `#queue-page-position` span (there is no
+   `.queue-pager` class — the rule is `#queue-pager`) with both `hx-get` URLs pointed
+   at `/applications/list`. #}
+<nav id="queue-pager" aria-label="Applications pagination">
+  {% if page.has_prev %}
+  <button type="button"
+          id="queue-page-prev"
+          hx-get="/applications/list?{{ page.query.query_string(offset=page.prev_offset) }}"
+          hx-target="#application-list"
+          hx-swap="innerHTML">
+    Previous
+  </button>
+  {% endif %}
+  <span id="queue-page-position">Page {{ page.page_index }} of {{ page.page_count }} ({{ page.limit }} per page)</span>
+  {% if page.has_more %}
+  <button type="button"
+          id="queue-page-next"
+          hx-get="/applications/list?{{ page.query.query_string(offset=page.next_offset) }}"
+          hx-target="#application-list"
+          hx-swap="innerHTML">
+    Next
+  </button>
+  {% endif %}
+</nav>
 {% endif %}

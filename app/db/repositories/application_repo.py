@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +59,11 @@ APPLICATION_STATUSES: tuple[str, ...] = (
 #: The stages from which the needs-action order excludes a row (D-133). Also the
 #: stages a `next_action_at` no longer implies follow-up on.
 TERMINAL_STATUSES: tuple[str, ...] = ("offer", "rejected", "withdrawn")
+
+#: Fallback tracker page size when a caller passes none. The route always passes
+#: `Settings.queue_page_size` (the tracker pages like the queue), so this is a
+#: defensive default, never the live knob.
+TRACKER_PAGE_LIMIT_DEFAULT = 25
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,80 @@ class ApplicationEventRecord:
     to_status: str
     occurred_at: datetime
     note: str | None
+
+
+@dataclass(frozen=True)
+class TrackerQuery:
+    """The tracker's filters, as data. Built by the route from the query string.
+
+    Mirrors `queue_repo.QueueQuery`: a predicate change is emitted with no `offset`
+    (the reset), and only the pager carries one.
+    """
+
+    stage: str | None = None
+    q: str | None = None
+    #: `"needs_action"` (D-133) or `None`. Validated against the allow-list before SQL.
+    view: str | None = None
+    offset: int = 0
+    limit: int = TRACKER_PAGE_LIMIT_DEFAULT
+
+    def query_string(self, *, offset: int | None = None) -> str:
+        """The predicate set as a URL query string, optionally with an `offset`.
+
+        A predicate change carries no `offset`, so page N of a *different* filtered
+        set can never be requested; only the pager passes the current offset on.
+        """
+        params: dict[str, str] = {}
+        if self.q:
+            params["q"] = self.q
+        if self.stage:
+            params["stage"] = self.stage
+        if self.view:
+            params["view"] = self.view
+        if offset:
+            params["offset"] = str(int(offset))
+        return urlencode(params)
+
+
+@dataclass(frozen=True)
+class TrackerPage:
+    """One rendered page of the tracker plus everything the fragment needs.
+
+    Mirrors `queue_repo.QueuePage`: the four accessor properties are pure
+    derivations of `offset`/`limit`/`total`, and the `max(1, ...)` guards exist only
+    so a hand-constructed instance cannot divide by zero.
+    """
+
+    rows: tuple[ApplicationRecord, ...]
+    total: int
+    offset: int
+    limit: int
+    has_more: bool
+    query: TrackerQuery
+
+    @property
+    def next_offset(self) -> int:
+        return self.offset + len(self.rows)
+
+    @property
+    def has_prev(self) -> bool:
+        """True when a previous page exists (the current page is not the first)."""
+        return self.offset > 0
+
+    @property
+    def prev_offset(self) -> int:
+        """The offset of the previous page, never negative; 0 when there is none."""
+        return max(0, self.offset - self.limit)
+
+    @property
+    def page_index(self) -> int:
+        """The 1-based index of the page currently shown."""
+        return self.offset // max(1, self.limit) + 1
+
+    @property
+    def page_count(self) -> int:
+        """The number of pages at this page size, never below 1."""
+        return max(1, (self.total + max(1, self.limit) - 1) // max(1, self.limit))
 
 
 def _naive(value: datetime | None) -> datetime | None:
@@ -195,32 +275,86 @@ async def _ok_artifacts_by_listing(
     return {listing_id: tuple(options) for listing_id, options in grouped.items()}
 
 
-async def read_tracker(
-    session: AsyncSession, *, now: datetime | None = None
-) -> list[ApplicationRecord]:
-    """Every application, joined to its listing/company, newest first.
+def _row_matches(row: Application, title: str | None, company: str | None, needle: str) -> bool:
+    """True when the casefolded `needle` is a substring of title, company or notes.
 
-    Bounded scan accepted at 1-5 users (the tracker holds tens of rows); the upgrade
-    path is an index on `applications(next_action_at)` if it ever grows.
-    # ponytail: bounded full scan accepted; add the next_action_at index if the tracker grows.
+    `needle` is already casefolded by the caller. `None` fields degrade to empty
+    strings, so a row with no company or notes still matches on its title.
     """
-    rows = (
-        await session.execute(
-            select(
-                Application,
-                Listing.title,
-                Company.name,
-                func.count(ApplicationEvent.id),
-            )
-            .join(Listing, Application.listing_id == Listing.id)
-            .outerjoin(Company, Listing.company_id == Company.id)
-            .outerjoin(ApplicationEvent, ApplicationEvent.application_id == Application.id)
-            .group_by(Application.id, Listing.title, Company.name)
-            .order_by(Application.updated_at.desc(), Application.id.desc())
+    return any(
+        needle in field.casefold() for field in (title or "", company or "", row.notes or "")
+    )
+
+
+async def read_tracker(
+    session: AsyncSession,
+    *,
+    stage: str | None = None,
+    q: str | None = None,
+    view: str | None = None,
+    offset: int = 0,
+    limit: int = TRACKER_PAGE_LIMIT_DEFAULT,
+    now: datetime | None = None,
+) -> TrackerPage:
+    """One page of the tracker, joined to its listing/company, filtered and sliced.
+
+    `stage` (D-133) and `view` are validated against their allow-lists **before any
+    SQL** — an unknown value is a `ValueError`, never a silently-empty result (T-07-04-01).
+    `q` is a bounded Python-side casefold substring over `listings.title`,
+    `companies.name` and `applications.notes` (T-07-04-01): the whole row set is
+    swept, which is the accepted pattern at 1-5 users. Default order is newest-first;
+    `view="needs_action"` orders `(next_action_at IS NULL), next_action_at ASC` with a
+    deterministic `id DESC` tie-break and excludes `TERMINAL_STATUSES` (D-133).
+    """
+    if stage is not None and stage not in APPLICATION_STATUSES:
+        raise ValueError(
+            f"unknown stage {stage!r}; expected one of {list(APPLICATION_STATUSES)}"
         )
-    ).all()
-    options = await _ok_artifacts_by_listing(session, {int(row.listing_id) for row, *_ in rows})
-    return [
+    if view not in (None, "needs_action"):
+        raise ValueError(f"unknown view {view!r}; expected 'needs_action' or None")
+
+    offset = max(0, int(offset))
+    limit = max(1, int(limit or TRACKER_PAGE_LIMIT_DEFAULT))
+
+    stmt = (
+        select(
+            Application,
+            Listing.title,
+            Company.name,
+            func.count(ApplicationEvent.id),
+        )
+        .join(Listing, Application.listing_id == Listing.id)
+        .outerjoin(Company, Listing.company_id == Company.id)
+        .outerjoin(ApplicationEvent, ApplicationEvent.application_id == Application.id)
+        .group_by(Application.id, Listing.title, Company.name)
+    )
+    if stage is not None:
+        stmt = stmt.where(Application.status == stage)
+    if view == "needs_action":
+        # SQLite yields 0 for a non-null date, so dated rows sort first ascending
+        # (oldest/overdue first); NULL dates sort last.
+        stmt = stmt.where(Application.status.not_in(TERMINAL_STATUSES)).order_by(
+            Application.next_action_at.is_(None),
+            Application.next_action_at.asc(),
+            Application.id.desc(),
+        )
+    else:
+        stmt = stmt.order_by(Application.updated_at.desc(), Application.id.desc())
+
+    rows = (await session.execute(stmt)).all()
+    needle = q.casefold() if q else None
+    if needle is not None:
+        # ponytail: bounded Python scan accepted at 1-5 users (tens of rows); the
+        # upgrade path is an FTS index over listings(title, company) + applications(notes)
+        # if the tracker ever grows past a few hundred.
+        rows = [row for row in rows if _row_matches(row[0], row[1], row[2], needle)]
+
+    total = len(rows)
+    page_rows = rows[offset : offset + limit]
+    options = await _ok_artifacts_by_listing(
+        session, {int(row.listing_id) for row, *_ in page_rows}
+    )
+    records = tuple(
         _record(
             row=row,
             listing_title=title,
@@ -229,8 +363,16 @@ async def read_tracker(
             now=now,
             ok_artifacts=options.get(int(row.listing_id), ()),
         )
-        for row, title, company, count in rows
-    ]
+        for row, title, company, count in page_rows
+    )
+    return TrackerPage(
+        rows=records,
+        total=total,
+        offset=offset,
+        limit=limit,
+        has_more=(offset + len(records)) < total,
+        query=TrackerQuery(stage=stage, q=q, view=view, offset=offset, limit=limit),
+    )
 
 
 async def read_application(
@@ -437,9 +579,12 @@ async def update_application(
 __all__ = [
     "APPLICATION_STATUSES",
     "TERMINAL_STATUSES",
+    "TRACKER_PAGE_LIMIT_DEFAULT",
     "ApplicationEventRecord",
     "ApplicationRecord",
     "ArtifactOption",
+    "TrackerPage",
+    "TrackerQuery",
     "parse_next_action",
     "read_application",
     "read_history",

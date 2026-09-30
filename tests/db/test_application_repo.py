@@ -27,7 +27,11 @@ NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 
 
 async def _seed_listing(
-    session_factory: async_sessionmaker[AsyncSession], *, index: int = 1
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    index: int = 1,
+    company: str = "Acme",
+    title: str | None = None,
 ) -> int:
     async with session_factory() as session:
         exists = await session.scalar(select(Source.id).where(Source.name == "linkedin"))
@@ -40,8 +44,8 @@ async def _seed_listing(
         source_listing_id=f"linkedin-{index}",
         source_url=f"https://linkedin.example.com/jobs/{index}",
         direct_url=None,
-        title=f"Backend Engineer {index}",
-        company_name="Acme",
+        title=title or f"Backend Engineer {index}",
+        company_name=company,
         location_raw="Dublin, Ireland",
         description="Build the thing.",
         posted_at=date(2026, 9, 1),
@@ -146,8 +150,10 @@ async def test_read_tracker_joins_listing_and_company_and_counts_events(
         await session.commit()
 
     async with session_factory() as session:
-        rows = await application_repo.read_tracker(session, now=NOW)
+        page = await application_repo.read_tracker(session, now=NOW)
 
+    assert page.total == 1
+    rows = page.rows
     assert len(rows) == 1
     row = rows[0]
     assert row.listing_id == listing_id
@@ -282,6 +288,115 @@ async def test_tracker_read_keeps_the_stored_link_when_artifact_status_changes(
     await _seed_artifact(session_factory, listing_id, status="blocked")
 
     async with session_factory() as session:
-        rows = await application_repo.read_tracker(session, now=NOW)
-    assert len(rows) == 1
-    assert rows[0].cv_artifact_id == ok_id
+        page = await application_repo.read_tracker(session, now=NOW)
+    assert page.total == 1
+    assert page.rows[0].cv_artifact_id == ok_id
+
+
+async def _record(
+    session_factory: async_sessionmaker[AsyncSession],
+    listing_id: int,
+    *,
+    status: str = "queued",
+    notes: str | None = None,
+) -> int:
+    async with session_factory() as session:
+        app_id = await application_repo.record_application(
+            session,
+            listing_id=listing_id,
+            status=status,
+            cv_artifact_id=None,
+            notes=notes,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert app_id is not None
+    return int(app_id)
+
+
+async def test_read_tracker_stage_filter(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`stage` narrows the slice and survives the page structure."""
+    a = await _seed_listing(session_factory, index=1)
+    b = await _seed_listing(session_factory, index=2)
+    await _record(session_factory, a, status="shortlisted")
+    await _record(session_factory, b, status="queued")
+
+    async with session_factory() as session:
+        page = await application_repo.read_tracker(session, stage="shortlisted", now=NOW)
+    assert [row.listing_id for row in page.rows] == [a]
+
+    async with session_factory() as session:
+        page = await application_repo.read_tracker(session, stage="queued", now=NOW)
+    assert [row.listing_id for row in page.rows] == [b]
+
+
+async def test_read_tracker_search_matches_company_title_and_notes(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`q` is a casefold substring over company, title AND notes (T-07-04-01)."""
+    a = await _seed_listing(session_factory, index=1, company="Acme")
+    b = await _seed_listing(session_factory, index=2, company="Globex", title="Data Scientist 2")
+    await _record(session_factory, a, notes="referred by a friend")
+    await _record(session_factory, b)
+
+    async def _ids(**kwargs: object) -> list[int]:
+        async with session_factory() as session:
+            page = await application_repo.read_tracker(session, now=NOW, **kwargs)  # type: ignore[arg-type]
+        return [row.listing_id for row in page.rows]
+
+    assert await _ids(q="acme") == [a], "a company hit"
+    assert await _ids(q="data scientist") == [b], "a title hit"
+    assert await _ids(q="REFERRED") == [a], "a notes hit, casefolded"
+    assert await _ids(q="zzz") == [], "no false match"
+
+
+async def test_read_tracker_unknown_stage_is_a_value_error(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """An unknown stage raises BEFORE SQL — never an empty result (T-07-04-01)."""
+    async with session_factory() as session:
+        with pytest.raises(ValueError):
+            await application_repo.read_tracker(session, stage="promoted", now=NOW)
+
+
+async def test_read_tracker_paginates_two_way(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`offset`/`limit` slice the filtered set with QueuePage-style accessors."""
+    for index in (1, 2, 3):
+        listing_id = await _seed_listing(session_factory, index=index)
+        await _record(session_factory, listing_id)
+
+    async with session_factory() as session:
+        first = await application_repo.read_tracker(session, offset=0, limit=2, now=NOW)
+    assert first.total == 3
+    assert len(first.rows) == 2
+    assert first.has_prev is False
+    assert first.has_more is True
+    assert first.page_index == 1
+    assert first.page_count == 2
+    assert first.next_offset == 2
+
+    async with session_factory() as session:
+        second = await application_repo.read_tracker(session, offset=2, limit=2, now=NOW)
+    assert len(second.rows) == 1
+    assert second.has_prev is True
+    assert second.has_more is False
+    assert second.page_index == 2
+    assert second.prev_offset == 0
+
+
+def test_tracker_query_string_omits_offset_for_a_predicate_change() -> None:
+    """A predicate change restarts the page; only the pager supplies an offset."""
+    query = application_repo.TrackerQuery(
+        q="acme", stage="shortlisted", view="needs_action", offset=25
+    )
+    predicate_change = query.query_string()
+    assert "offset" not in predicate_change
+    assert "q=acme" in predicate_change
+    assert "stage=shortlisted" in predicate_change
+    assert "view=needs_action" in predicate_change
+    assert "offset=25" in query.query_string(offset=25)
