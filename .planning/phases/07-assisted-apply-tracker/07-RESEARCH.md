@@ -635,21 +635,24 @@ ORDER BY (next_action_at IS NULL), next_action_at ASC
 
 **If this table is not empty:** the planner should confirm A1 (question-list persistence shape) and A2 (llm_calls purpose) with a checkpoint or a recorded decision, since both are cheap to get wrong and expensive to change.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Question-list persistence shape (row table vs single-row JSON doc).**
    - What we know: it must be user-editable from `/settings`; `ranking_config` and `filter_rules` are the two precedents.
    - What's unclear: whether the planner prefers one document or ordered rows.
    - Recommendation: pick ordered rows (`screening_questions(id, position, text, created_at)`) to avoid adding to the JSON allow-list, or the singleton doc for fewer parts. Either is acceptable; record the choice.
+   - **RESOLVED (planner, 2026-09-30):** the **singleton `apply_config` document** (`id=1`, `questions_json`, `updated_at`, `ck_apply_config_singleton`) mirroring `ranking_config`, created in migration 0006 with a code-level `DEFAULT_QUESTIONS` seed when no row exists. Fewer moving parts than ordered rows; the one `questions_json` entry is added to `EXPECTED_JSON_COLUMNS` with a justification comment. Built in 07-05 Task 1.
 
 2. **Whether a question-count/length ceiling is wanted.**
    - What we know: D-119 says no new numeric ceiling; the drafting call reuses the shared 24h cap.
    - What's unclear: whether an oversized question list could produce an oversized response.
    - Recommendation: no new ceiling in v1; the `max_tokens`-style bound (if any) rides the model call, not a new Settings field.
+   - **RESOLVED (planner, 2026-09-30):** **no new ceiling.** 07-03 introduces only the boolean `apply_drafting_enabled` off switch (surface-guarded, never in `LIMIT_FIELDS`); the shared rolling-24h `ranking_max_calls_per_day` is reused.
 
 3. **Whether to extend `EXPECTED_SEAM_ROUTES` with the new paths.**
    - What we know: new routes must carry the seam; the test enumerates routes explicitly for non-vacuity.
    - Recommendation: add the apply page, the draft action, the tracker page, and the stage transition to `EXPECTED_SEAM_ROUTES`.
+   - **RESOLVED (planner, 2026-09-30):** yes — every new route joins `EXPECTED_SEAM_ROUTES`: the tracker page/list/record/history/status (07-01), the apply page (07-02), and the draft/question/delete actions (07-05).
 
 ## Environment Availability
 
