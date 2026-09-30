@@ -1137,8 +1137,10 @@ def test_a_bullet_reproducing_a_full_header_is_the_documented_hard_fail_ceiling(
     separator signature as a real header and is structurally indistinguishable from
     one at line granularity, so it IS taken as the later entry's region start and a
     surplus digit there is a hard ``fail`` (not the ``warn`` an unanchored neighbour
-    gives). This pins the discriminator's known ceiling: the test breaks if the gate
-    is later relaxed, and the docstring states this residual rather than a guarantee.
+    gives). This pins the DISPOSITION, not the gate: a full-header bullet anchors
+    under both the pre- and post-separator predicates, so the test breaks if that
+    outcome is ever downgraded to ``warn``, or if the anchor is tightened so the line
+    is no longer taken as the start.
     """
     plan = _two_entry_plan(
         a_id="exp/globex-2018",
