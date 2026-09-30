@@ -1,7 +1,7 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 06
-current_phase_name: Tailoring + Verification
+current_phase: 07
+current_phase_name: Assisted Apply + Tracker
 status: executing
 stopped_at: Phase 07 plans written and verified (5 plans, plan-checker PASS)
 last_updated: "2026-09-30T14:59:43.539Z"
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 06 — Tailoring + Verification
+**Current focus:** Phase 07 — Assisted Apply + Tracker
 
 ## Current Position
 
-Phase: 06 (Tailoring + Verification) — EXECUTING
-Plan: 11 of 11 (rounds 1–4); gap-closure round 5 (truths 6 and 15) verified clean
+Phase: 07 (Assisted Apply + Tracker) — PLANNED
+Plan: 5 of 5 written (07-01 .. 07-05); plan-checker PASS with touch-ups applied (5316cbb)
 Status: Ready to execute
-Last activity: 2026-09-30 - Gap-closure round 5: region anchor now requires the org/title separator (da06178/3b3842b/5a667ec); review clean with criterion E satisfied, verification 17/18 with only the two container-only Tectonic UAT items open
+Last activity: 2026-09-30 - Phase 07 planning complete: 5 plans across 3 waves (tracer record->tracker with append-only history; apply package page with the ok-artefact gate; grounded screening-answer drafting; tracker slice-and-dice; drafted-answers surface). A1 = singleton apply_config, A2 = purpose=tailor reuse, A5 = no auto next_action_at.
 
-Progress: [████████████████████] 45/45 plans ([░░░░░░░░░░] 0%)
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0/5 plans ([░░░░░░░░░░] 0%)
 
 ## Performance Metrics
 
