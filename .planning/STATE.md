@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Phase 07 plans written and verified (5 plans, plan-checker PASS)
-last_updated: "2026-09-30T14:59:43.539Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-09-30T16:04:05.219Z"
 last_activity: 2026-09-30
-last_activity_desc: Phase 06 gap-closure round 5 verified (truths 6 and 15 closed)
-state_head: 5316cbb22decd567a450541dc2b79e54eff98f87
+last_activity_desc: Phase 07 execution started
+state_head: f4112908e09dcad1e3366da9028713212bf04617
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 61
-  completed_plans: 56
+  completed_plans: 57
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 07 (Assisted Apply + Tracker) — PLANNED
-Plan: 5 of 5 written (07-01 .. 07-05); plan-checker PASS with touch-ups applied (5316cbb)
+Phase: 07 (Assisted Apply + Tracker) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-09-30 - Phase 07 planning complete: 5 plans across 3 waves (tracer record->tracker with append-only history; apply package page with the ok-artefact gate; grounded screening-answer drafting; tracker slice-and-dice; drafted-answers surface). A1 = singleton apply_config, A2 = purpose=tailor reuse, A5 = no auto next_action_at.
+Last activity: 2026-09-30 — Phase 07 execution started
 
 Progress: [░░░░░░░░░░░░░░░░░░░░] 0/5 plans ([░░░░░░░░░░] 0%)
 
@@ -90,6 +90,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0/5 pla
 | Phase 06 P08 | 8 min | 2 tasks | 6 files |
 | Phase 06 P10 | 10 min | 2 tasks | 6 files |
 | Phase 06 P11 | 18 min | 3 tasks | 7 files |
+| Phase 07 P01 | 55 min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,10 @@ Recent decisions affecting current work:
 - [Phase 06]: round 5 (unplanned gap-closure): _entry_lines now requires the template's org/title separator — a `_dash_fold` keeps one hyphen per folded dash run (em/en dash and `--`/`---` all satisfy) and the candidate line must start with `org_dash + '-'`, so an earlier entry's bullet carrying a later entry's org+title+dates can no longer hijack that region (truth 6). The gate is monotone-stricter: it can only refuse an anchor, never move one, so a real header that loses its separator degrades to a visible warn (fail-closed), never a silent skip
 - [Phase 06]: round 5: the two falsified absolution docstrings are replaced with honest wording and the full-header reproduction (a bullet literally repeating `ORG --- TITLE <dates>`) is pinned by a test as the documented hard-fail ceiling (truth 15); VERIFIER_VERSION bumped once to 1.0.5, no schema/Alembic change
 - [Phase 06]: round 5: three commits da06178 (fix) / 3b3842b (docs+ceiling) / 5a667ec (docs, IN-05); independent scoped review returned clean (0 Critical / 0 Warning / 5 Info, all resolved) and satisfied criterion E, and independent verification returned 17/18 with gaps_remaining [] and regressions []. Criterion E closure was owned by the independent review, not the fix author
+- [Phase 07]: Phase 07: the application row update and its single application_events append share one begin_nested() SAVEPOINT, so a crash between the two writes is impossible (D-131)
+- [Phase 07]: Phase 07: the applied gate resolves the artefact through cv_artifact_repo.read_for_download(ok_only=True) and a refusal writes nothing; the tracker read never re-filters the stored link on compile_status (D-118/D-129/APPLY-04)
+- [Phase 07]: Phase 07: POST /applications/record is declared before every dynamic POST /applications/{application_id} route because FastAPI matches in declaration order
+- [Phase 07]: Phase 07: migration 0006 adds the application_events append-only triggers via raw op.execute and deliberately adds no CHECK on to_status/from_status (batch-recreation hazard); the status vocabulary is validated in the repository against APPLICATION_STATUSES
 
 ### Pending Todos
 
@@ -208,6 +213,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T14:59:28.620Z
-Stopped at: Phase 07 plans written and verified (5 plans, plan-checker PASS)
-Resume file: .planning/phases/07-assisted-apply-tracker/07-01-PLAN.md
+Last session: 2026-09-30T16:03:49.253Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
