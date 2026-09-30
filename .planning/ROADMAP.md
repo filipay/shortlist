@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 3/5 plans executed (0 executed)
+**Plans:** 4/5 plans executed (0 executed)
 **UI hint**: yes
 
 Plans:
@@ -336,7 +336,7 @@ Plans:
 
 - [x] 07-02-PLAN.md — The apply package page: the `ok`-artefact gate, the outbound link, the gap checklist, and the no-submit guarantee
 - [x] 07-03-PLAN.md — Grounded screening-answer drafting: the typed contract, the deterministic grounding check, the persisted drafts, and the one LLM call on the shared ceiling
-- [ ] 07-04-PLAN.md — Tracker slice-and-dice: stage filter, needs-action view, free-text search, and pagination
+- [x] 07-04-PLAN.md — Tracker slice-and-dice: stage filter, needs-action view, free-text search, and pagination
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
@@ -374,7 +374,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | In Progress|  |
-| 7. Assisted Apply + Tracker | 3/5 | In Progress|  |
+| 7. Assisted Apply + Tracker | 4/5 | In Progress|  |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
 ---

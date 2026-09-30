@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-09-30T16:48:06.055Z"
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-09-30T17:10:08.284Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 07 execution started
-state_head: 241e234c7b356b39beb672c0ab0a52396aa7d4a1
+state_head: d006dc7974bdb595aca0e3fe38480006a80ebc09
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 61
-  completed_plans: 59
+  completed_plans: 60
   percent: 0
 ---
 
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
-Last activity: 2026-09-30 — Completed 07-03-PLAN.md
+Last activity: 2026-09-30 — Completed 07-04-PLAN.md
 
-Progress: [████████████░░░░░░░░] 3/5 plans ([██████░░░░] 60%)
+Progress: [████████████░░░░░░░░] 3/5 plans ([░░░░░░░░░░] 0%)
 
 ## Performance Metrics
 
@@ -93,6 +93,7 @@ Progress: [████████████░░░░░░░░] 3/5 pla
 | Phase 07 P01 | 55 min | 3 tasks | 20 files |
 | Phase 07 P02 | ~35 min | 2 tasks | 7 files |
 | Phase 07 P03 | 13 min | 3 tasks | 9 files |
+| Phase 07 P04 | 38min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -187,6 +188,10 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-03: the screening grounding check is structurally anchored — evidence ids intersected byte-exact against iter_fact_ids and digits compared as digit_cores; facts_present_in is deliberately not reused (wrong direction for one short answer)
 - [Phase 07]: 07-03: ground_screening_answers carries the advisory fuzzy band as a label only and never lets it flip unsupported/warnings; the two residuals (numberless fabrication passes; a computed number is conservatively flagged) are stated in prose, not as guarantees
 - [Phase 07]: 07-03: replace_for_listing deletes and inserts inside one begin_nested() SAVEPOINT; draft_screening_answers shares the rolling-24h ceiling via purpose=tailor and one llm_calls row per attempt, with apply_drafting_enabled read by drafting_skip_reason
+- [Phase 07]: 07-04: read_tracker returns a frozen TrackerPage (rows/total/offset/limit/has_more + TrackerQuery) mirroring QueuePage, so the fragment rebuilds its own pager URLs; the existing callers read .rows
+- [Phase 07]: 07-04: stage is validated against APPLICATION_STATUSES before SQL and raises ValueError (the route renders a 422 data-error refusal); view is coerced in the route to the one allow-listed literal
+- [Phase 07]: 07-04: q is a bounded Python casefold substring over title/company/notes (ponytail ceiling; an FTS index is the upgrade path); needs-action orders (next_action_at IS NULL), next_action_at ASC with an id tie-break and excludes TERMINAL_STATUSES
+- [Phase 07]: 07-04: tracker paging reuses Settings.queue_page_size and the queue's #queue-pager/#queue-page-position ids; an All-stages empty option is required so the stage select can represent no filter
 
 ### Pending Todos
 
@@ -220,6 +225,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T16:48:05.916Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-09-30T17:10:08.151Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
