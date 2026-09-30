@@ -51,13 +51,34 @@ import re
 from dataclasses import dataclass, field
 
 from app.domain.cv import RenderedEntry, RenderPlan
-from app.domain.tex import squash
+from app.domain.tex import normalise_for_compare, squash
 
 #: A maximal digit run with any interior ``.``/``,`` groups. Only the groups are
 #: captured, so ``5-10`` is two matches and ``50k`` is one (the ``k`` is dropped).
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
 #: A line that is nothing but an integer (the page-number artefact, A3).
 _LONE_INTEGER_RE = re.compile(r"^[0-9]+$")
+#: A dash run: `normalise_for_compare` already folds U+2010-U+2014/U+2212 to ASCII
+#: `-` (_CHAR_FOLDS), so the template's `---` (cv.tex.jinja:61) arrives as `-+`.
+_DASH_RUN_RE = re.compile(r"-+")
+#: Everything that is not a word character and not the (already-normalised) hyphen.
+_DASH_FOLD_JUNK_RE = re.compile(r"[^\w\-]+", re.UNICODE)
+
+
+def _dash_fold(text: str) -> str:
+    """A `squash`-like fold that keeps ONE `-` per dash run.
+
+    `squash` erases dashes (a squashed `2021-03` must stay `202103`), which is exactly
+    why the region anchor is line-based. But the anchor also needs the header's
+    structural signature - the template separates an entry's org and title with `---`,
+    so a header's folded form is `<org>-<title>` while a body line that merely begins
+    with the org folds to `<org><title>...`. Casefold + NFKC + char-fold via
+    `normalise_for_compare`, then collapse each dash run to one `-` and drop every
+    other non-word run. Space-drop tolerance is preserved (the org is still folded),
+    only the separator survives to be observed.
+    """
+    value = _DASH_RUN_RE.sub("-", normalise_for_compare(text).casefold())
+    return _DASH_FOLD_JUNK_RE.sub("", value)
 
 
 def _normalise_core(raw: str) -> str:
@@ -123,22 +144,37 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
 
     Region ``i`` starts on a line that BEGINS with ``squash(org)`` (the template
     emits the org first on the header line, ``cv.tex.jinja:58``), AND carries
-    ``squash(title)``, AND has the entry's date-range needle ``squash(entry.dates)``
-    on that same line or on its immediately following line. The org-first position is
-    the structural boundary: an earlier line that merely names a later employer and
+    ``squash(title)``, AND carries the org/title separator (a dash run between
+    them), AND has the entry's date-range needle ``squash(entry.dates)`` on that same
+    line or on its immediately following line. The org-first position is the
+    structural boundary: an earlier line that merely names a later employer and
     title mid-line does not start that employer's region, so its digits are not
     donated there (ESC-06-A / CR-01). Requiring org AND title also removes the
     substring-vs-word fragility of a short or common org name ("Meta" matching
     "metadata"). A cursor advances past a matched line so two entries at the same
     employer resolve to their own headers.
 
-    Residual, stated rather than hidden: a line that literally begins with the org
-    and also carries the title with an adjacent date-range is structurally
-    indistinguishable from a real header and IS taken as the region start. A body
-    line can coincide with such a shape (for example an extractor line-merge of a
-    bullet with the following header), in which case the region starts there;
-    ``region_token_report``'s region-end bound is what then limits a neighbour to a
-    visible ``warn`` instead of a false ``fail``.
+    The org/title separator is REQUIRED, not just org-first: a line is a region
+    start only when, in addition to org-first + title + adjacent date-range, its
+    raw line carries the template's org/title separator - a dash run between the
+    org and the title (``cv.tex.jinja:61`` emits ``ORG --- TITLE``; the dash-fold
+    keeps one ``-`` per run so the boundary stays observable after a space-drop
+    fold). This is what stops an earlier bullet that merely BEGINS with a later
+    entry's org and names its title with an adjacent date-range from being taken as
+    that entry's header: such a line has no separator, so the later entry stays
+    unanchored and check 4 reports it as a visible ``warn`` naming the entry instead
+    of charging the earlier entry's grounded digit to it.
+
+    Residual, stated rather than hidden: a body line that reproduces the FULL header
+    - org, a dash separator, title, and an adjacent date-range (a bullet that
+    literally opens ``<org> --- <title> <dates> ...``) - is structurally
+    indistinguishable from a real header at line granularity and IS taken as the
+    region start; the later entry is anchored there and a surplus digit still
+    hard-fails. No line-granularity predicate can separate the two, so this residual
+    is a hard ``fail``, not the ``warn`` the region-end bound gives an *unanchored*
+    neighbour. If extraction drops or normalises the separator on a REAL header, the
+    entry falls to ``found=False`` and check 4 reports a visible ``warn`` naming it -
+    a fail-closed loss of precision, never a false fail and never a silent skip.
 
     All three needles must be non-empty: an empty ``squash`` needle would make the
     membership test vacuously true and silently restore a content-only match, so an
@@ -160,17 +196,21 @@ def _entry_lines(entries: list[RenderedEntry], lines: list[str]) -> list[int]:
     ``test_a_non_adjacent_date_range_is_not_a_region_start``.
     """
     squashed_lines = [squash(line) for line in lines]
+    dash_lines = [_dash_fold(line) for line in lines]
     positions: list[int] = []
     cursor = 0
     for entry in entries:
         org_needle = squash(entry.org)
         title_needle = squash(entry.title)
         dates_needle = squash(entry.dates)
+        org_dash = _dash_fold(entry.org)
         found = -1
         if org_needle and title_needle and dates_needle:
             for index in range(cursor, len(lines)):
                 line = squashed_lines[index]
                 if not line.startswith(org_needle) or title_needle not in line:
+                    continue
+                if not dash_lines[index].startswith(org_dash + "-"):
                     continue
                 dates_adjacent = dates_needle in line or (
                     index + 1 < len(lines) and dates_needle in squashed_lines[index + 1]

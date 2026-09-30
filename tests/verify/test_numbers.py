@@ -941,5 +941,194 @@ def test_a_bullet_embedding_the_next_entrys_org_title_and_dates_never_hijacks_a_
         assert squash(next_dates) in squashed
 
 
+# --- truth 6/15: the org/title separator is part of the region-start signature ---
+
+
+def test_a_bullet_opening_with_a_later_org_title_and_dates_does_not_anchor_its_region() -> None:
+    """The literal repro: an org-FIRST bullet that names the next entry must not hijack it.
+
+    The pre-fix org-first + title + adjacent-date anchor matched the earlier bullet
+    (it begins with B's org and carries B's title and date-range) as B's header,
+    pulled A's ``5`` into B's region and hard-failed ``['exp/acme-2019:5']`` on a
+    correct CV. Requiring the template's org/title separator is the discriminator.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Acme Senior Engineer 2019-01 -- 2019-12 cut 5 incidents",
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (VERIFY_FIXTURES / "org_first_bullet_extract.txt").read_text(encoding="utf-8")
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert [report.found for report in reports] == [True, True]
+    assert reports[1].entry_id == "exp/acme-2019"
+    assert "5" not in reports[1].candidates
+    assert "5" in reports[0].allowed
+    assert check.status == "pass"
+
+    # The failure class, proven: the A bullet line BEGINS with B's org and carries
+    # B's title AND date-range, so the pre-fix org-first anchor WOULD match it. The
+    # separator is the only discriminator.
+    bullet_line = next(line for line in text.splitlines() if "cut 5 incidents" in line)
+    squashed_bullet = squash(bullet_line)
+    assert squashed_bullet.startswith(squash("Acme"))
+    assert squash("Senior Engineer") in squashed_bullet
+    assert squash("2019-01 -- 2019-12") in squashed_bullet
+
+
+def test_a_merged_line_opening_with_a_later_org_title_and_dates_is_reported_not_found() -> None:
+    """The line-merge residual: no separator at the start, so B is unanchored, not charged.
+
+    The merged line begins with B's org and names B's title; B's date-range is on the
+    following line, so the pre-fix anchor WOULD match it. Without the org/title
+    separator at the start the line is not a header, so B is reported ``found=False``
+    and check 4 is a visible ``warn`` naming B - never a block on A.
+    """
+    plan = _two_entry_plan(
+        a_id="exp/self-2018",
+        a_org="Self",
+        a_title="Consultant",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/self-2018/1",
+                text=(
+                    "Acme Senior Engineer contract -- delivered 5 projects "
+                    "Acme --- Senior Engineer"
+                ),
+            )
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (VERIFY_FIXTURES / "org_first_merge_extract.txt").read_text(encoding="utf-8")
+
+    reports = region_token_report(plan, text, page_count=1)
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert reports[0].found is True
+    assert reports[1].found is False
+    assert check.status == "warn"
+    assert "exp/acme-2019" in check.offending
+    assert not any(entry.startswith("exp/self-2018:") for entry in check.offending)
+
+
+def test_the_separator_gate_does_not_weaken_a_fabricated_digit_in_the_earlier_region() -> None:
+    """The negative control: a genuinely fabricated digit in A's own region still blocks."""
+    plan = _two_entry_plan(
+        a_id="exp/globex-2018",
+        a_org="Globex Inc",
+        a_title="Engineer",
+        a_dates="2018-01 -- 2018-12",
+        a_bullets=[
+            Bullet(
+                id="bul/globex-2018/1",
+                text="Acme Senior Engineer 2019-01 -- 2019-12 cut 5 incidents",
+            ),
+            Bullet(id="bul/globex-2018/2", text="Delivered the platform"),
+        ],
+        b_id="exp/acme-2019",
+        b_org="Acme",
+        b_title="Senior Engineer",
+        b_dates="2019-01 -- 2019-12",
+        b_bullets=[Bullet(id="bul/acme-2019/1", text="Led 7 people")],
+    )
+    text = (VERIFY_FIXTURES / "org_first_bullet_extract.txt").read_text(encoding="utf-8")
+    text = text.replace(
+        "Acme Senior Engineer 2019-01 -- 2019-12 cut 5 incidents\n",
+        "Acme Senior Engineer 2019-01 -- 2019-12 cut 5 incidents\n"
+        "Delivered the 99 platform\n",
+    )
+
+    check = check_metric_containment(plan, text, page_count=1)
+
+    assert check.status == "fail"
+    assert "exp/globex-2018:99" in check.offending
+
+
+def _org_first_collision_plan_and_text(
+    corpus: list[tuple[str, str, int]],
+) -> tuple[RenderPlan, str]:
+    """A 3-entry plan + extraction where each bullet OPENS with the NEXT org, title AND dates.
+
+    Unlike the phrase-led corpora above, these bullets are prefix collisions - the exact
+    shape the org-first anchor mistook for a header. Headers use the template's
+    ``ORG --- TITLE`` form, so only a line carrying the separator is a valid start.
+    """
+    entries: list[RenderedEntry] = []
+    lines: list[str] = []
+    for index, (org, title, marker) in enumerate(corpus):
+        year = 2019 + index
+        if index + 1 < len(corpus):
+            next_org, next_title, _ = corpus[index + 1]
+            next_dates = f"{year + 1}-01 -- {year + 1}-12"
+            bullet_text = f"{next_org} {next_title} {next_dates} delivered {marker} projects"
+        else:
+            bullet_text = "Delivered the platform"
+        entries.append(
+            RenderedEntry(
+                id=f"exp/orgfirst-{year}",
+                org=org,
+                title=title,
+                dates=f"{year}-01 -- {year}-12",
+                bullets=[Bullet(id=f"bul/orgfirst-{year}/1", text=bullet_text)],
+            )
+        )
+        lines.append(f"{org} --- {title}")
+        lines.append(f"{year}-01 -- {year}-12")
+        lines.append(bullet_text)
+    plan = RenderPlan(
+        sections=[
+            RenderedSection(id="sec.experience", title="Experience", entries=entries)
+        ]
+    )
+    return plan, "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("corpus", [_DISTINCT_EMPLOYER_CORPUS, _SAME_EMPLOYER_CORPUS])
+def test_a_bullet_opening_with_the_next_org_title_and_dates_never_hijacks_a_region(
+    corpus: list[tuple[str, str, int]],
+) -> None:
+    """The prefix-collision class, not one instance: every region anchors at its own header."""
+    plan, text = _org_first_collision_plan_and_text(corpus)
+
+    reports = region_token_report(plan, text, page_count=1)
+
+    assert [report.found for report in reports] == [True, True, True]
+    for index, report in enumerate(reports):
+        for earlier in corpus[:index]:
+            assert str(earlier[2]) not in set(report.candidates)
+    assert check_metric_containment(plan, text, page_count=1).status == "pass"
+
+    # The mutation really is a prefix collision: each bullet STARTS with the next
+    # org under squash and carries the next title and dates, so only the missing
+    # org/title separator can be what stops the hijack.
+    for index in range(len(corpus) - 1):
+        next_org, next_title, _ = corpus[index + 1]
+        next_dates = f"{2019 + index + 1}-01 -- {2019 + index + 1}-12"
+        mutated = f"{next_org} {next_title} {next_dates} delivered {corpus[index][2]} projects"
+        squashed = squash(mutated)
+        assert squashed.startswith(squash(next_org))
+        assert squash(next_title) in squashed
+        assert squash(next_dates) in squashed
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])

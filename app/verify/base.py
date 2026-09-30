@@ -19,7 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 #: Bump on ANY check change, so a change here explains a change in outcomes.
-VERIFIER_VERSION = "1.0.4"
+VERIFIER_VERSION = "1.0.5"
 
 #: The three check outcomes. Only ``fail`` blocks a compile (D-114).
 CheckStatus = Literal["pass", "warn", "fail"]
