@@ -41,6 +41,8 @@ a fully-grounded answer.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import settings
@@ -81,9 +83,17 @@ def _sources_text(facts: CvFacts, listing_text: str) -> str:
 def ground_screening_answers(
     facts: CvFacts,
     listing_text: str,
+    questions: Sequence[str],
     response: ScreeningDraftResponse,
 ) -> list[ScreeningVerdict]:
     """Ground every answer in ``response`` and return one verdict per answer.
+
+    ``questions`` is the SERVER-SIDE ordered list the model was asked (CONVENTIONS
+    rule 1): answer N belongs to asked question N, so the verdict's ``question`` is
+    the asked text — never ``answer.question``, which is model-controlled free text
+    and would break the UI merge if the model paraphrased or reordered. Alignment is
+    positional (``zip(..., strict=False)``): extra model answers with no asked
+    question are dropped, and an unanswered question produces no verdict.
 
     Total and deterministic: it never raises and it warns visibly rather than
     skipping. An unknown evidence id and a novel digit core each contribute a warning
@@ -95,7 +105,7 @@ def ground_screening_answers(
     review_at = settings.tailoring_grounding_review_threshold
 
     verdicts: list[ScreeningVerdict] = []
-    for answer in response.answers:
+    for asked, answer in zip(questions, response.answers, strict=False):
         warnings: list[str] = []
         grounded_ids: list[str] = []
 
@@ -119,7 +129,7 @@ def ground_screening_answers(
 
         verdicts.append(
             ScreeningVerdict(
-                question=answer.question,
+                question=asked,
                 answer=answer.answer,
                 grounded_evidence_ids=grounded_ids,
                 unsupported=bool(warnings),

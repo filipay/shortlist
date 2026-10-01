@@ -533,8 +533,59 @@ async def test_the_draft_action_makes_one_call_and_persists_rows(
                 select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
             )
         ).scalars().all()
-    assert [r.question_text for r in rows] == ["Why this role?"]
+    # WR-04: the persisted merge key is the ASKED question (the first config
+    # question), not the model's echoed `question` text.
+    assert [r.question_text for r in rows] == ["Why are you interested in this role?"]
     assert rows[0].answer_text == "Because I build pipelines."
+
+
+async def test_a_reworded_model_question_still_merges_with_the_config_question(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """WR-04: a model paraphrase must not orphan the answer under a stray block.
+
+    The stub returns a reworded `question`; the persisted key must be the asked
+    config question so the answer merges there and no second block appears.
+    """
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        return StructuredCallResult(
+            ok=True,
+            status="ok",
+            data=ScreeningDraftResponse(
+                answers=[
+                    ScreeningAnswer(
+                        question="Why do you want this job?",  # reworded by the model
+                        answer="Because I build pipelines.",
+                        evidence_ids=[],
+                    )
+                ]
+            ),
+        )
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 200
+    assert "Why are you interested in this role?" in response.text
+    assert "Why do you want this job?" not in response.text
+    assert "Because I build pipelines." in response.text
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    assert [r.question_text for r in rows] == ["Why are you interested in this role?"]
 
 
 async def test_an_empty_response_keeps_the_stored_drafts(

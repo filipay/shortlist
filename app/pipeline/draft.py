@@ -209,7 +209,7 @@ async def draft_screening_answers(
     if not result.ok or not isinstance(result.data, ScreeningDraftResponse):
         return None
     return ground_screening_answers(
-        facts, _listing_text(listing), result.data
+        facts, _listing_text(listing), questions, result.data
     )
 
 

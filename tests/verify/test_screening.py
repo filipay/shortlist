@@ -27,10 +27,11 @@ LISTING_TEXT = (
 KNOWN_BULLET = "bul/northwind-labs-2021/1"
 
 
-def _ground(*answers: ScreeningAnswer) -> list:
+def _ground(*answers: ScreeningAnswer, questions: list[str] | None = None) -> list:
     return ground_screening_answers(
         load_standin_facts(),
         LISTING_TEXT,
+        questions if questions is not None else [answer.question for answer in answers],
         ScreeningDraftResponse(answers=list(answers)),
     )
 
@@ -91,6 +92,24 @@ def test_an_answer_with_no_evidence_ids_and_no_digits_passes_clean() -> None:
 
 
 # --- catch-the-bad direction (the false-negative surface) ----------------------
+
+
+def test_the_verdict_question_is_the_asked_text_not_the_model_echo() -> None:
+    """WR-04 / CONVENTIONS rule 1: answer N belongs to asked question N.
+
+    `ScreeningAnswer.question` is model-controlled free text; if the model
+    paraphrases, a merge keyed on it orphans the answer. The verdict must carry the
+    server-side asked question instead.
+    """
+    (verdict,) = _ground(
+        ScreeningAnswer(
+            question="Tell me about your background.",  # a model paraphrase
+            answer="See my CV.",
+        ),
+        questions=["Why are you interested in this role?"],
+    )
+
+    assert verdict.question == "Why are you interested in this role?"
 
 
 def test_an_unknown_evidence_id_is_flagged_and_named() -> None:
