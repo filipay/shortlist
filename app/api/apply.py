@@ -303,11 +303,13 @@ async def draft_answers(
     # Commit unconditionally: the stage already wrote its one audit row for this
     # ATTEMPT, and it must survive a refusal (mirrors the tailor generate route).
     await session.commit()
-    if verdicts is None:
+    # WR-03: `None` is a failed call; an empty list is a valid-but-useless response
+    # (`ScreeningDraftResponse.answers` defaults to `[]`). Neither is a regeneration:
+    # `replace_for_listing([])` would delete the user's stored answers with no warning.
+    if not verdicts:
         return _answers_error(
-            "drafting_failed",
-            "The drafting call did not return usable answers. Check that the LLM "
-            "backend on Settings is reachable, then try again.",
+            "drafting_empty",
+            "The drafting call returned no answers. Your existing drafts were kept.",
             502,
         )
 

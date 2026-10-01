@@ -537,6 +537,43 @@ async def test_the_draft_action_makes_one_call_and_persists_rows(
     assert rows[0].answer_text == "Because I build pipelines."
 
 
+async def test_an_empty_response_keeps_the_stored_drafts(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """WR-03: a valid-but-empty response must not silently wipe stored answers."""
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        return StructuredCallResult(
+            ok=True, status="ok", data=ScreeningDraftResponse(answers=[])
+        )
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    await _seed_drafts(
+        session_factory, listing_id, [{"question": "Kept question", "answer": "kept answer"}]
+    )
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 502
+    assert 'data-error="drafting_empty"' in response.text
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    assert [r.question_text for r in rows] == ["Kept question"]
+    assert rows[0].answer_text == "kept answer"
+
+
 async def test_a_disabled_switch_refuses_before_any_call(
     client,
     session_factory: async_sessionmaker[AsyncSession],
