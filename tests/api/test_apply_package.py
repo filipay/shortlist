@@ -678,6 +678,40 @@ async def test_the_draft_action_refuses_without_an_ok_artifact(
     assert rows == [], "a gated action persists nothing"
 
 
+async def test_the_draft_action_refuses_with_no_questions(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """IN-03: an explicitly-empty question list must not buy a paid call."""
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    calls: list[dict[str, Any]] = []
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        calls.append(kwargs)
+        return StructuredCallResult(ok=True, status="ok", data=ScreeningDraftResponse(answers=[]))
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    async with session_factory() as session:
+        await apply_config_repo.write_questions(session, [])
+        await session.commit()
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 409
+    assert 'data-error="no-questions"' in response.text
+    assert calls == [], "an empty question list must not reach the backend"
+    async with session_factory() as session:
+        rows = (await session.execute(select(ScreeningDraft))).scalars().all()
+    assert rows == [], "a refusal writes no draft rows"
+
+
 async def test_the_question_action_refuses_without_an_ok_artifact(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

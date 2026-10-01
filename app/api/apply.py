@@ -282,6 +282,15 @@ async def draft_answers(
     questions += [
         draft.question_text for draft in drafts if draft.question_text not in questions
     ]
+    # IN-03: with nothing to answer there is nothing to draft. Refuse BEFORE the
+    # backend so an explicitly-empty question list cannot buy a paid call and an
+    # audit row (the DEFAULT_QUESTIONS fallback covers only an ABSENT config row).
+    if not questions:
+        return _answers_error(
+            "no-questions",
+            "Add a screening question first.",
+            409,
+        )
 
     try:
         facts = load_facts(Path(settings.cv_dir) / CV_FILENAME)
