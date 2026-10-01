@@ -241,6 +241,32 @@ async def test_missing_apply_url_renders_the_fallback_text(
     assert 'class="apply-link"' not in response.text
 
 
+async def test_a_non_web_apply_url_renders_no_anchor(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """CR-01: a `javascript:` apply_url is gated to '' — Jinja autoescape cannot.
+
+    Mirrors `tests/api/test_queue_links.py`: the repository/route gate empties a
+    non-web scheme, so the outbound anchor must be absent and the fallback paragraph
+    renders instead. Without the gate, `href="javascript:..."` executes in-origin.
+    """
+    listing_id = await _seed_listing(session_factory)
+    async with session_factory() as session:
+        listing = await session.get(Listing, listing_id)
+        assert listing is not None
+        listing.apply_url = "javascript:alert(1)"
+        await session.commit()
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    response = await client.get(f"/listings/{listing_id}/apply")
+
+    assert response.status_code == 200
+    assert "javascript:" not in response.text
+    assert 'class="apply-link"' not in response.text
+    assert "Open the application form" not in response.text
+    assert "No application link was recorded for this listing" in response.text
+
+
 async def test_unknown_listing_returns_a_404_fragment(client) -> None:
     response = await client.get("/listings/999999/apply")
     assert response.status_code == 404

@@ -56,6 +56,7 @@ from app.db.repositories import (
     score_repo,
     screening_draft_repo,
 )
+from app.db.repositories.queue_repo import http_url
 from app.db.repositories.screening_draft_repo import ScreeningDraftInput
 from app.db.session import get_session
 from app.domain.models import User
@@ -227,7 +228,10 @@ async def apply_package_page(
         "listing_id": int(listing.id),
         "listing_title": listing.title,
         "package_state": PACKAGE_STATE_READY,
-        "apply_url": (listing.apply_url or "").strip(),
+        # `listing.apply_url` is stored raw from untrusted scraper output and an
+        # anchor's `javascript:`/`data:` scheme is NOT blocked by Jinja autoescape,
+        # so it goes through the queue's existing http(s) scheme gate (CR-01).
+        "apply_url": http_url(listing.apply_url),
         "gaps": gaps,
         "statuses": application_repo.APPLICATION_STATUSES,
         "ok_artifacts": ok_artifacts,

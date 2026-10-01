@@ -589,7 +589,7 @@ def _instruction_like(value: object) -> bool:
     return bool(value.get("instruction_like", False))
 
 
-def _http_url(value: str | None) -> str:
+def http_url(value: str | None) -> str:
     """Return `value` only when it is an http(s) URL, else "".
 
     `listing_sources.source_url` is stored raw and `canonical_url` is not a scheme
@@ -646,8 +646,8 @@ async def _enrich(
         # Both URLs are gated to http(s) before the comparison below. An empty
         # board URL therefore cannot suppress a valid employer link: `canonical_url("")`
         # is `""`, which still differs from the employer page.
-        board_url = _http_url(source_url)
-        employer_url = _http_url(canonical_source_url)
+        board_url = http_url(source_url)
+        employer_url = http_url(canonical_source_url)
         # `source_url` is stored raw while `canonical_source_url` is the normalised
         # `canonical_url(source_url, direct_url)`, so compare the board page's
         # normalised form against it: raw-vs-normalised would call one page two
@@ -735,7 +735,7 @@ async def _enrich(
                 saved=state.saved,
                 hidden=state.hidden,
                 rules=tuple(chips),
-                url=_http_url(listing.canonical_url) or None,
+                url=http_url(listing.canonical_url) or None,
                 source_links=links,
                 instruction_like=_instruction_like(listing.quality_signals_json),
                 total_score=total_score,
@@ -822,6 +822,7 @@ __all__ = [
     "QueueRow",
     "QueueRule",
     "SourceLink",
+    "http_url",
     "read_queue",
     "read_row",
 ]
