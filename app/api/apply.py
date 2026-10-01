@@ -266,6 +266,13 @@ async def draft_answers(
     if listing is None:
         return _not_found()
 
+    # WR-01: the same `ok` gate the page enforces (D-121), re-checked server-side.
+    # The page-only gate is not an authorization boundary: a direct POST must not
+    # spend a model call or persist rows for a listing with no verified CV.
+    artifact = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
+    if artifact is None:
+        return _answers_error("no-ok-artifact", "Tailor and verify a CV first.", 409)
+
     skip = drafting_skip_reason()
     if skip is not None:
         return _answers_error(skip, DRAFT_SKIP_LABELS.get(skip, skip), 409)
@@ -341,6 +348,11 @@ async def add_question(
     if listing is None:
         return _not_found()
 
+    # WR-01: keep the package's actions consistent with the package's availability.
+    artifact = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
+    if artifact is None:
+        return _answers_error("no-ok-artifact", "Tailor and verify a CV first.", 409)
+
     raw = form.get("question")
     question = raw.strip() if isinstance(raw, str) else ""
     if question:
@@ -385,6 +397,11 @@ async def delete_answer(
     listing = await session.get(Listing, listing_id)
     if listing is None:
         return _not_found()
+
+    # WR-01: keep the package's actions consistent with the package's availability.
+    artifact = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
+    if artifact is None:
+        return _answers_error("no-ok-artifact", "Tailor and verify a CV first.", 409)
 
     draft_id = _int_or_none(form.get("draft_id"))
     if draft_id is None:

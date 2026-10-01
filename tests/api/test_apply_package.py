@@ -564,6 +564,68 @@ async def test_a_disabled_switch_refuses_before_any_call(
     assert rows == [], "a refusal writes no draft rows"
 
 
+async def test_the_draft_action_refuses_without_an_ok_artifact(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """WR-01: a direct POST must re-check the ok gate — no call, no rows."""
+    calls: list[dict[str, Any]] = []
+
+    async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
+        calls.append(kwargs)
+        return StructuredCallResult(ok=True, status="ok", data=ScreeningDraftResponse(answers=[]))
+
+    monkeypatch.setattr(OfflineLLMBackend, "complete_structured", _stub)
+
+    listing_id = await _seed_listing(session_factory)  # no ok artefact seeded
+
+    response = await client.post(f"/listings/{listing_id}/apply/draft")
+
+    assert response.status_code == 409
+    assert 'data-error="no-ok-artifact"' in response.text
+    assert calls == [], "the ok gate must refuse before any model call"
+    async with session_factory() as session:
+        rows = (await session.execute(select(ScreeningDraft))).scalars().all()
+    assert rows == [], "a gated action persists nothing"
+
+
+async def test_the_question_action_refuses_without_an_ok_artifact(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """WR-01: the ad-hoc append route honours the package's availability gate."""
+    listing_id = await _seed_listing(session_factory)  # no ok artefact seeded
+
+    response = await client.post(
+        f"/listings/{listing_id}/apply/question",
+        data={"question": "Do you have a portfolio?"},
+    )
+
+    assert response.status_code == 409
+    assert 'data-error="no-ok-artifact"' in response.text
+    async with session_factory() as session:
+        rows = (await session.execute(select(ScreeningDraft))).scalars().all()
+    assert rows == [], "a gated action persists nothing"
+
+
+async def test_the_delete_action_refuses_without_an_ok_artifact(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """WR-01: the per-answer delete honours the gate; a stored row is untouched."""
+    listing_id = await _seed_listing(session_factory)  # no ok artefact seeded
+    ids = await _seed_drafts(session_factory, listing_id, [{"question": "Q1", "answer": "one"}])
+
+    response = await client.post(
+        f"/listings/{listing_id}/apply/draft/delete", data={"draft_id": str(ids[0])}
+    )
+
+    assert response.status_code == 409
+    assert 'data-error="no-ok-artifact"' in response.text
+    async with session_factory() as session:
+        rows = (await session.execute(select(ScreeningDraft))).scalars().all()
+    assert len(rows) == 1, "a gated action writes nothing"
+
+
 async def test_add_question_appends_an_ad_hoc_row(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
