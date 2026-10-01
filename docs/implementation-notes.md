@@ -46,7 +46,7 @@ Both URLs are derived from the existing single batched `listing_sources` read, s
 no query was added and no N+1 was introduced. `SourceLink(source, url,
 employer_url)` is frozen; `QueueRow` gained `url` and `source_links`.
 
-Only `http`/`https` URLs are ever rendered as links (`_http_url` in
+Only `http`/`https` URLs are ever rendered as links (`http_url` in
 `queue_repo.py`): scraped `source_url` is stored raw and `canonical_url` is not a
 scheme gate, so a non-web scheme would otherwise reach an `href`. A gated-to-empty
 URL renders the title/source as plain text.
