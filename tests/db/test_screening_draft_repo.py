@@ -22,6 +22,7 @@ from app.db.models import Listing, ScreeningDraft
 from app.db.repositories.screening_draft_repo import (
     ScreeningDraftInput,
     ScreeningDraftRecord,
+    append_draft,
     delete_draft,
     delete_for_listing,
     read_for_listing,
@@ -198,6 +199,55 @@ async def test_an_unknown_listing_fk_rolls_back_without_poisoning_the_outer_tran
     assert [r.question_text for r in recovered] == ["Valid"]
     async with session_factory() as session:
         assert [r.question_text for r in await read_for_listing(session, 1)] == ["Valid"]
+
+
+# --- the single-row append ------------------------------------------------------
+
+
+async def test_append_draft_inserts_one_row_and_keeps_existing_ids(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """IN-02: appending must not re-issue the existing rows' ids/created_at."""
+    async with session_factory() as session:
+        first = await replace_for_listing(
+            session,
+            listing_id=1,
+            drafts=[
+                ScreeningDraftInput(question_text="Q1", answer_text="one"),
+                ScreeningDraftInput(question_text="Q2", answer_text="two"),
+            ],
+            now=NOW,
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        appended = await append_draft(
+            session,
+            listing_id=1,
+            draft=ScreeningDraftInput(question_text="Ad-hoc"),
+            now=LATER,
+        )
+        await session.commit()
+
+    assert appended.question_text == "Ad-hoc"
+    async with session_factory() as session:
+        after = await read_for_listing(session, 1)
+    assert [r.question_text for r in after] == ["Q1", "Q2", "Ad-hoc"]
+    assert [r.id for r in after[:2]] == [first[0].id, first[1].id], "ids must survive"
+    assert after[0].created_at.replace(tzinfo=None) == NOW.replace(tzinfo=None)
+    assert after[2].created_at.replace(tzinfo=None) == LATER.replace(tzinfo=None)
+
+
+async def test_append_draft_never_commits(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as writer:
+        await append_draft(
+            writer, listing_id=1, draft=ScreeningDraftInput(question_text="Q"), now=NOW
+        )
+        # deliberately no commit
+
+    assert await _count_all(session_factory) == 0, "the writer must not commit"
 
 
 # --- the per-row delete --------------------------------------------------------

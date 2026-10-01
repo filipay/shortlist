@@ -117,6 +117,36 @@ async def replace_for_listing(
     return await read_for_listing(session, listing_id)
 
 
+async def append_draft(
+    session: AsyncSession,
+    *,
+    listing_id: int,
+    draft: ScreeningDraftInput,
+    now: datetime | None = None,
+) -> ScreeningDraftRecord:
+    """Insert ONE draft without touching the listing's existing rows. Never commits.
+
+    The ad-hoc-question path (D-124) adds a single row. Routing it through
+    ``replace_for_listing`` re-issues every existing row's primary key and resets its
+    ``created_at``, stranding any page already open on those ``draft_id`` values. One
+    insert keeps the existing rows' identity (and their per-answer delete targets)
+    intact. Wrapped in a SAVEPOINT like every write here.
+    """
+    moment = now if now is not None else datetime.now(UTC)
+    row = ScreeningDraft(
+        listing_id=int(listing_id),
+        question_text=draft.question_text,
+        answer_text=draft.answer_text,
+        evidence_json=list(draft.evidence_json),
+        unsupported=bool(draft.unsupported),
+        created_at=moment,
+    )
+    async with session.begin_nested():
+        session.add(row)
+        await session.flush()
+    return _to_record(row)
+
+
 async def delete_for_listing(session: AsyncSession, listing_id: int) -> bool:
     """Delete every draft for one listing; ``True`` if any row was removed. Never commits."""
     result = await session.execute(
@@ -144,6 +174,7 @@ async def delete_draft(session: AsyncSession, *, listing_id: int, draft_id: int)
 __all__ = [
     "ScreeningDraftInput",
     "ScreeningDraftRecord",
+    "append_draft",
     "delete_draft",
     "delete_for_listing",
     "read_for_listing",

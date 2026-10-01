@@ -341,8 +341,9 @@ async def add_question(
     """Append one ad-hoc question for this listing (answer NULL), then re-render.
 
     The question is user input, never inferred from the listing text (D-124). A blank
-    or already-known question changes nothing. Appending reuses ``replace_for_listing``
-    (no new repository surface), preserving the existing rows and their order.
+    or already-known question changes nothing. Appending inserts ONE row, leaving the
+    existing drafts' ids and ``created_at`` untouched (IN-02), so a page open in
+    another tab keeps valid per-answer delete targets.
     """
     form = await read_form(request)
 
@@ -363,18 +364,11 @@ async def add_question(
             await apply_config_repo.read_questions(session)
         )
         if question not in known:
-            inputs = [
-                ScreeningDraftInput(
-                    question_text=draft.question_text,
-                    answer_text=draft.answer_text,
-                    evidence_json=draft.evidence_json,
-                    unsupported=draft.unsupported,
-                )
-                for draft in drafts
-            ]
-            inputs.append(ScreeningDraftInput(question_text=question))
-            await screening_draft_repo.replace_for_listing(
-                session, listing_id=int(listing.id), drafts=inputs, now=datetime.now(UTC)
+            await screening_draft_repo.append_draft(
+                session,
+                listing_id=int(listing.id),
+                draft=ScreeningDraftInput(question_text=question),
+                now=datetime.now(UTC),
             )
             await session.commit()
 

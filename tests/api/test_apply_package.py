@@ -739,6 +739,40 @@ async def test_add_question_appends_an_ad_hoc_row(
     assert rows[0].answer_text is None
 
 
+async def test_add_question_keeps_existing_draft_ids(
+    client, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """IN-02: the append must preserve existing `draft_id`s (no stale-tab 404)."""
+    listing_id = await _seed_listing(session_factory)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    ids = await _seed_drafts(
+        session_factory,
+        listing_id,
+        [
+            {"question": "Ad-hoc Q1", "answer": "one"},
+            {"question": "Ad-hoc Q2", "answer": "two"},
+        ],
+    )
+
+    response = await client.post(
+        f"/listings/{listing_id}/apply/question",
+        data={"question": "A new ad-hoc question"},
+    )
+    assert response.status_code == 200
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
+            )
+        ).scalars().all()
+    by_question = {r.question_text: r for r in rows}
+    assert set(by_question) == {"Ad-hoc Q1", "Ad-hoc Q2", "A new ad-hoc question"}
+    assert {by_question["Ad-hoc Q1"].id, by_question["Ad-hoc Q2"].id} == set(ids), (
+        "an append must not re-issue the existing rows' ids"
+    )
+
+
 async def test_per_answer_delete_removes_only_the_named_row(
     client, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
