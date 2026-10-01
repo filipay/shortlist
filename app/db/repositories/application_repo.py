@@ -465,7 +465,11 @@ async def record_application(
         record = await cv_artifact_repo.read_for_download(
             session, cv_artifact_id, ok_only=True
         )
-        if record is None:
+        # WR-02: the SQL gate proves the artefact is `ok`; this proves it belongs to
+        # the listing being applied to. The picker is listing-scoped, but a crafted
+        # POST could link another listing's verified CV — the one field the tracker
+        # exists to guarantee must be listing-correct (D-129).
+        if record is None or record.listing_id != listing_id:
             return None
         artifact_id = record.id
 
@@ -528,7 +532,9 @@ async def transition_application(
         record = await cv_artifact_repo.read_for_download(
             session, cv_artifact_id, ok_only=True
         )
-        if record is None:
+        # WR-02: as in `record_application`, the artefact must belong to THIS
+        # application's listing, not merely be `ok` (D-129).
+        if record is None or record.listing_id != row.listing_id:
             return None
         artifact_id = record.id
 

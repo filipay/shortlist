@@ -265,6 +265,64 @@ async def test_applied_requires_ok_artifact(
     assert await _event_count(session_factory) == 2
 
 
+async def test_applied_refuses_an_ok_artifact_from_another_listing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """WR-02: the SQL `ok` gate is necessary but not sufficient.
+
+    A crafted POST can name a verified artefact that belongs to a *different*
+    listing. Both the record and the transition path must refuse it and write
+    nothing (D-129's "the exact CV that was sent for THIS job").
+    """
+    listing_a = await _seed_listing(session_factory, index=1)
+    listing_b = await _seed_listing(session_factory, index=2)
+    other_ok = await _seed_artifact(session_factory, listing_b, status="ok")
+
+    async with session_factory() as session:
+        refused = await application_repo.record_application(
+            session,
+            listing_id=listing_a,
+            status="applied",
+            cv_artifact_id=other_ok,
+            notes=None,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert refused is None, "listing B's ok artefact must not attach to listing A"
+    assert await _counts(session_factory) == (0, 0)
+
+    async with session_factory() as session:
+        app_id = await application_repo.record_application(
+            session,
+            listing_id=listing_a,
+            status="shortlisted",
+            cv_artifact_id=None,
+            notes=None,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert app_id is not None
+
+    async with session_factory() as session:
+        refused_transition = await application_repo.transition_application(
+            session,
+            application_id=app_id,
+            to_status="applied",
+            cv_artifact_id=other_ok,
+            note=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert refused_transition is None, "a foreign ok artefact must not attach"
+    async with session_factory() as session:
+        row = await session.get(Application, app_id)
+    assert row is not None and row.status == "shortlisted"
+    assert row.cv_artifact_id is None
+    assert await _event_count(session_factory) == 1, "a refusal writes no event"
+
+
 async def test_tracker_read_keeps_the_stored_link_when_artifact_status_changes(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
