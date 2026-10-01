@@ -243,7 +243,7 @@ def _record(
     )
 
 
-async def _ok_artifacts_by_listing(
+async def ok_artifacts_by_listing(
     session: AsyncSession, listing_ids: set[int]
 ) -> dict[int, tuple[ArtifactOption, ...]]:
     """Every `ok` artefact for the given listings, newest first, in **one** query.
@@ -351,7 +351,7 @@ async def read_tracker(
 
     total = len(rows)
     page_rows = rows[offset : offset + limit]
-    options = await _ok_artifacts_by_listing(
+    options = await ok_artifacts_by_listing(
         session, {int(row.listing_id) for row, *_ in page_rows}
     )
     records = tuple(
@@ -397,7 +397,7 @@ async def read_application(
     if result is None:
         return None
     row, title, company, count = result
-    options = await _ok_artifacts_by_listing(session, {int(row.listing_id)})
+    options = await ok_artifacts_by_listing(session, {int(row.listing_id)})
     return _record(
         row=row,
         listing_title=title,
@@ -592,6 +592,7 @@ __all__ = [
     "TrackerPage",
     "TrackerQuery",
     "parse_next_action",
+    "ok_artifacts_by_listing",
     "read_application",
     "read_history",
     "read_tracker",

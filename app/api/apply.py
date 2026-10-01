@@ -219,10 +219,10 @@ async def apply_package_page(
     requirements = list(score.requirements) if score is not None else []
     gaps = [entry for entry in requirements if entry.get("verdict") in GAP_VERDICTS]
     # The ok-only picker is the SAME SQL-level selection the tracker's picker uses
-    # (`application_repo._ok_artifacts_by_listing`), so the two surfaces cannot drift
+    # (`application_repo.ok_artifacts_by_listing`), so the two surfaces cannot drift
     # and no second ok-only query is written.
     ok_artifacts = (
-        await application_repo._ok_artifacts_by_listing(session, {int(listing.id)})
+        await application_repo.ok_artifacts_by_listing(session, {int(listing.id)})
     ).get(int(listing.id), ())
     context: dict[str, Any] = {
         "listing_id": int(listing.id),
