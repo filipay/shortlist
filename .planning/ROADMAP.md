@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 5/5 plans executed (0 executed)
+**Plans:** 5/5 plans executed, plus 4 gap-closure plans planned (2026-10-05)
 **UI hint**: yes
 
 Plans:
@@ -341,6 +341,13 @@ Plans:
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
 - [x] 07-05-PLAN.md — The drafted-answers surface: the question list, the package-page region, the draft action, and copy-to-clipboard
+
+**Gap closure** *(planned 2026-10-05 from `07-UAT.md` `status: diagnosed`: G-07-1, G-07-2, G-07-3, G-07-4; wave 1 = 07-06/07-08/07-09, wave 2 = 07-07)*
+
+- [ ] 07-06-PLAN.md — G-07-2: coerce the recorded non-list screening payload shapes in the schema (so `_salvage` stops re-raising on `list_type` and the drafted answers are preserved) and split the unusable-response refusal from the genuinely-empty one, with a golden-payload fixture
+- [ ] 07-07-PLAN.md — G-07-3: persist the grounding warnings and the advisory band (migration 0007) and render them, so a flagged answer names its specific offender and the band surfaces as advisory only (UI-SPEC amendment)
+- [ ] 07-08-PLAN.md — G-07-1: the record route returns a 303 to `/applications` for the plain-form submit, so the user lands on the full styled tracker instead of a bare fragment, with the missing regression test
+- [ ] 07-09-PLAN.md — G-07-4: the CV PDF route takes an optional, listing-scoped artifact id and the compile banner stops duplicating the Latest CV control, so each download affordance serves the artifact it labels
 
 ### Phase 8: Operations + Polish
 
