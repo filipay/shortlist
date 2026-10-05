@@ -108,18 +108,18 @@ async def test_record_via_http_renders_the_row_and_its_created_event(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "shortlisted", "notes": "Referred"},
     )
-    assert response.status_code == 200
-    assert 'id="application-row-' in response.text
-    assert "Shortlisted" in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == "/applications"
 
     assert await _counts(session_factory) == (1, 1)
 
     page = await client.get("/applications")
     assert page.status_code == 200
+    assert 'id="application-row-' in page.text
     assert "Shortlisted" in page.text
     assert "Referred" in page.text
 
-    row_id = _row_id(response.text)
+    row_id = _row_id(page.text)
     history = await client.get(f"/applications/{row_id}/history")
     assert history.status_code == 200
     assert "created" in history.text
@@ -172,8 +172,9 @@ async def test_applied_requires_ok_artifact(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "shortlisted"},
     )
-    assert recorded.status_code == 200
-    row_id = _row_id(recorded.text)
+    assert recorded.status_code == 303
+    assert recorded.headers["location"] == "/applications"
+    row_id = _row_id((await client.get("/applications")).text)
 
     blocked_id = await _seed_artifact(session_factory, listing_id, status="blocked")
     refused = await client.post(
@@ -209,6 +210,35 @@ async def test_record_route_is_not_shadowed_by_the_dynamic_route(
     assert await _counts(session_factory) == (1, 1)
 
 
+async def test_record_submit_lands_on_the_full_styled_tracker_page(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """G-07-1: the plain-form record submit must not strand the user on a bare fragment.
+
+    A followed record POST must yield a full document that extends the base layout
+    (doctype + the stylesheet link) carrying the new row — not the stylesheet-less
+    `applications_list.html` fragment the route used to return.
+    """
+    listing_id = await _seed_listing(session_factory)
+
+    response = await client.post(
+        "/applications/record",
+        data={"listing_id": str(listing_id), "status": "shortlisted", "notes": "Referred"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert response.url.path == "/applications"
+    body = response.text
+    assert "<!doctype html>" in body.lower(), "the landing page is not a full document"
+    assert 'href="/static/vendor/app.css"' in body, "the landing page has no stylesheet"
+    assert 'id="application-list"' in body
+    assert 'id="application-row-' in body
+    assert "Shortlisted" in body
+    assert "Referred" in body
+    assert await _counts(session_factory) == (1, 1)
+
+
 async def test_notes_and_next_action_save_without_appending_an_event(
     session_factory: async_sessionmaker[AsyncSession], client
 ) -> None:
@@ -217,7 +247,9 @@ async def test_notes_and_next_action_save_without_appending_an_event(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "shortlisted"},
     )
-    row_id = _row_id(recorded.text)
+    assert recorded.status_code == 303
+    assert recorded.headers["location"] == "/applications"
+    row_id = _row_id((await client.get("/applications")).text)
 
     saved = await client.post(
         f"/applications/{row_id}",
@@ -241,7 +273,9 @@ async def test_clearing_the_next_action_field_clears_the_date(
             "next_action_at": "2026-10-09",
         },
     )
-    row_id = _row_id(recorded.text)
+    assert recorded.status_code == 303
+    assert recorded.headers["location"] == "/applications"
+    row_id = _row_id((await client.get("/applications")).text)
 
     cleared = await client.post(
         f"/applications/{row_id}", data={"notes": "", "next_action_at": ""}
@@ -261,7 +295,9 @@ async def test_history_partial_lists_all_events_in_order_and_count_matches(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "shortlisted"},
     )
-    row_id = _row_id(recorded.text)
+    assert recorded.status_code == 303
+    assert recorded.headers["location"] == "/applications"
+    row_id = _row_id((await client.get("/applications")).text)
     moved = await client.post(
         f"/applications/{row_id}/status",
         data={"status": "interviewing", "note": "Screen booked"},
@@ -284,7 +320,9 @@ async def test_tracker_row_renders_the_transition_and_history_controls(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "shortlisted"},
     )
-    row_id = _row_id(recorded.text)
+    assert recorded.status_code == 303
+    assert recorded.headers["location"] == "/applications"
+    row_id = _row_id((await client.get("/applications")).text)
 
     page = await client.get("/applications")
     assert page.status_code == 200
@@ -300,12 +338,18 @@ async def _record(
     status: str = "queued",
     notes: str | None = None,
 ) -> str:
+    """Submit the record form and return the followed tracker page.
+
+    The route is Post/Redirect/Get (G-07-1), so a successful record is a 303 to
+    `/applications`; the caller gets the full styled page after the follow-up GET.
+    """
     data = {"listing_id": str(listing_id), "status": status}
     if notes:
         data["notes"] = notes
     response = await client.post("/applications/record", data=data)
-    assert response.status_code == 200
-    return response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == "/applications"
+    return (await client.get("/applications")).text
 
 
 async def test_stage_filter_over_http(

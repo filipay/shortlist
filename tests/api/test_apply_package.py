@@ -364,8 +364,12 @@ async def test_record_from_the_package_links_the_ok_artifact(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "applied", "cv_artifact_id": str(ok_id)},
     )
-    assert response.status_code == 200
-    assert "Applied" in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == "/applications"
+
+    tracker = await client.get("/applications")
+    assert tracker.status_code == 200
+    assert "Applied" in tracker.text
 
     async with session_factory() as session:
         row = (
