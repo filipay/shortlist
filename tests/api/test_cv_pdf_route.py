@@ -167,6 +167,78 @@ async def test_the_route_ignores_a_path_like_query_param(
     assert response.content.startswith(b"%PDF"), "the row's own file is served"
 
 
+# --- per-artifact selection (G-07-4) --------------------------------------------
+
+
+async def test_a_named_artifact_serves_its_own_file_not_the_latest(
+    pdf_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing_id(session_factory)
+    older = await _seed_artifact(
+        session_factory,
+        listing_id=listing_id,
+        pdf_path=_write_pdf("older.pdf", b"%PDF-1.4 older\n"),
+    )
+    newer = await _seed_artifact(
+        session_factory,
+        listing_id=listing_id,
+        pdf_path=_write_pdf("newer.pdf", b"%PDF-1.4 newer\n"),
+    )
+
+    latest = await pdf_client.get(f"/listings/{listing_id}/cv/pdf")
+    old = await pdf_client.get(f"/listings/{listing_id}/cv/pdf?artifact_id={older.id}")
+    new = await pdf_client.get(f"/listings/{listing_id}/cv/pdf?artifact_id={newer.id}")
+
+    assert latest.content == b"%PDF-1.4 newer\n", "no selector still serves the latest ok PDF"
+    assert old.content == b"%PDF-1.4 older\n", "the older row serves its OWN file"
+    assert new.content == b"%PDF-1.4 newer\n", "the newer row serves its own file"
+
+
+async def test_a_named_blocked_artifact_is_a_404(
+    pdf_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing_id(session_factory)
+    await _seed_artifact(session_factory, listing_id=listing_id, pdf_path=_write_pdf())
+    blocked = await _seed_artifact(
+        session_factory, listing_id=listing_id, compile_status="blocked"
+    )
+
+    response = await pdf_client.get(f"/listings/{listing_id}/cv/pdf?artifact_id={blocked.id}")
+
+    assert response.status_code == 404
+    assert 'data-error="no-ok-artifact"' in response.text
+
+
+async def test_an_artifact_belonging_to_another_listing_is_a_404(
+    pdf_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing_id(session_factory)
+    await _seed_artifact(session_factory, listing_id=listing_id, pdf_path=_write_pdf())
+    other_id = await _seed_listing(session_factory, index=99, title="Other Listing")
+    foreign = await _seed_artifact(
+        session_factory,
+        listing_id=other_id,
+        pdf_path=_write_pdf("foreign.pdf", b"%PDF-1.4 foreign\n"),
+    )
+
+    response = await pdf_client.get(f"/listings/{listing_id}/cv/pdf?artifact_id={foreign.id}")
+
+    assert response.status_code == 404
+    assert 'data-error="no-ok-artifact"' in response.text
+
+
+async def test_an_unknown_artifact_id_is_a_404(
+    pdf_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    listing_id = await _seed_listing_id(session_factory)
+    await _seed_artifact(session_factory, listing_id=listing_id, pdf_path=_write_pdf())
+
+    response = await pdf_client.get(f"/listings/{listing_id}/cv/pdf?artifact_id=999999")
+
+    assert response.status_code == 404
+    assert 'data-error="no-ok-artifact"' in response.text
+
+
 if __name__ == "__main__":  # pragma: no cover
     import pytest
 

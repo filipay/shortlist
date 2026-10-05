@@ -13,9 +13,11 @@ One path, four routes:
 * ``POST /listings/{id}/cv/compile`` — re-parses the client's ``patch_json`` with
   Pydantic, re-grounds it and compiles. A Layer-1 fail short-circuits to a blocked
   row (D-111/D-115).
-* ``GET /listings/{id}/cv/pdf`` — serves the latest ``ok`` artifact's PDF inline
-  (``?download=1`` sets an attachment disposition). A blocked/failed artifact is
-  unreachable because the repository selection is ``ok``-only (D-118).
+* ``GET /listings/{id}/cv/pdf`` — serves an ``ok`` artifact's PDF inline (``?download=1``
+  sets an attachment disposition). Without ``?artifact_id=`` the latest ``ok`` artifact is
+  served; with it, the named artifact is served only when it is ``ok`` AND belongs to this
+  listing. A blocked/failed or foreign artifact is unreachable because the repository
+  selection is ``ok``-only (D-118) and the route re-checks ownership.
 
 Every route declares the identity seam (the `user` dependency from `app.api.deps`)
 and a request-scoped session. The engine and backend are dependencies so a test can
@@ -643,22 +645,33 @@ async def compile_tailored_cv(
 async def tailored_cv_pdf(
     listing_id: int,
     request: Request,
+    artifact_id: int | None = None,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Any:
-    """Serve the latest `ok` artifact's PDF: inline by default, attachment on `?download=1`.
+    """Serve one `ok` artifact's PDF: inline by default, attachment on `?download=1`.
+
+    Without a selector the newest `ok` artifact is served — the persistent Latest CV
+    control and every pre-existing caller keep working. With ``?artifact_id=`` the named
+    artifact is served instead, so a 'Previous compiles' row yields its OWN PDF rather
+    than the latest one.
+
+    Selection is `ok_only=True` **in SQL**, so a blocked or failed row is never reachable
+    (D-118); a `None` selection, a foreign listing's artifact or a missing file is the
+    same 404. The ownership check (`record.listing_id == listing_id`) means this
+    listing's URL can never serve another listing's PDF. The served path is the STORED
+    `pdf_path` — never built from request text — and the download filename is derived
+    from the two integer ids.
 
     Deliberately NOT gated by ``Settings.tailoring_enabled``: this route serves an
     already-verified stored artifact, and the switch gates NEW work (generate/compile).
     Gating it would strand a verified download when the operator pauses tailoring.
-
-    The selection is `ok_only=True`, so a blocked or failed row is never reachable; a
-    `None` selection is a 404 (no artifact, or only a non-`ok` one). The served path is
-    the STORED `pdf_path` — never built from request text — and the download filename is
-    derived from the two integer ids.
     """
-    record = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
-    if record is None or not record.pdf_path:
+    if artifact_id is None:
+        record = await cv_artifact_repo.latest_for_listing(session, listing_id, ok_only=True)
+    else:
+        record = await cv_artifact_repo.read_for_download(session, artifact_id, ok_only=True)
+    if record is None or record.listing_id != listing_id or not record.pdf_path:
         return _error_fragment("no-ok-artifact", "No compiled CV for this listing.", 404)
 
     root = Path(settings.artifacts_dir).resolve()

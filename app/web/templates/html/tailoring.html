@@ -90,7 +90,7 @@
       <span class="badge">{{ entry.compile_status }}</span>
       {{ entry.created_at | format_datetime }}
       {% if entry.compile_status == 'ok' %}
-      <a class="cv-download" href="/listings/{{ listing_id }}/cv/pdf">Download PDF</a>
+      <a class="cv-download" href="/listings/{{ listing_id }}/cv/pdf?artifact_id={{ entry.id }}">Download PDF</a>
       {% endif %}
     </li>
     {% endfor %}
