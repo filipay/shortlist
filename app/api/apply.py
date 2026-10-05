@@ -255,10 +255,16 @@ async def draft_answers(
 
     The operator switch is honoured BEFORE any model call: ``drafting_skip_reason()``
     reports a disabled switch or an absent fact store, which is returned as the shared
-    skip vocabulary in a ``data-error`` fragment. A ``None`` result from the stage (a
-    transport error, a cap refusal, or no usable response) is a 502 refusal that writes
-    no draft rows — the stage has already written its one audit row, and it is
-    committed here before the refusal so the attempt survives.
+    skip vocabulary in a ``data-error`` fragment.
+
+    Two distinct 502 refusals, both writing no draft rows (G-07-2):
+
+    * an **unusable** response (``None`` — schema-invalid, a raised transport error,
+      or a cap refusal) carries ``drafting_failed`` and cause-neutral copy;
+    * a valid-but-**empty** response (``[]``) carries ``drafting_empty``.
+
+    The stage has already written its one audit row, committed here before the
+    refusal so the attempt survives.
     """
     await read_form(request)
 
@@ -312,9 +318,19 @@ async def draft_answers(
     # Commit unconditionally: the stage already wrote its one audit row for this
     # ATTEMPT, and it must survive a refusal (mirrors the tailor generate route).
     await session.commit()
-    # WR-03: `None` is a failed call; an empty list is a valid-but-useless response
-    # (`ScreeningDraftResponse.answers` defaults to `[]`). Neither is a regeneration:
-    # `replace_for_listing([])` would delete the user's stored answers with no warning.
+    # WR-03 / G-07-2: `None` and `[]` are DIFFERENT failures and get different,
+    # honest copy. `None` is an unusable response — schema-invalid, a raised
+    # transport error, or a cap refusal — so its copy must not claim the model
+    # returned nothing or that the server was unreachable. `[]` is a valid response
+    # with zero answers. Neither is a regeneration: `replace_for_listing([])` would
+    # delete the user's stored answers with no warning.
+    if verdicts is None:
+        return _answers_error(
+            "drafting_failed",
+            "The drafting call did not return a usable response. "
+            "Your existing drafts were kept.",
+            502,
+        )
     if not verdicts:
         return _answers_error(
             "drafting_empty",

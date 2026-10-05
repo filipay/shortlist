@@ -94,7 +94,10 @@ DRAFT_SYSTEM_PROMPT = (
     "identifiers that appear verbatim in the CV fact store. An answer with no "
     "supporting fact carries an empty evidence_ids list.\n"
     "\n"
-    "Never state a number that does not appear in the candidate's facts or the listing."
+    "Never state a number that does not appear in the candidate's facts or the listing.\n"
+    "\n"
+    "Return the answers collection as a JSON array with one object per asked question, "
+    "and return each answer's evidence_ids as a JSON array of strings."
 )
 
 
