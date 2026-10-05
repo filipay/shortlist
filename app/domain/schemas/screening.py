@@ -19,7 +19,10 @@ ranking schema documents (Pitfall P11).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from collections.abc import Mapping
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ScreeningAnswer(BaseModel):
@@ -31,6 +34,24 @@ class ScreeningAnswer(BaseModel):
     answer: str
     evidence_ids: list[str] = Field(default_factory=list)
 
+    @field_validator("evidence_ids", mode="before")
+    @classmethod
+    def _coerce_evidence_ids(cls, value: Any) -> Any:
+        """Tolerate the recorded non-list shapes, and only those (G-07-2).
+
+        A ``None`` becomes an empty list; a bare id string becomes a one-element
+        list (comma-separated parts, empties dropped); a ``list``/``tuple`` passes
+        through. Every other shape is returned untouched so pydantic still fails
+        loudly rather than laundering an unrecognised payload into defaults.
+        """
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return value
+
 
 class ScreeningDraftResponse(BaseModel):
     """What the drafting call returns: one drafted answer per asked question."""
@@ -38,6 +59,25 @@ class ScreeningDraftResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     answers: list[ScreeningAnswer] = Field(default_factory=list)
+
+    @field_validator("answers", mode="before")
+    @classmethod
+    def _coerce_answers(cls, value: Any) -> Any:
+        """Tolerate the recorded non-list shapes, and only those (G-07-2).
+
+        A ``None`` becomes an empty list; a single answer-shaped mapping becomes a
+        one-element list; a ``list``/``tuple`` passes through. A scalar (a bare
+        string, an int, …) is returned untouched so pydantic still fails loudly —
+        dropping the whole ``answers`` field to its default would silently discard
+        every drafted answer (the M1 hazard).
+        """
+        if value is None:
+            return []
+        if isinstance(value, Mapping):
+            return [value]
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return value
 
 
 __all__ = ["ScreeningAnswer", "ScreeningDraftResponse"]

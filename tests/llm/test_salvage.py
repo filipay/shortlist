@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError, WrapValidator
 from pydantic_core import PydanticUseDefault
 
 from app.domain.schemas.probe import ProbeResult
+from app.domain.schemas.screening import ScreeningDraftResponse
 from app.llm import opencode_server
 from tests.llm.test_complete_structured import LIVE_MESSAGE_BODY, Recorder, _backend
 
@@ -175,6 +176,33 @@ async def test_complete_structured_salvages_a_truncated_structured_string(
     assert result.ok is True
     assert result.status == "ok"
     assert result.data == ProbeResult(acknowledged=True, echo="ok")
+
+
+# --- the recorded screening shape (G-07-2) ------------------------------------
+
+
+def test_the_recorded_non_list_screening_payload_salvages_with_its_answer() -> None:
+    """The hermetic stand-in for the live-model leg the gap asks for.
+
+    The UAT recorded a real call whose ``answers`` arrived as a single object and
+    whose nested ``evidence_ids`` was a bare string, so ``_salvage`` re-raised a
+    list-type ``ValidationError``. Routed through the production salvage helper, the
+    schema-local coercion must now preserve the answer instead of dropping it.
+    """
+    payload = {
+        "answers": {
+            "question": "Why this role?",
+            "answer": "Because I build pipelines.",
+            "evidence_ids": "bul/northwind-labs-2021/1",
+        }
+    }
+
+    result = _salvage(ScreeningDraftResponse, payload)
+
+    assert isinstance(result, ScreeningDraftResponse)
+    assert len(result.answers) == 1
+    assert result.answers[0].answer == "Because I build pipelines."
+    assert result.answers[0].evidence_ids == ["bul/northwind-labs-2021/1"]
 
 
 if __name__ == "__main__":  # pragma: no cover
