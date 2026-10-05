@@ -329,7 +329,7 @@ async def test_generate_returns_a_typed_error_and_one_audit_row_when_the_backend
 # --- truth 4: a passing compile writes one ok row ------------------------------
 
 
-async def test_compile_writes_one_ok_row_and_returns_a_download_link(
+async def test_compile_writes_one_ok_row_and_the_page_offers_the_download(
     tailoring_client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
     tmp_path: Path,
@@ -342,7 +342,13 @@ async def test_compile_writes_one_ok_row_and_returns_a_download_link(
     response = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
 
     assert response.status_code == 200
-    assert f"/listings/{listing_id}/cv/pdf" in response.text, "a download link is returned"
+    assert "Compiled." in response.text
+    assert '<a class="cv-download"' not in response.text, (
+        "the banner does not duplicate the persistent Latest CV control"
+    )
+    # The single download control lives on the page the swap leaves in place.
+    page = (await tailoring_client.get(f"/listings/{listing_id}/cv")).text
+    assert f'href="/listings/{listing_id}/cv/pdf"' in page, "the page offers the download"
 
     rows = await _artifact_rows(session_factory)
     assert len(rows) == 1

@@ -688,33 +688,31 @@ def test_compiled_fragment_names_every_drop_and_ignores_other_ops() -> None:
 
     reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=2)
     body = _compiled_fragment(
-        42,
         _record(
             [
                 {"op": "drop_bullet", "target_id": "bul/x/3", "detail": reason},
                 {"op": "reweight_bullet", "target_id": "bul/x/1", "detail": "2.0"},
                 {"op": "drop_bullet", "target_id": "bul/x/2", "detail": reason},
             ]
-        ),
+        )
     )
 
     assert 'data-status="ok"' in body
-    assert 'href="/listings/42/cv/pdf"' in body
     assert "bul/x/3" in body
     assert "bul/x/2" in body, "not only the first drop is disclosed"
     assert body.count(reason) == 2
     assert "bul/x/1" not in body, "a non-drop change is not shown as a trim"
+    assert '<a class="cv-download"' not in body, "the banner is not a download control"
 
 
-def test_compiled_fragment_with_no_drops_is_the_unchanged_download_fragment() -> None:
+def test_compiled_fragment_with_no_drops_is_the_compile_marker_only() -> None:
     from app.api.tailoring import _compiled_fragment
 
-    body = _compiled_fragment(42, _record([]))
+    body = _compiled_fragment(_record([]))
 
     assert 'data-status="ok"' in body
     assert "Compiled." in body
-    assert 'href="/listings/42/cv/pdf"' in body
-    assert "Download PDF" in body
+    assert "cv/pdf" not in body, "the banner emits no download anchor"
     assert "page-trims" not in body
 
 
@@ -741,6 +739,38 @@ async def test_the_compile_response_names_every_page_trim(
     assert BULLET2 in body, "the second trimmed bullet is named"
     reason = PAGE_TRIM_REASON_TEMPLATE.format(limit=2)
     assert body.count(reason) == 2
+
+
+# --- G-07-4: one latest download control, never a duplicate ---------------------
+
+
+async def test_a_compile_yields_exactly_one_latest_download_control(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The post-compile banner must not duplicate the persistent Latest CV control.
+
+    With only one `ok` artifact the history row's link carries `?artifact_id=`, so the
+    exact parameterless latest href appears exactly once — from the Latest CV section.
+    The banner response itself must carry no download anchor at all.
+    """
+    listing_id = await _seed_scored_listing(session_factory, title="Single Affordance Role")
+    fields = _hidden_fields(
+        (await tailoring_client.post(f"/listings/{listing_id}/cv/generate")).text
+    )
+
+    compile_response = await tailoring_client.post(
+        f"/listings/{listing_id}/cv/compile", data=fields
+    )
+
+    assert compile_response.status_code == 200
+    assert '<a class="cv-download"' not in compile_response.text, (
+        "the post-compile banner offers no download control"
+    )
+    body = (await tailoring_client.get(f"/listings/{listing_id}/cv")).text
+    assert body.count(f'href="/listings/{listing_id}/cv/pdf"') == 1, (
+        "the persistent Latest CV control is the single latest download"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

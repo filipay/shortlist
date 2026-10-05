@@ -342,13 +342,17 @@ def _draft_review_html(listing_id: int, draft: cv_draft_repo.CvDraftRecord) -> s
     )
 
 
-def _compiled_fragment(listing_id: int, record: cv_artifact_repo.CvArtifactRecord) -> str:
-    """The compile ``ok`` fragment: the download affordance plus every page trim.
+def _compiled_fragment(record: cv_artifact_repo.CvArtifactRecord) -> str:
+    """The compile ``ok`` fragment: the compile marker plus every page trim.
+
+    Deliberately emits NO download anchor: the persistent 'Latest CV' section on the
+    page is the single affordance for the newest artifact, so a second control here
+    would offer the same artifact twice (G-07-4).
 
     The page-budget trim (T-260929-PAN-01) drops whole bullets, so the compile
     response must NAME each removal and its reason — the change log's ``drop_bullet``
     rows are the disclosure, reused rather than recomputed. No drop rows renders
-    exactly the prior fragment.
+    exactly the compile marker alone.
     """
     drops = [
         row
@@ -364,7 +368,6 @@ def _compiled_fragment(listing_id: int, record: cv_artifact_repo.CvArtifactRecor
     return (
         '<div id="tailoring-review" class="tailoring-result" data-status="ok">'
         "<p>Compiled.</p>"
-        f'<a class="cv-download" href="/listings/{listing_id}/cv/pdf">Download PDF</a>'
         f"{trimmed}"
         "</div>"
     )
@@ -637,7 +640,7 @@ async def compile_tailored_cv(
     await session.commit()
 
     if record.compile_status == "ok":
-        return HTMLResponse(_compiled_fragment(listing_id, record))
+        return HTMLResponse(_compiled_fragment(record))
     return HTMLResponse(_findings_fragment(record))
 
 
