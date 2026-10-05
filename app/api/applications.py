@@ -6,7 +6,10 @@ Five routes over the existing `applications` / `application_events` schema:
 * ``GET /applications/list`` — the same table fragment the page embeds, so a swap
   cannot drift from the page (one definition, the `queue_list.html` pattern).
 * ``POST /applications/record`` — record one application and its single `created`
-  event. The `applied` stage requires an `ok` artefact (D-129).
+  event, then 303-redirect to `/applications` (Post/Redirect/Get). The `applied`
+  stage requires an `ok` artefact (D-129); the page's record form is a plain
+  (non-HTMX) form, so a full navigation to the styled tracker is the correct
+  no-JavaScript behavior.
 * ``GET /applications/{application_id}/history`` — the inline timeline partial.
 * ``POST /applications/{application_id}/status`` — a guided transition (Task 2).
 * ``POST /applications/{application_id}`` — the notes/next-action edit (Task 3).
@@ -30,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
@@ -161,12 +164,14 @@ async def record_application_route(
     request: Request,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
-) -> HTMLResponse:
-    """Record one application and its single `created` event, then re-render the table.
+) -> Any:
+    """Record one application and its single `created` event, then redirect (PRG).
 
     An unknown listing or a refused `applied` (no `ok` artefact) returns a `data-error`
-    fragment and writes nothing. `applied_at` is stamped server-side (D-130); it is
-    never read from the form.
+    fragment and writes nothing. On success the response is a 303 to `/applications`
+    (the `tailoring.py` delete-route precedent), so the plain-form submit lands on the
+    full styled tracker page instead of replacing the document with a bare fragment.
+    `applied_at` is stamped server-side (D-130); it is never read from the form.
     """
     form = await read_form(request)
 
@@ -197,7 +202,7 @@ async def record_application_route(
             409,
         )
     await session.commit()
-    return templates.TemplateResponse(request, LIST_TEMPLATE, await _list_context(session))
+    return RedirectResponse(url="/applications", status_code=303)
 
 
 @router.get("/applications/{application_id}/history", response_class=HTMLResponse)

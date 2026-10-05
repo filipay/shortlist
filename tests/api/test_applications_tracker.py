@@ -204,7 +204,8 @@ async def test_record_route_is_not_shadowed_by_the_dynamic_route(
         "/applications/record",
         data={"listing_id": str(listing_id), "status": "queued"},
     )
-    assert response.status_code == 200, "the record route was shadowed by a dynamic route"
+    assert response.status_code == 303, "the record route was shadowed by a dynamic route"
+    assert response.headers["location"] == "/applications"
     assert await _counts(session_factory) == (1, 1)
 
 
