@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-10-05T22:47:10.141Z"
+stopped_at: Completed 07-08-PLAN.md
+last_updated: "2026-10-05T23:05:10.857Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 07 execution started
-state_head: c993c7a157fe4322c8341e13956108730b912e1e
+state_head: 977f0aa8580745e070b2bb3565575a6bfde7e0aa
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 65
-  completed_plans: 62
+  completed_plans: 63
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 07 execution started
 
@@ -96,6 +96,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P04 | 38min | 2 tasks | 6 files |
 | Phase 07 P05 | ~25 min | 2 tasks | 12 files |
 | Phase 07 P06 | 7 min | 2 tasks | 6 files |
+| Phase 07 P08 | 7 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -199,6 +200,8 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-05: answers render as escaped text and consumption is copy-only (D-127); a per-answer delete is scoped by (listing_id, draft_id) and an ad-hoc question appends via replace_for_listing with no new repository surface
 - [Phase 07]: G-07-2: schema-local before-validators coerce only the recorded non-list screening shapes (a single answer-shaped mapping; a bare evidence-id string) and leave every other shape failing loudly — the global TOLERATED_SCHEMA_ERRORS allow-list stays exact because widening it would drop the whole answers field and silently discard every drafted answer
 - [Phase 07]: G-07-2: a None stage result (schema-invalid, transport error or cap refusal) is a distinct 502 data-error=drafting_failed with cause-neutral copy, told apart from the valid-but-empty drafting_empty refusal; neither deletes stored drafts
+- [Phase 07]: G-07-1: POST /applications/record returns a 303 to the fixed literal /applications after commit (Post/Redirect/Get), mirroring tailoring.py's delete route; the plain (non-HTMX) record form therefore lands on the full styled tracker page instead of the bare applications_list.html fragment
+- [Phase 07]: G-07-1: the record route is annotated -> Any rather than a union, because FastAPI infers a response model from HTMLResponse | RedirectResponse and raises at import; Any mirrors tailoring.py's redirect route
 
 ### Pending Todos
 
@@ -232,6 +235,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T22:47:10.000Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-10-05T23:05:10.711Z
+Stopped at: Completed 07-08-PLAN.md
 Resume file: None
