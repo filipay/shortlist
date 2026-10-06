@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 9/9 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06)
+**Plans:** 10/10 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06)
 **UI hint**: yes
 
 Plans:
@@ -351,7 +351,7 @@ Plans:
 
 **Gap closure — CR-01** *(planned 2026-10-06 from `07-VERIFICATION.md` `gaps:`: a partial drafting response must not delete unanswered stored drafts)*
 
-- [ ] 07-10-PLAN.md — CR-01: refuse a valid-but-partial drafting response with `drafting_partial` before `replace_for_listing` deletes the listing's rows, so unanswered ad-hoc questions survive, with the seeded-rows regression test
+- [x] 07-10-PLAN.md — CR-01: refuse a valid-but-partial drafting response with `drafting_partial` before `replace_for_listing` deletes the listing's rows, so unanswered ad-hoc questions survive, with the seeded-rows regression test
 
 ### Phase 8: Operations + Polish
 
@@ -385,7 +385,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | In Progress|  |
-| 7. Assisted Apply + Tracker | 9/9 | In Progress|  |
+| 7. Assisted Apply + Tracker | 10/10 | In Progress|  |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
 ---

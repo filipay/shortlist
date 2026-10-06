@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 07
-current_phase_name: assisted-apply-tracker
+current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-07-PLAN.md
-last_updated: "2026-10-06T20:21:59.687Z"
+stopped_at: Completed 07-10-PLAN.md
+last_updated: "2026-10-06T20:48:24.440Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 07 execution started
-state_head: dd68ae720ca53aa9e8fed5a0cce349ffbfaa25d9
+state_head: 94c34216281ea670b2f0343577101cedf98dbb61
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 66
-  completed_plans: 65
+  completed_plans: 66
   percent: 0
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 07 (assisted-apply-tracker) — READY TO EXECUTE
-Plan: 10 plans (07-01..07-09 executed; 07-10 CR-01 gap-closure plan pending execution)
-Status: Ready for gap-closure execution
-Last activity: 2026-10-06 — Completed 07-07-PLAN.md (G-07-3)
+Phase: 07 (Assisted Apply + Tracker) — EXECUTING
+Plan: 10 of 10
+Status: Executing Phase 07 (07-10 gap closure complete — CR-01 closed)
+Last activity: 2026-10-06 — Completed 07-10-PLAN.md (CR-01)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -99,6 +99,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P08 | 7 min | 2 tasks | 3 files |
 | Phase 07 P09 | 7 min | 2 tasks | 5 files |
 | Phase 07 P07 | 8min | 2 tasks | 11 files |
+| Phase 07 P10 | 8 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-09: a selected artifact must satisfy record.listing_id == listing_id, so a foreign id is the same 404 as missing/blocked/failed and this listing's URL can never serve another listing's PDF (T-07-09-01/03)
 - [Phase 07]: 07-09: the ok_only=True SQL predicate stays on both selection paths (D-118); the compile banner emits no download anchor, so the persistent Latest CV section is the single latest-download affordance (G-07-4)
 - [Phase 07]: G-07-3: warnings_json and band are PERSISTED on screening_drafts (migration 0007), not re-derived at render time — the unknown evidence id was dropped from the grounded evidence_json, so persistence is the only path that preserves the offender
+- [Phase 07]: CR-01 (07-10): a valid-but-partial drafting response is refused with drafting_partial (502) before replace_for_listing; ground_screening_answers emits one verdict per answer via positional zip(strict=False), so len(verdicts) < len(questions) is exactly a partial response and returning there keeps every stored row (including ad-hoc question text) that the wholesale DELETE would drop.
 
 ### Pending Todos
 
@@ -242,6 +244,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T17:34:29.490Z
-Stopped at: Completed 07-07-PLAN.md
+Last session: 2026-10-06T20:48:24.299Z
+Stopped at: Completed 07-10-PLAN.md
 Resume file: None
