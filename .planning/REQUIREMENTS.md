@@ -78,12 +78,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Apply (APPLY)
 
-- [x] **APPLY-01**: User can open an apply package for a listing (verified PDF, apply link, drafted screening answers, gap checklist)
-- [x] **APPLY-02**: The tool never submits an application on the user's behalf
-- [x] **APPLY-03**: User can record an application with a status stage and notes
-- [x] **APPLY-04**: Every recorded application links to the exact CV version that was sent
-- [x] **APPLY-05**: Application status changes are recorded as append-only events
-- [x] **APPLY-06**: User can set a next action date or deadline on an application
+- [ ] **APPLY-01**: User can open an apply package for a listing (verified PDF, apply link, drafted screening answers, gap checklist)
+- [ ] **APPLY-02**: The tool never submits an application on the user's behalf
+- [ ] **APPLY-03**: User can record an application with a status stage and notes
+- [ ] **APPLY-04**: Every recorded application links to the exact CV version that was sent
+- [ ] **APPLY-05**: Application status changes are recorded as append-only events
+- [ ] **APPLY-06**: User can set a next action date or deadline on an application
 
 ### Runs (RUN)
 
@@ -100,7 +100,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **UI-01**: User can browse ranked jobs in a list
 - [x] **UI-02**: User can open a job detail showing the fit breakdown and ranking rationale
 - [x] **UI-03**: User can edit search criteria and ranking weights
-- [x] **UI-04**: User can view and manage the application tracker
+- [ ] **UI-04**: User can view and manage the application tracker
 - [ ] **UI-05**: User can preview and download the tailored CV PDF
 - [ ] **UI-06**: The UI is usable from both a laptop and a phone browser
 - [x] **UI-07**: All UI assets are vendored locally with no CDN dependency
@@ -221,12 +221,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TAIL-06 | Phase 6 | Gaps Found |
 | TAIL-07 | Phase 6 | Gaps Found |
 | TAIL-08 | Phase 6 | Gaps Found |
-| APPLY-01 | Phase 7 | Complete |
-| APPLY-02 | Phase 7 | Complete |
-| APPLY-03 | Phase 7 | Complete |
-| APPLY-04 | Phase 7 | Complete |
-| APPLY-05 | Phase 7 | Complete |
-| APPLY-06 | Phase 7 | Complete |
+| APPLY-01 | Phase 7 | Gaps Found |
+| APPLY-02 | Phase 7 | Gaps Found |
+| APPLY-03 | Phase 7 | Gaps Found |
+| APPLY-04 | Phase 7 | Gaps Found |
+| APPLY-05 | Phase 7 | Gaps Found |
+| APPLY-06 | Phase 7 | Gaps Found |
 | RUN-01 | Phase 1 | Complete |
 | RUN-02 | Phase 1 | Complete |
 | RUN-03 | Phase 2 | Complete |
@@ -237,7 +237,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UI-01 | Phase 5 | Complete |
 | UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Complete |
-| UI-04 | Phase 7 | Complete |
+| UI-04 | Phase 7 | Gaps Found |
 | UI-05 | Phase 6 | Gaps Found |
 | UI-06 | Phase 8 | Pending |
 | UI-07 | Phase 1 | Complete |
