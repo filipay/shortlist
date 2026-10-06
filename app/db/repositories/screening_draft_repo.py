@@ -35,6 +35,10 @@ class ScreeningDraftInput:
     question_text: str
     answer_text: str | None = None
     evidence_json: list[str] = field(default_factory=list)
+    #: The checker's human sentences, each naming its offender (migration 0007).
+    warnings_json: list[str] = field(default_factory=list)
+    #: The advisory grounding band; None means "no specifics recorded".
+    band: str | None = None
     unsupported: bool = False
 
 
@@ -47,6 +51,8 @@ class ScreeningDraftRecord:
     question_text: str
     answer_text: str | None
     evidence_json: list[str]
+    warnings_json: list[str]
+    band: str | None
     unsupported: bool
     created_at: datetime
 
@@ -55,12 +61,15 @@ def _to_record(row: ScreeningDraft) -> ScreeningDraftRecord:
     """One ORM row as its frozen read value. The single mapping, so write and read
     cannot disagree about a field."""
     evidence = row.evidence_json
+    warnings = row.warnings_json
     return ScreeningDraftRecord(
         id=int(row.id),
         listing_id=int(row.listing_id),
         question_text=row.question_text,
         answer_text=row.answer_text,
         evidence_json=list(evidence) if isinstance(evidence, list) else [],
+        warnings_json=list(warnings) if isinstance(warnings, list) else [],
+        band=row.band if isinstance(row.band, str) else None,
         unsupported=bool(row.unsupported),
         created_at=row.created_at,
     )
@@ -108,6 +117,8 @@ async def replace_for_listing(
                     question_text=draft.question_text,
                     answer_text=draft.answer_text,
                     evidence_json=list(draft.evidence_json),
+                    warnings_json=list(draft.warnings_json),
+                    band=draft.band,
                     unsupported=bool(draft.unsupported),
                     created_at=moment,
                 )
@@ -138,6 +149,8 @@ async def append_draft(
         question_text=draft.question_text,
         answer_text=draft.answer_text,
         evidence_json=list(draft.evidence_json),
+        warnings_json=list(draft.warnings_json),
+        band=draft.band,
         unsupported=bool(draft.unsupported),
         created_at=moment,
     )

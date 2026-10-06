@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0006"], "expected exactly one recorded revision: 0006"
+    assert versions == ["0007"], "expected exactly one recorded revision: 0007"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0006"), head_lines[0]
+    assert head_lines[0].startswith("0007"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -657,6 +657,60 @@ def test_screening_drafts_apply_config_and_application_events_append_only(
         connection.close()
 
 
+# --- Item 18 (0007) — screening_drafts.warnings_json + band --------------------
+def test_screening_draft_warnings_and_band_columns(migrated_db: Path) -> None:
+    """G-07-3: the checker's specific findings and the advisory band are persisted.
+
+    Both columns are asserted nullable: a row written before 0007 (or seeded directly)
+    has no specifics and must still load, degrading to the generic-caution fallback.
+    """
+    connection = _connect(migrated_db)
+    try:
+        columns = _table_info(connection, "screening_drafts")
+        assert "warnings_json" in columns, "0007 must add screening_drafts.warnings_json"
+        assert "band" in columns, "0007 must add screening_drafts.band"
+        assert columns["warnings_json"]["notnull"] == 0
+        assert columns["band"]["notnull"] == 0
+
+        listing_id = _insert_listing(connection)
+        connection.execute(
+            "INSERT INTO screening_drafts "
+            "(listing_id, question_text, answer_text, evidence_json, warnings_json, band, "
+            "unsupported, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                listing_id,
+                "Why this role?",
+                "I shipped 97% of it.",
+                "[]",
+                '["unsupported number \'97\': appears in neither the CV facts nor the listing"]',
+                "ungrounded",
+                1,
+                "2026-10-06 00:00:00",
+            ),
+        )
+        connection.commit()
+        stored = connection.execute(
+            "SELECT warnings_json, band FROM screening_drafts"
+        ).fetchone()
+        assert "97" in stored["warnings_json"]
+        assert stored["band"] == "ungrounded"
+
+        # A legacy row with no specifics still persists (both columns nullable).
+        connection.execute(
+            "INSERT INTO screening_drafts "
+            "(listing_id, question_text, unsupported, created_at) VALUES (?, ?, ?, ?)",
+            (listing_id, "Legacy?", 1, "2026-10-06 00:00:00"),
+        )
+        connection.commit()
+        legacy = connection.execute(
+            "SELECT warnings_json, band FROM screening_drafts ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert legacy["warnings_json"] is None
+        assert legacy["band"] is None
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -680,7 +734,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0006"], f"expected exactly 0006, saw {versions}"
+        assert versions == ["0007"], f"expected exactly 0007, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

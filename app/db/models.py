@@ -468,6 +468,11 @@ class ScreeningDraft(Base):
     ``tests/db/test_no_pii_columns.py``): it carries the CV fact ids each answer
     cited and nothing else. ``unsupported`` marks an answer whose grounding check
     found a claim not backed by the CV/listing sources (D-125).
+
+    Migration ``0007`` adds ``warnings_json`` (the checker's human sentences, each
+    naming its offender) and ``band`` (the advisory ``GroundingBand`` label). Both
+    are nullable: NULL means "no specifics recorded" (a legacy or directly-seeded
+    row), which the renderer treats as the generic-caution fallback.
     """
 
     __tablename__ = "screening_drafts"
@@ -478,6 +483,10 @@ class ScreeningDraft(Base):
     answer_text = Column(Text)
     evidence_json = Column(JSON)
     unsupported = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    #: Migration 0007: the checker's human sentences, each naming its offender.
+    warnings_json = Column(JSON)
+    #: Migration 0007: the advisory grounding band; never flips ``unsupported``.
+    band = Column(String(16))
     created_at = Column(DateTime, nullable=False)
 
 

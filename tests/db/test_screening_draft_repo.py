@@ -110,6 +110,101 @@ async def test_replace_read_delete_round_trip(
         assert await read_for_listing(session, 1) == []
 
 
+async def test_replace_round_trips_the_specific_warnings_and_band(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """G-07-3: the checker's findings and the advisory band survive persistence."""
+    async with session_factory() as session:
+        written = await replace_for_listing(
+            session,
+            listing_id=1,
+            drafts=[
+                ScreeningDraftInput(
+                    question_text="Why this role?",
+                    answer_text="I shipped 97% of it.",
+                    evidence_json=["bul/northwind-labs-2021/1"],
+                    warnings_json=[
+                        "unsupported evidence id 'bul/missing/9': not a fact id in the candidate's CV",
+                        "unsupported number '97': appears in neither the CV facts nor the listing",
+                    ],
+                    band="ungrounded",
+                    unsupported=True,
+                )
+            ],
+            now=NOW,
+        )
+        await session.commit()
+
+    assert written[0].warnings_json == [
+        "unsupported evidence id 'bul/missing/9': not a fact id in the candidate's CV",
+        "unsupported number '97': appears in neither the CV facts nor the listing",
+    ]
+    assert written[0].band == "ungrounded"
+
+    async with session_factory() as session:
+        read = await read_for_listing(session, 1)
+    assert read[0].warnings_json == written[0].warnings_json
+    assert read[0].band == "ungrounded"
+
+
+async def test_a_draft_without_specifics_reads_back_empty_and_none(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Fail-closed degradation: a legacy/directly-seeded row has no specifics."""
+    async with session_factory() as session:
+        written = await replace_for_listing(
+            session,
+            listing_id=1,
+            drafts=[ScreeningDraftInput(question_text="Q", unsupported=True)],
+            now=NOW,
+        )
+        await session.commit()
+
+    assert written[0].warnings_json == []
+    assert written[0].band is None
+
+    async with session_factory() as session:
+        read = await read_for_listing(session, 1)
+    assert read[0].warnings_json == []
+    assert read[0].band is None
+
+
+async def test_append_draft_preserves_existing_rows_warnings(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        first = await replace_for_listing(
+            session,
+            listing_id=1,
+            drafts=[
+                ScreeningDraftInput(
+                    question_text="Q1",
+                    warnings_json=["unsupported number '12': appears in neither source"],
+                    band="borderline",
+                    unsupported=True,
+                )
+            ],
+            now=NOW,
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        await append_draft(
+            session,
+            listing_id=1,
+            draft=ScreeningDraftInput(question_text="Ad-hoc"),
+            now=LATER,
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        after = await read_for_listing(session, 1)
+    assert [r.question_text for r in after] == ["Q1", "Ad-hoc"]
+    assert after[0].warnings_json == ["unsupported number '12': appears in neither source"]
+    assert after[0].band == "borderline"
+    assert after[0].id == first[0].id
+
+
 async def test_a_second_replace_replaces_and_never_accumulates(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
