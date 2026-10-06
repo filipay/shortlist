@@ -7,7 +7,13 @@
    Each block is the question text plus either the stored answer or "Not yet drafted.",
    the evidence chips the answer cited, and — when the grounding check flagged the
    answer — the `.answer-warning` line INSIDE the same block (a warning, never a block,
-   D-125).
+   D-125). A flagged answer also lists one `.answer-warning` line per stored finding
+   (each naming its offender: the unknown evidence id or the novel number token), so the
+   reviewer can act on the flag rather than reading only the generic caution. When a
+   non-default advisory `band` was stored, a `.field-note` line surfaces it as advisory
+   — a rough lexical signal, never a pass/fail guarantee, and it never flips the warning
+   (D-125). A grounded answer renders neither a warning nor a band; a legacy row with no
+   stored specifics still renders the generic caution (fail-closed).
 
    The answer renders as TEXT (`<p class="answer-text">`): never `|safe`, never an input
    value, so Jinja autoescape is the one choke point (T-07-05-01) and the answer stays
@@ -29,6 +35,12 @@
     {% endif %}
     {% if row.unsupported %}
     <p class="answer-warning">⚠ This answer may go beyond your CV — check the evidence before you use it.</p>
+    {% for warning in row.warnings %}
+    <p class="answer-warning">⚠ {{ warning }}</p>
+    {% endfor %}
+    {% endif %}
+    {% if row.band and row.band != 'grounded' %}
+    <p class="field-note">Advisory match band: {{ row.band }} — a rough lexical signal, not a guarantee.</p>
     {% endif %}
     <p>
       <button type="button" class="button"

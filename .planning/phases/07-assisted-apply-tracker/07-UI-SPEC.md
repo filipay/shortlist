@@ -266,6 +266,18 @@ The route computes **one** state string, `package_state`, and the template branc
    - **Unsupported-claim warning** (D-125): when the answer carries an unsupported claim, an
      `.answer-warning` line (warning token, ⚠ glyph) renders **inside the same block** — a warning,
      never a block, mirroring the warn-not-block rule in `_cv_findings.html:6,27`.
+   - **Specific findings** (G-07-3, amended 2026-10-06): below the generic caution, one additional
+     `.answer-warning` line per stored finding, each naming its offender (the unknown evidence id or
+     the novel number token), rendered as escaped text through the one autoescape choke point. The
+     findings persist on `screening_drafts.warnings_json` (migration 0007) and are **never re-derived at
+     render time** — the unknown id was deliberately dropped from the grounded `evidence_json`, so
+     re-derivation could never name it.
+   - **Advisory band** (G-07-3, amended 2026-10-06): when the stored `screening_drafts.band` is present
+     and is not the default `grounded`, one `.field-note` line reads “Advisory match band: <band> — a
+     rough lexical signal, not a guarantee.” The band is **advisory only** — never a block, a pass or a
+     guarantee in either direction — and it never flips the warning state (D-125). A `grounded` band
+     and a NULL band render nothing. A legacy row flagged `unsupported` with no stored specifics still
+     renders the generic caution (fail-closed).
    - **Add a question** — `<form hx-post="/listings/{{ id }}/apply/question"
      hx-target="#apply-answers" hx-swap="innerHTML">` with one `<input type="text" name="question">`
      in a `.field`, submit `Add question`. Re-renders the whole `#apply-answers` region.

@@ -129,14 +129,19 @@ def _one_row(question: str, draft: Any) -> dict[str, Any]:
             "question": question,
             "answer": None,
             "evidence": [],
+            "warnings": [],
+            "band": None,
             "unsupported": False,
             "draft_id": None,
         }
     evidence = draft.evidence_json
+    warnings = draft.warnings_json
     return {
         "question": question,
         "answer": draft.answer_text,
         "evidence": list(evidence) if isinstance(evidence, list) else [],
+        "warnings": list(warnings) if isinstance(warnings, list) else [],
+        "band": draft.band,
         "unsupported": bool(draft.unsupported),
         "draft_id": int(draft.id),
     }
@@ -346,6 +351,8 @@ async def draft_answers(
                 question_text=verdict.question,
                 answer_text=verdict.answer,
                 evidence_json=verdict.grounded_evidence_ids,
+                warnings_json=verdict.warnings,
+                band=verdict.band,
                 unsupported=verdict.unsupported,
             )
             for verdict in verdicts
