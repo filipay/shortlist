@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-08-PLAN.md
-last_updated: "2026-10-05T23:05:10.857Z"
+stopped_at: Completed 07-09-PLAN.md
+last_updated: "2026-10-06T17:13:47.870Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 07 execution started
-state_head: 977f0aa8580745e070b2bb3565575a6bfde7e0aa
+state_head: 5389be0051b713c4b2a3a3f648973b78cd73ffa1
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 65
-  completed_plans: 63
+  completed_plans: 64
   percent: 0
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
-Plan: 3 of 9
+Plan: 8 of 9 executed (07-07 remaining)
 Status: Ready to execute
-Last activity: 2026-10-05 — Phase 07 execution started
+Last activity: 2026-10-06 — Completed 07-09-PLAN.md (G-07-4)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -97,6 +97,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P05 | ~25 min | 2 tasks | 12 files |
 | Phase 07 P06 | 7 min | 2 tasks | 6 files |
 | Phase 07 P08 | 7 min | 2 tasks | 3 files |
+| Phase 07 P09 | 7 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,9 @@ Recent decisions affecting current work:
 - [Phase 07]: G-07-2: a None stage result (schema-invalid, transport error or cap refusal) is a distinct 502 data-error=drafting_failed with cause-neutral copy, told apart from the valid-but-empty drafting_empty refusal; neither deletes stored drafts
 - [Phase 07]: G-07-1: POST /applications/record returns a 303 to the fixed literal /applications after commit (Post/Redirect/Get), mirroring tailoring.py's delete route; the plain (non-HTMX) record form therefore lands on the full styled tracker page instead of the bare applications_list.html fragment
 - [Phase 07]: G-07-1: the record route is annotated -> Any rather than a union, because FastAPI infers a response model from HTMLResponse | RedirectResponse and raises at import; Any mirrors tailoring.py's redirect route
+- [Phase 07]: 07-09: tailored_cv_pdf takes an optional artifact_id; absent keeps latest_for_listing(ok_only=True), so the persistent Latest CV control and every existing caller are unchanged
+- [Phase 07]: 07-09: a selected artifact must satisfy record.listing_id == listing_id, so a foreign id is the same 404 as missing/blocked/failed and this listing's URL can never serve another listing's PDF (T-07-09-01/03)
+- [Phase 07]: 07-09: the ok_only=True SQL predicate stays on both selection paths (D-118); the compile banner emits no download anchor, so the persistent Latest CV section is the single latest-download affordance (G-07-4)
 
 ### Pending Todos
 
@@ -235,6 +239,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-05T23:05:10.711Z
-Stopped at: Completed 07-08-PLAN.md
+Last session: 2026-10-06T17:13:47.729Z
+Stopped at: Completed 07-09-PLAN.md
 Resume file: None
