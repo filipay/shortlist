@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.db.models import ScreeningDraft
-from app.domain.schemas.screening import ScreeningDraftResponse
+from app.db.repositories.apply_config_repo import DEFAULT_QUESTIONS
+from app.domain.schemas.screening import ScreeningAnswer, ScreeningDraftResponse
 from app.llm.base import StructuredCallResult
 from tests.api.test_apply_package import (
     FIXTURE,
@@ -156,6 +157,140 @@ async def test_the_two_refusals_share_neither_reason_nor_copy(
     assert unusable.status_code == 502
     assert empty.status_code == 502
     assert await _stored_questions(session_factory, listing_id) == ["Kept question"]
+
+
+async def test_a_partial_response_keeps_unanswered_ad_hoc_rows(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """CR-01: a valid-but-partial response must not delete unanswered/ad-hoc rows.
+
+    The verifier's reproduction, locked in. Seven questions are asked (four
+    ``DEFAULT_QUESTIONS`` plus three seeded ad-hoc rows) and the model returns ONE
+    answer. The route must refuse with ``drafting_partial`` BEFORE reaching
+    ``replace_for_listing`` (whose first act is a DELETE), so all three ad-hoc
+    ``question_text`` values survive — three rows stay three, not collapse to one.
+    """
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    listing_id = await _seed_listing(session_factory, index=4)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    ad_hoc = ["Ad-hoc A", "Ad-hoc B", "Ad-hoc C"]
+    await _seed_drafts(
+        session_factory,
+        listing_id,
+        [{"question": question, "answer": f"answer for {question}"} for question in ad_hoc],
+    )
+
+    partial = ScreeningDraftResponse(
+        answers=[
+            ScreeningAnswer(
+                question=DEFAULT_QUESTIONS[0],
+                answer="Because I build pipelines.",
+                evidence_ids=[],
+            )
+        ]
+    )
+    response = await _post_with_result(
+        client,
+        monkeypatch,
+        listing_id,
+        StructuredCallResult(ok=True, status="ok", data=partial),
+    )
+
+    assert response.status_code == 502
+    assert 'data-error="drafting_partial"' in response.text
+    assert "Your existing drafts were kept." in response.text
+    stored = await _stored_questions(session_factory, listing_id)
+    assert set(stored) == set(ad_hoc), "every seeded ad-hoc question must survive"
+    assert len(stored) == 3, "3 seeded rows must remain 3, not collapse to 1"
+
+
+async def test_a_complete_response_persists_the_full_asked_set(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The partial guard must not over-refuse: one answer per asked question → 200."""
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    listing_id = await _seed_listing(session_factory, index=5)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    ad_hoc = ["Ad-hoc A", "Ad-hoc B", "Ad-hoc C"]
+    await _seed_drafts(
+        session_factory,
+        listing_id,
+        [{"question": question, "answer": f"answer for {question}"} for question in ad_hoc],
+    )
+
+    asked = [*DEFAULT_QUESTIONS, *ad_hoc]
+    complete = ScreeningDraftResponse(
+        answers=[
+            ScreeningAnswer(question=question, answer=f"answered {question}", evidence_ids=[])
+            for question in asked
+        ]
+    )
+    response = await _post_with_result(
+        client,
+        monkeypatch,
+        listing_id,
+        StructuredCallResult(ok=True, status="ok", data=complete),
+    )
+
+    assert response.status_code == 200
+    stored = await _stored_questions(session_factory, listing_id)
+    assert stored == asked, "a complete response persists the full asked set in order"
+
+
+async def test_a_repeated_partial_post_is_idempotent_over_the_stored_set(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """APPLY-01: the refusal writes no rows, so a second identical POST changes nothing."""
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    listing_id = await _seed_listing(session_factory, index=6)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+    ad_hoc = ["Ad-hoc A", "Ad-hoc B", "Ad-hoc C"]
+    await _seed_drafts(
+        session_factory,
+        listing_id,
+        [{"question": question, "answer": f"answer for {question}"} for question in ad_hoc],
+    )
+
+    partial = ScreeningDraftResponse(
+        answers=[
+            ScreeningAnswer(
+                question=DEFAULT_QUESTIONS[0],
+                answer="Because I build pipelines.",
+                evidence_ids=[],
+            )
+        ]
+    )
+    first = await _post_with_result(
+        client, monkeypatch, listing_id, StructuredCallResult(ok=True, status="ok", data=partial)
+    )
+    after_first = await _stored_questions(session_factory, listing_id)
+    second = await _post_with_result(
+        client, monkeypatch, listing_id, StructuredCallResult(ok=True, status="ok", data=partial)
+    )
+    after_second = await _stored_questions(session_factory, listing_id)
+
+    assert first.status_code == 502
+    assert second.status_code == 502
+    assert 'data-error="drafting_partial"' in first.text
+    assert 'data-error="drafting_partial"' in second.text
+    assert set(after_first) == set(ad_hoc), "the ad-hoc rows survive the first partial POST"
+    assert after_first == after_second, "a repeated partial POST must not grow or shrink the set"
+    assert len(after_second) == 3
 
 
 if __name__ == "__main__":  # pragma: no cover
