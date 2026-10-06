@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 9/9 plans executed, plus 4 gap-closure plans planned (2026-10-05)
+**Plans:** 9/9 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06)
 **UI hint**: yes
 
 Plans:
@@ -348,6 +348,10 @@ Plans:
 - [x] 07-07-PLAN.md — G-07-3: persist the grounding warnings and the advisory band (migration 0007) and render them, so a flagged answer names its specific offender and the band surfaces as advisory only (UI-SPEC amendment)
 - [x] 07-08-PLAN.md — G-07-1: the record route returns a 303 to `/applications` for the plain-form submit, so the user lands on the full styled tracker instead of a bare fragment, with the missing regression test
 - [x] 07-09-PLAN.md — G-07-4: the CV PDF route takes an optional, listing-scoped artifact id and the compile banner stops duplicating the Latest CV control, so each download affordance serves the artifact it labels
+
+**Gap closure — CR-01** *(planned 2026-10-06 from `07-VERIFICATION.md` `gaps:`: a partial drafting response must not delete unanswered stored drafts)*
+
+- [ ] 07-10-PLAN.md — CR-01: refuse a valid-but-partial drafting response with `drafting_partial` before `replace_for_listing` deletes the listing's rows, so unanswered ad-hoc questions survive, with the seeded-rows regression test
 
 ### Phase 8: Operations + Polish
 
