@@ -262,11 +262,14 @@ async def draft_answers(
     reports a disabled switch or an absent fact store, which is returned as the shared
     skip vocabulary in a ``data-error`` fragment.
 
-    Two distinct 502 refusals, both writing no draft rows (G-07-2):
+    Three distinct 502 refusals, all writing no draft rows (G-07-2, CR-01):
 
     * an **unusable** response (``None`` — schema-invalid, a raised transport error,
       or a cap refusal) carries ``drafting_failed`` and cause-neutral copy;
-    * a valid-but-**empty** response (``[]``) carries ``drafting_empty``.
+    * a valid-but-**empty** response (``[]``) carries ``drafting_empty``;
+    * a valid-but-**partial** response (fewer answers than questions) carries
+      ``drafting_partial`` — it keeps the listing's existing rows, including ad-hoc
+      question text that exists nowhere else.
 
     The stage has already written its one audit row, committed here before the
     refusal so the attempt survives.
@@ -340,6 +343,21 @@ async def draft_answers(
         return _answers_error(
             "drafting_empty",
             "The drafting call returned no answers. Your existing drafts were kept.",
+            502,
+        )
+    # CR-01: `ground_screening_answers` aligns positionally with
+    # `zip(questions, response.answers, strict=False)`, so it emits exactly one
+    # verdict per ANSWER (`app/verify/screening.py`). A response covering a subset
+    # of the asked questions therefore yields `len(verdicts) < len(questions)`.
+    # That non-empty partial list must not fall through to `replace_for_listing`,
+    # whose first act is a DELETE of every `screening_drafts` row for this listing —
+    # the G-07-2 data-loss class on the partial path, which would silently drop
+    # every unanswered row, including ad-hoc question text that exists nowhere else.
+    if len(verdicts) < len(questions):
+        return _answers_error(
+            "drafting_partial",
+            "The drafting call returned fewer answers than were asked. "
+            "Your existing drafts were kept.",
             502,
         )
 

@@ -504,6 +504,9 @@ async def test_the_draft_action_makes_one_call_and_persists_rows(
 
     calls: list[dict[str, Any]] = []
 
+    # A COMPLETE response: one answer per asked `DEFAULT_QUESTIONS` entry. A partial
+    # response is refused before any write (CR-01), so this stub must cover every
+    # asked question for the persistence path to be exercised at all.
     async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
         calls.append(kwargs)
         return StructuredCallResult(
@@ -512,10 +515,25 @@ async def test_the_draft_action_makes_one_call_and_persists_rows(
             data=ScreeningDraftResponse(
                 answers=[
                     ScreeningAnswer(
-                        question="Why this role?",
+                        question="Why are you interested in this role?",
                         answer="Because I build pipelines.",
                         evidence_ids=[],
-                    )
+                    ),
+                    ScreeningAnswer(
+                        question="What is your notice period?",
+                        answer="Four weeks.",
+                        evidence_ids=[],
+                    ),
+                    ScreeningAnswer(
+                        question="What are your salary expectations?",
+                        answer="Market rate.",
+                        evidence_ids=[],
+                    ),
+                    ScreeningAnswer(
+                        question="Do you have the right to work in this location?",
+                        answer="Yes, I do.",
+                        evidence_ids=[],
+                    ),
                 ]
             ),
         )
@@ -537,10 +555,16 @@ async def test_the_draft_action_makes_one_call_and_persists_rows(
                 select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
             )
         ).scalars().all()
-    # WR-04: the persisted merge key is the ASKED question (the first config
-    # question), not the model's echoed `question` text.
-    assert [r.question_text for r in rows] == ["Why are you interested in this role?"]
-    assert rows[0].answer_text == "Because I build pipelines."
+    # WR-04: the persisted merge key is the ASKED question, not the model's echoed
+    # `question` text; a complete response persists every asked question with its
+    # answer (the shallow single-row case the gap called out is no longer enshrined).
+    assert [r.question_text for r in rows] == list(apply_config_repo.DEFAULT_QUESTIONS)
+    assert [r.answer_text for r in rows] == [
+        "Because I build pipelines.",
+        "Four weeks.",
+        "Market rate.",
+        "Yes, I do.",
+    ]
 
 
 async def test_a_reworded_model_question_still_merges_with_the_config_question(
@@ -557,6 +581,9 @@ async def test_a_reworded_model_question_still_merges_with_the_config_question(
     (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
 
+    # A COMPLETE response: the first answer's `question` is reworded by the model,
+    # the rest echo their asked texts (WR-04). Four answers are required — a partial
+    # response is now refused before any write (CR-01).
     async def _stub(self: Any, **kwargs: Any) -> StructuredCallResult:
         return StructuredCallResult(
             ok=True,
@@ -567,7 +594,22 @@ async def test_a_reworded_model_question_still_merges_with_the_config_question(
                         question="Why do you want this job?",  # reworded by the model
                         answer="Because I build pipelines.",
                         evidence_ids=[],
-                    )
+                    ),
+                    ScreeningAnswer(
+                        question="What is your notice period?",
+                        answer="Four weeks.",
+                        evidence_ids=[],
+                    ),
+                    ScreeningAnswer(
+                        question="What are your salary expectations?",
+                        answer="Market rate.",
+                        evidence_ids=[],
+                    ),
+                    ScreeningAnswer(
+                        question="Do you have the right to work in this location?",
+                        answer="Yes, I do.",
+                        evidence_ids=[],
+                    ),
                 ]
             ),
         )
@@ -589,7 +631,9 @@ async def test_a_reworded_model_question_still_merges_with_the_config_question(
                 select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
             )
         ).scalars().all()
-    assert [r.question_text for r in rows] == ["Why are you interested in this role?"]
+    # The reworded text is absent; the persisted keys are the four asked config
+    # questions, in asked order.
+    assert [r.question_text for r in rows] == list(apply_config_repo.DEFAULT_QUESTIONS)
 
 
 async def test_an_empty_response_keeps_the_stored_drafts(
