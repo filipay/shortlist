@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-09-PLAN.md
-last_updated: "2026-10-06T17:13:47.870Z"
-last_activity: 2026-10-05
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-10-06T17:34:29.636Z"
+last_activity: 2026-10-06
 last_activity_desc: Phase 07 execution started
-state_head: 5389be0051b713c4b2a3a3f648973b78cd73ffa1
+state_head: 10547d09660be50a0ca6e69d08ad7fdfd8648b60
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 65
-  completed_plans: 64
+  completed_plans: 65
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
-Plan: 8 of 9 executed (07-07 remaining)
+Plan: 9 of 9 executed (07-07 remaining)
 Status: Ready to execute
 Last activity: 2026-10-06 — Completed 07-09-PLAN.md (G-07-4)
 
@@ -98,6 +98,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P06 | 7 min | 2 tasks | 6 files |
 | Phase 07 P08 | 7 min | 2 tasks | 3 files |
 | Phase 07 P09 | 7 min | 2 tasks | 5 files |
+| Phase 07 P07 | 8min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-09: tailored_cv_pdf takes an optional artifact_id; absent keeps latest_for_listing(ok_only=True), so the persistent Latest CV control and every existing caller are unchanged
 - [Phase 07]: 07-09: a selected artifact must satisfy record.listing_id == listing_id, so a foreign id is the same 404 as missing/blocked/failed and this listing's URL can never serve another listing's PDF (T-07-09-01/03)
 - [Phase 07]: 07-09: the ok_only=True SQL predicate stays on both selection paths (D-118); the compile banner emits no download anchor, so the persistent Latest CV section is the single latest-download affordance (G-07-4)
+- [Phase 07]: G-07-3: warnings_json and band are PERSISTED on screening_drafts (migration 0007), not re-derived at render time — the unknown evidence id was dropped from the grounded evidence_json, so persistence is the only path that preserves the offender
 
 ### Pending Todos
 
@@ -239,6 +241,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T17:13:47.729Z
-Stopped at: Completed 07-09-PLAN.md
+Last session: 2026-10-06T17:34:29.490Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
