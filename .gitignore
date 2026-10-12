@@ -20,3 +20,10 @@ artifacts/
 !app/cv/
 !tests/cv/
 !tests/fixtures/cv/
+# Local runtime state and tool scratch — never published.
+jobsearch.db
+*.db
+*.db-wal
+*.db-shm
+.gsd/
+.planning/milestone.lock
