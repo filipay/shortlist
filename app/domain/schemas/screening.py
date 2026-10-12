@@ -19,10 +19,11 @@ ranking schema documents (Pitfall P11).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ._coerce import coerce_mapping_list, coerce_str_list
 
 
 class ScreeningAnswer(BaseModel):
@@ -37,20 +38,15 @@ class ScreeningAnswer(BaseModel):
     @field_validator("evidence_ids", mode="before")
     @classmethod
     def _coerce_evidence_ids(cls, value: Any) -> Any:
-        """Tolerate the recorded non-list shapes, and only those (G-07-2).
+        """Route the recorded wire shapes through the shared helper (G-07-2/G-07-7).
 
-        A ``None`` becomes an empty list; a bare id string becomes a one-element
-        list (comma-separated parts, empties dropped); a ``list``/``tuple`` passes
+        A single-key wrapper ``{"item": <value>}`` (G-07-7) is unwrapped first; then a
+        ``None`` becomes an empty list, a bare id string becomes a one-element list
+        (comma-separated parts, empties dropped) and a ``list``/``tuple`` passes
         through. Every other shape is returned untouched so pydantic still fails
         loudly rather than laundering an unrecognised payload into defaults.
         """
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [part.strip() for part in value.split(",") if part.strip()]
-        if isinstance(value, (list, tuple)):
-            return list(value)
-        return value
+        return coerce_str_list(value)
 
 
 class ScreeningDraftResponse(BaseModel):
@@ -63,21 +59,15 @@ class ScreeningDraftResponse(BaseModel):
     @field_validator("answers", mode="before")
     @classmethod
     def _coerce_answers(cls, value: Any) -> Any:
-        """Tolerate the recorded non-list shapes, and only those (G-07-2).
+        """Route the recorded wire shapes through the shared helper (G-07-2/G-07-7).
 
-        A ``None`` becomes an empty list; a single answer-shaped mapping becomes a
-        one-element list; a ``list``/``tuple`` passes through. A scalar (a bare
-        string, an int, …) is returned untouched so pydantic still fails loudly —
-        dropping the whole ``answers`` field to its default would silently discard
-        every drafted answer (the M1 hazard).
+        A single-key wrapper ``{"item": <value>}`` (G-07-7) is unwrapped first; then a
+        ``None`` becomes an empty list, a single answer-shaped mapping becomes a
+        one-element list and a ``list``/``tuple`` passes through. A scalar is returned
+        untouched so pydantic still fails loudly — dropping the whole ``answers`` field
+        to its default would silently discard every drafted answer (the M1 hazard).
         """
-        if value is None:
-            return []
-        if isinstance(value, Mapping):
-            return [value]
-        if isinstance(value, (list, tuple)):
-            return list(value)
-        return value
+        return coerce_mapping_list(value)
 
 
 __all__ = ["ScreeningAnswer", "ScreeningDraftResponse"]
