@@ -56,7 +56,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.domain.schemas._coerce import coerce_str_list
+from app.domain.schemas._coerce import coerce_mapping_list, coerce_str_list
 
 #: The fact-store format version. The YAML value is the int ``1``; the revision
 #: column that stores it (``cv_versions.schema_version``) is ``String(32)``, so the
@@ -525,6 +525,29 @@ class TailoringPatch(_Forbid):
     ops: list[PatchOp] = Field(default_factory=list)
     gaps: list[GapFinding] = Field(default_factory=list)
     suggestions: list[Suggestion] = Field(default_factory=list)
+
+    @field_validator("ops", mode="before")
+    @classmethod
+    def _coerce_ops(cls, value: Any) -> Any:
+        """Route ``ops`` through the shared list helper (G-07-7/IN-01).
+
+        A single-key ``{"item": ...}`` wrapper, ``None`` and a bare op-shaped mapping
+        are normalised; a non-``item`` single-key mapping becomes ONE item and is then
+        refused by ``PatchOp``'s discriminated union — ``extra="forbid"`` survives.
+        """
+        return coerce_mapping_list(value)
+
+    @field_validator("gaps", mode="before")
+    @classmethod
+    def _coerce_gaps(cls, value: Any) -> Any:
+        """Route ``gaps`` through the shared list helper (G-07-7/IN-01)."""
+        return coerce_mapping_list(value)
+
+    @field_validator("suggestions", mode="before")
+    @classmethod
+    def _coerce_suggestions(cls, value: Any) -> Any:
+        """Route ``suggestions`` through the shared list helper (G-07-7/IN-01)."""
+        return coerce_mapping_list(value)
 
 
 class UnknownIdError(Exception):
