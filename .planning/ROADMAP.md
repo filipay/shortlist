@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 10/10 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06)
+**Plans:** 10/10 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06); UAT gap-closure plans 07-11/07-12 planned (2026-10-12)
 **UI hint**: yes
 
 Plans:
@@ -352,6 +352,11 @@ Plans:
 **Gap closure — CR-01** *(planned 2026-10-06 from `07-VERIFICATION.md` `gaps:`: a partial drafting response must not delete unanswered stored drafts)*
 
 - [x] 07-10-PLAN.md — CR-01: refuse a valid-but-partial drafting response with `drafting_partial` before `replace_for_listing` deletes the listing's rows, so unanswered ad-hoc questions survive, with the seeded-rows regression test
+
+**Gap closure — UAT round 2** *(planned 2026-10-12 from `07-UAT.md` `status: diagnosed`: G-07-5, G-07-6, G-07-7; wave 1 = 07-11/07-12)*
+
+- [ ] 07-11-PLAN.md — G-07-5/G-07-6: the tracker note wraps and its phase-scoped action cell stacks full-width forms, so the notes column no longer forces a horizontal scroll and `dd/mm/yyyy` cannot paint over `Update status`, with the layout-contract regression
+- [ ] 07-12-PLAN.md — G-07-7: one shared unwrap helper absorbs the model's single-key array wrapper (`{"item": ...}`) on every list-typed wire field, so `Draft answers` persists usable answers, with the literal captured payload held out and every malformed shape still failing loudly
 
 ### Phase 8: Operations + Polish
 
