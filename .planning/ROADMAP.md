@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: CV Fact Store + LaTeX Compile Spike** - The structured CV reproduces the base CV and Tectonic compiles the real `.tex` (runs in parallel with Phases 2–3) (completed 2026-09-21)
 - [x] **Phase 5: Ranking — CORE VALUE** - One ranked, explained queue with per-factor breakdown and named gaps (completed 2026-09-24)
 - [ ] **Phase 6: Tailoring + Verification** - A tailored, verified CV PDF, previewable and downloadable
-- [ ] **Phase 7: Assisted Apply + Tracker** - Apply package plus application tracking linked to the exact verified artefact
+- [x] **Phase 7: Assisted Apply + Tracker** - Apply package plus application tracking linked to the exact verified artefact (completed 2026-10-12)
 - [ ] **Phase 8: Operations + Polish** - Scheduled runs, source health in the UI, responsive interface
 
 ## Phase Details
@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 14/14 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06); UAT gap-closure plans 07-11/07-12 planned (2026-10-12); re-verification gap-closure plans 07-13/07-14 planned (2026-10-12)
+**Plans:** 14/14 plans complete; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06); UAT gap-closure plans 07-11/07-12 planned (2026-10-12); re-verification gap-closure plans 07-13/07-14 planned (2026-10-12)
 **UI hint**: yes
 
 Plans:
@@ -395,7 +395,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | In Progress|  |
-| 7. Assisted Apply + Tracker | 14/14 | In Progress|  |
+| 7. Assisted Apply + Tracker | 14/14 | Complete    | 2026-10-12 |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
 ---

@@ -79,11 +79,11 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Apply (APPLY)
 
 - [x] **APPLY-01**: User can open an apply package for a listing (verified PDF, apply link, drafted screening answers, gap checklist)
-- [ ] **APPLY-02**: The tool never submits an application on the user's behalf
-- [ ] **APPLY-03**: User can record an application with a status stage and notes
-- [ ] **APPLY-04**: Every recorded application links to the exact CV version that was sent
-- [ ] **APPLY-05**: Application status changes are recorded as append-only events
-- [ ] **APPLY-06**: User can set a next action date or deadline on an application
+- [x] **APPLY-02**: The tool never submits an application on the user's behalf
+- [x] **APPLY-03**: User can record an application with a status stage and notes
+- [x] **APPLY-04**: Every recorded application links to the exact CV version that was sent
+- [x] **APPLY-05**: Application status changes are recorded as append-only events
+- [x] **APPLY-06**: User can set a next action date or deadline on an application
 
 ### Runs (RUN)
 
@@ -222,11 +222,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TAIL-07 | Phase 6 | Gaps Found |
 | TAIL-08 | Phase 6 | Gaps Found |
 | APPLY-01 | Phase 7 | Complete |
-| APPLY-02 | Phase 7 | Gaps Found |
-| APPLY-03 | Phase 7 | Gaps Found |
-| APPLY-04 | Phase 7 | Gaps Found |
-| APPLY-05 | Phase 7 | Gaps Found |
-| APPLY-06 | Phase 7 | Gaps Found |
+| APPLY-02 | Phase 7 | Complete |
+| APPLY-03 | Phase 7 | Complete |
+| APPLY-04 | Phase 7 | Complete |
+| APPLY-05 | Phase 7 | Complete |
+| APPLY-06 | Phase 7 | Complete |
 | RUN-01 | Phase 1 | Complete |
 | RUN-02 | Phase 1 | Complete |
 | RUN-03 | Phase 2 | Complete |

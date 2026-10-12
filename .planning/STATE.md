@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 07
-current_phase_name: Assisted Apply + Tracker
-status: verifying
-stopped_at: Completed 07-14-PLAN.md
-last_updated: "2026-10-12T14:12:38.098Z"
+current_phase: 6
+current_phase_name: Tailoring + Verification
+status: planning
+stopped_at: Phase 07 complete, ready to plan Phase 6
+last_updated: "2026-10-12T15:39:42.199Z"
 last_activity: 2026-10-12
-last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: f2cf1a7e5064cedfe33951c345af2dfba5cd8162
+last_activity_desc: Phase 07 complete, transitioned to Phase 6
+state_head: a2d4857b56e2d849b4eb84a67ad405423c95e999
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 6
   total_plans: 70
   completed_plans: 70
-  percent: 0
+  percent: 75
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 07 (Assisted Apply + Tracker) — READY TO EXECUTE
-Plan: 10 of 10
-Status: Phase complete — ready for verification
-Last activity: 2026-10-12 — Phase 07 execution resumed (wave continue)
+Phase: 6 — Tailoring + Verification
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-12 — Phase 07 complete, transitioned to Phase 6
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -239,6 +239,8 @@ None yet.
 - [Phase 5] No real CV fact store exists yet, so a ranking pass takes the documented `fact_store_absent` skip — the ranking path is exercised end-to-end only once a `cv.yaml` is supplied. The skip and the exact loader path are now disclosed on `/settings`, the queue and `/health` (05-10), so this reads as a missing prerequisite, not a silent failure.
 - [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 6 reuses the action-surface pattern.
 - [Phase 7] §13a decision-coverage override (accepted 2026-10-06, user "proceed anyway"; **re-confirmed 2026-10-12**, user "proceed anyway", during the re-verification gap round 07-13/07-14) — the plan-phase decision-coverage gate found CONTEXT decisions without a literal `D-NN:` citation in a planned surface: originally 9 (D-120, D-126, D-128, D-129, D-130, D-131, D-132, D-133, D-134), now **8** — D-132 is newly cited by `07-13-PLAN.md` (`:26`, `:29`, `:59`, `:145`), leaving D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 uncovered. All are already implemented and verified by the executed 07-01..07-05 plans and confirmed implemented by plan-checker review; the gap is citation-only (the plans were authored 2026-09-30 before the citation convention). `verify-phase 07` must re-surface this override. Do not treat as unplanned work.
+- [Phase 7] **Accepted known limitation (deferred by user decision, 2026-10-12)** — drafting screening answers does not work live: clicking `Draft answers` returns "The drafting call did not return a usable response. Your existing drafts were kept." because the provider still emits a list-typed field in a shape `unwrap_single_key_mapping` does not recognise, so the response is refused (`drafting_failed`) and no answers render. UAT test 2 of 3 failed; tests 1 (tracker layout, G-07-5/G-07-6) and 3 (mvp goal-format) passed. Phase 07 was closed with this documented rather than iterated again ("move on as we've iterated so many times"). Recorded in `07-UAT.md` (`G-07-7 status: deferred`), `deferred-items.md`, `README.md` → Known limitations, and `07-VERIFICATION.md` (`overrides_applied: 2`, truth #12 ✓ PASSED (override)). Fix path: capture the raw payload of a failing call, widen the key-restricted unwrap to the observed shape, add the literal payload as a held-out fixture.
+- [Phase 7] Non-blocking WARNING (code review + verifier) — **WR-02**: `unwrap_single_key_mapping` bounds only the *direct* self-reference, so a two-node mutual `{"item": …}` cycle loops while its docstring claims self-reference "cannot hang" (CONVENTIONS rule 6 — false guarantee in prose). Not wire-reachable (JSON-derived payloads cannot be cyclic). `07-REVIEW.md` is `issues_found`: 0 Critical / 0 High / 1 Medium (WR-02) / 2 Low (IN-03, IN-04) — run `/gsd-code-review 07 --fix` if it matters before Phase 6 reuses the helper.
 
 ### Quick Tasks Completed
 
@@ -256,9 +258,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
 | Decision-coverage | Phase 07 §13a override (re-confirmed 2026-10-12): D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 lack `D-NN:` citations in planned surfaces (all already implemented); D-132 now cited by 07-13; override accepted, verify-phase must re-surface | open | 2026-10-12 | v1 |
+| Known limitation | Phase 07 G-07-7: `Draft answers` fails live (provider emits an unrecognised list-wrapper shape → `drafting_failed`, no answers render); UAT test 2 failed, deferred by user decision to ship anyway; documented in `README.md`, `deferred-items.md` and `07-UAT.md` | open | 2026-10-12 | v1 |
 
 ## Session Continuity
 
-Last session: 2026-10-12T14:12:37.991Z
-Stopped at: Completed 07-14-PLAN.md
+Last session: 2026-10-12T16:55:00.000Z
+Stopped at: Phase 07 complete (closed with documented known limitation G-07-7); next up — publish to GitHub
 Resume file: None
