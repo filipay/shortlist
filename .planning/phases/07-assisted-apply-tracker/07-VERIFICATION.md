@@ -1,8 +1,8 @@
 ---
 phase: 07-assisted-apply-tracker
-verified: 2026-10-06T19:34:39Z
-status: gaps_found
-score: 44/47 must-haves verified
+verified: 2026-10-06T21:16:59Z
+status: human_needed
+score: 45/47 must-haves verified
 covered_files:
   - .planning/phases/07-assisted-apply-tracker/07-01-PLAN.md
   - .planning/phases/07-assisted-apply-tracker/07-02-PLAN.md
@@ -13,6 +13,7 @@ covered_files:
   - .planning/phases/07-assisted-apply-tracker/07-07-PLAN.md
   - .planning/phases/07-assisted-apply-tracker/07-08-PLAN.md
   - .planning/phases/07-assisted-apply-tracker/07-09-PLAN.md
+  - .planning/phases/07-assisted-apply-tracker/07-10-PLAN.md
   - .planning/phases/07-assisted-apply-tracker/07-01-SUMMARY.md
   - .planning/phases/07-assisted-apply-tracker/07-02-SUMMARY.md
   - .planning/phases/07-assisted-apply-tracker/07-03-SUMMARY.md
@@ -22,6 +23,7 @@ covered_files:
   - .planning/phases/07-assisted-apply-tracker/07-07-SUMMARY.md
   - .planning/phases/07-assisted-apply-tracker/07-08-SUMMARY.md
   - .planning/phases/07-assisted-apply-tracker/07-09-SUMMARY.md
+  - .planning/phases/07-assisted-apply-tracker/07-10-SUMMARY.md
   - .planning/REQUIREMENTS.md
   - alembic/versions/0006_screening_drafts.py
   - alembic/versions/0007_screening_draft_warnings.py
@@ -71,46 +73,25 @@ covered_files:
   - tests/test_auth_seam.py
   - tests/test_config.py
   - tests/verify/test_screening.py
-covered_digest: "v1:sha256:eb571fcea48b5014a2a8668d449e190f6731ee0818ab5e53eb9652bdf566a4cf"
+covered_digest: "v1:sha256:6a7d9f0a2684aa8035ec64002947f1a2eafdbb7f22f440a80fb7dc6999351f9f"
 behavior_unverified: 2
 overrides_applied: 0
 re_verification:
-  previous_status: human_needed
-  previous_score: 31/33
+  previous_status: gaps_found
+  previous_score: 44/47
   gaps_closed:
-    - "G-07-1: record-submit now 303-redirects to the full styled tracker page (PRG) instead of replacing the document with a bare fragment"
-    - "G-07-2: the recorded non-list screening payload shape is coerced at the schema boundary and an unusable response is reported distinctly from a valid-but-empty one"
-    - "G-07-3: the checker's specific warnings (naming the offender) and the advisory band now persist (migration 0007) and render in the answers region"
-    - "G-07-4: each CV download affordance serves the artifact it labels (per-row artifact_id with listing-ownership check; the compile banner no longer duplicates the Latest CV control)"
+    - "CR-01: a valid-but-partial drafting response no longer deletes the user's unanswered/ad-hoc stored drafts. `draft_answers` now refuses `len(verdicts) < len(questions)` with `data-error=\"drafting_partial\"` (502) BEFORE `replace_for_listing` is reached; the 3-ad-hoc-rows→1 reproduction now asserts all 3 survive."
   gaps_remaining: []
   regressions: []
-gaps:
-  - truth: "An apply-package drafting call that returns fewer answers than were asked does not delete the user's unanswered stored drafts (including user-authored ad-hoc questions); the route's own 'Your existing drafts were kept' promise holds on every non-full-success path."
-    status: failed
-    reason: |
-      The draft route distinguishes only "no verdicts" from "some verdicts":
-      `if verdicts is None:` (drafting_failed) then `if not verdicts:` (drafting_empty),
-      otherwise it calls `screening_draft_repo.replace_for_listing(...)`, which DELETES
-      every `screening_drafts` row for the listing before inserting the verdicts.
-      `ground_screening_answers` aligns answers positionally with
-      `zip(questions, response.answers, strict=False)` and emits NO verdict for an
-      unanswered question (app/verify/screening.py:108). A valid-but-PARTIAL model
-      response (e.g. 1 answer for 7 asked questions) therefore passes both guards and
-      the wholesale replace silently drops every row the model did not answer —
-      including ad-hoc questions the user typed (the only record of that question text).
-      The user sees `Not yet drafted.`, not a warning. This is the same data-loss class
-      the G-07-2 gap closure addressed ("Your existing drafts were kept") but on a
-      different path (partial success rather than refusal).
-    artifacts:
-      - path: "app/api/apply.py"
-        issue: "Lines 332-361: only `None` and `[]` are refused; any non-empty partial list proceeds to `replace_for_listing`, which deletes unanswered rows. No `len(verdicts) < len(questions)` guard exists."
-      - path: "app/db/repositories/screening_draft_repo.py"
-        issue: "`replace_for_listing` (L109-112) unconditionally deletes the listing's whole draft set before inserting; the delete helpers also lack the SAVEPOINT the docstring promises (IN-01)."
-      - path: "tests/api/test_apply_package.py"
-        issue: "`test_the_draft_action_makes_one_call_and_persists_rows` (L540-542) enshrines the shallow case: a one-answer response persists exactly one row, with no assertion that seeded/unanswered rows survive."
-    missing:
-      - "Treat `len(verdicts) < len(questions)` as its own refused outcome (e.g. `data-error=\"drafting_partial\"`, existing drafts kept) OR implement an upsert-by-question write path that rewrites only the rows present in the verdicts and leaves every other row untouched."
-      - "A regression test that seeds ad-hoc/unanswered rows, returns a partial model response, and asserts the unanswered rows (and their `question_text`) survive the POST — the test the review's reproduction used."
+behavior_unverified_items:
+  - truth: "A truncated tracker note exposes the complete untruncated string via `title=\"\"`."
+    test: "Render a tracker row with a long note and inspect the DOM title attribute."
+    expected: "The title attribute carries the full untruncated note string."
+    why_human: "Non-inferable backstop; markup is present and wired but no held-out UI-state test asserts fidelity, and truncation is only observable in a rendered DOM."
+  - truth: "Copy answer reproduces the full untruncated multi-paragraph answer."
+    test: "Copy a multi-paragraph drafted answer and paste into a plain-text target."
+    expected: "Paragraph breaks survive; nothing is collapsed."
+    why_human: "Non-inferable backstop; browser clipboard behaviour, no held-out test."
 human_verification:
   - test: "Tracker note-fidelity (backstop truth, 07-04): open `/applications` and inspect a row whose note is longer than the cell; read the DOM `title` attribute."
     expected: "The note truncates to one line with an ellipsis and the complete untruncated string is present in `title=\"\"`."
@@ -118,25 +99,19 @@ human_verification:
   - test: "Clipboard multi-paragraph copy fidelity (backstop truth, 07-05): open an apply package, draft or seed a multi-paragraph answer, click `Copy answer`, and paste into a scratch field."
     expected: "The paste equals the full untruncated multi-paragraph answer; the button label flips to `Copied` for ~2s (and stays `Copy answer` if the clipboard API is unavailable)."
     why_human: "`verification: backstop` (non-inferable). `navigator.clipboard.writeText(...textContent)` reads the adjacent `.answer-text` (app/web/templates/html/_screening_drafts.html:48), but clipboard behaviour and multi-paragraph fidelity are browser-only and no held-out test exercises them. UAT test 2 never reached this (it was blocked by G-07-2, now fixed)."
-behavior_unverified_items:
-  - truth: "A truncated tracker note exposes the complete untruncated string via `title=\"\"`."
-    test: "Render a tracker row with a long note and inspect the DOM title attribute."
-    expected: "The title attribute carries the full untruncated note string."
-    why_human: "Non-inferable backstop; markup is present but no held-out UI-state test asserts fidelity, and truncation is only observable in a rendered DOM."
-  - truth: "Copy answer reproduces the full untruncated multi-paragraph answer."
-    test: "Copy a multi-paragraph drafted answer and paste into a plain-text target."
-    expected: "Paragraph breaks survive; nothing is collapsed."
-    why_human: "Non-inferable backstop; browser clipboard behaviour, no held-out test."
+  - test: "MVP-mode / goal-format discrepancy (developer decision): Phase 7 is marked `mode: mvp` in ROADMAP.md, but the goal is not in User-Story form."
+    expected: "Either the `mvp` annotation is confirmed intentional (standard goal-backward verification, as performed here) or the developer runs `/gsd mvp-phase 7` to convert the goal before any User-Flow-Coverage report."
+    why_human: "`user-story.validate` returns `valid: false` for the roadmap goal ('An apply package per listing plus an application tracker that links every outcome to the exact verified CV artefact that was sent.'). Under strict MVP-mode verification this phase would refuse to verify; the roadmap Success Criteria remain the contract and were verified directly."
 ---
 
 # Phase 07: Assisted Apply + Tracker — Re-Verification Report
 
 **Phase Goal (ROADMAP.md, verbatim):** An apply package per listing plus an application tracker that links every outcome to the exact verified CV artefact that was sent.
-**Verified:** 2026-10-06T19:34:39Z
-**Status:** gaps_found
-**Re-verification:** Yes — after the four gap-closure plans (07-06 … 07-09) executed against the prior `human_needed` verification.
+**Verified:** 2026-10-06T21:16:59Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap-closure plan 07-10 closed the single blocker (CR-01) carried by the prior `gaps_found` verification.
 
-**Roadmap Success Criteria (verbatim; `mode: mvp`, but the goal is not in User-Story form — see Note A):**
+**Roadmap Success Criteria (verbatim; `mode: mvp`, but the goal is not in User-Story form — see Human Verification #3):**
 
 1. User can open an apply package for a listing containing the verified PDF, the apply link, drafted screening answers, and a gap checklist.
 2. The tool never submits an application on the user's behalf.
@@ -147,7 +122,7 @@ behavior_unverified_items:
 
 ### Observable Truths
 
-**Original phase truths (07-01 … 07-05)** — carried forward from the prior verification; re-checked by the phase-scoped suite (264 tests) and by direct inspection of every file the gap-closure round touched.
+**Original phase truths (07-01 … 07-05)** — re-checked by the phase-scoped suite and by direct inspection.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
@@ -165,7 +140,7 @@ behavior_unverified_items:
 | 12 | (P04) Filtered-to-nothing vs zero-application empty states; 300ms debounce; no-JS real forms; pagination; em-dash for absent dates; `.queue-table` scroll | ✓ VERIFIED | `applications.html`, `applications_list.html`, `static/vendor/app.css`; 07-04 tests |
 | 13 | (P05) `Not yet drafted.` / no-questions empty copy; `Draft answers` indicator; `Copy answer` label flip; refused draft → `data-error`; per-question block with evidence + warning; saved order | ✓ VERIFIED | `_screening_drafts.html`; `test_apply_package.py` |
 | 14 | (P05 backstop) Long answer wraps and copy reproduces the full untruncated string; a held-out UI-state test asserts multi-paragraph copy fidelity | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Non-inferable backstop. Markup + handler present, no held-out test. See Human Verification #2 |
-| 15 | (P04 backstop) Titles/latest-note wrap; a held-out UI-state test asserts the complete untruncated note string in `title=\"\"` | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Non-inferable backstop. `title=""` present, no held-out test. See Human Verification #1 |
+| 15 | (P04 backstop) Titles/latest-note wrap; a held-out UI-state test asserts the complete untruncated note string in `title=""` | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Non-inferable backstop. `title=""` present, no held-out test. See Human Verification #1 |
 
 **Gap-closure truths (07-06 … 07-09)** — all re-verified at the full three levels plus the named tests.
 
@@ -184,9 +159,14 @@ behavior_unverified_items:
 | 26 | (G-07-4) A foreign-listing, blocked, unknown or missing artifact id is a 404; no-parameter requests still serve the latest `ok` PDF | ✓ VERIFIED | `test_an_artifact_belonging_to_another_listing_is_a_404`, `test_a_named_blocked_artifact_is_a_404`, `test_an_unknown_artifact_id_is_a_404` |
 | 27 | (G-07-4) Each `Previous compiles` row links to its own artifact id; the persistent Latest CV control stays parameterless | ✓ VERIFIED | `tailoring.html:93` vs `:72` |
 | 28 | (G-07-4) After a compile the page offers exactly one latest download control; the banner emits no anchor | ✓ VERIFIED | `_compiled_fragment` (no anchor); `test_a_compile_yields_exactly_one_latest_download_control`, `test_compiled_fragment_with_no_drops_is_the_compile_marker_only` |
-| 29 | **CR-01 (derived data-integrity truth): a partial drafting response does not delete the user's unanswered stored drafts** | ✗ **FAILED** | Reproduced: 3 seeded ad-hoc rows → 1 row remained after a one-answer POST. See gap + Reproduced Evidence |
 
-**Score:** 44/47 truths verified (2 present, behavior-unverified; 1 failed)
+**CR-01 gap-closure truth (07-10)** — re-verified at all levels plus a fresh run of the named regression.
+
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 29 | (CR-01) A valid-but-partial drafting response (`len(verdicts) < len(questions)`) is refused with `drafting_partial` (502) BEFORE `replace_for_listing`; every stored draft row (including ad-hoc question text) survives. A complete response still persists; the refusal is idempotent. | ✓ VERIFIED | `app/api/apply.py:355-362` guard textually precedes `replace_for_listing` at :364; `tests/api/test_apply_draft_errors.py` (`test_a_partial_response_keeps_unanswered_ad_hoc_rows`, `test_a_complete_response_persists_the_full_asked_set`, `test_a_repeated_partial_post_is_idempotent_over_the_stored_set`) — independently re-run: 6 passed. The two prior package tests now stub four-answer complete responses (`tests/api/test_apply_package.py:519-543`, `:546+`) |
+
+**Score:** 45/47 truths verified (2 present, behavior-unverified)
 
 ### Required Artifacts
 
@@ -195,16 +175,17 @@ behavior_unverified_items:
 | `alembic/versions/0006_screening_drafts.py` | drafts + config + append-only triggers | ✓ VERIFIED | 87 lines; raw `op.execute` triggers; symmetric downgrade |
 | `alembic/versions/0007_screening_draft_warnings.py` | nullable `warnings_json` + `band` | ✓ VERIFIED | `op.add_column` ×2; symmetric downgrade; head pins moved 0006→0007 |
 | `app/api/applications.py` | 6 tracker routes; record success = 303 PRG | ✓ VERIFIED | 325 lines; `RedirectResponse(url="/applications", status_code=303)` at L205 |
-| `app/api/apply.py` | package page + draft/question/delete actions | ⚠️ PRESENT/WIRED but data-loss path | All actions present; the draft action's partial-response path deletes stored rows (CR-01) |
+| `app/api/apply.py` | package page + draft/question/delete actions; three 502 refusals incl. `drafting_partial` | ✓ VERIFIED | `len(verdicts) < len(questions)` guard at L355 returns `drafting_partial` before `replace_for_listing` (L364); docstring documents the third refusal |
 | `app/domain/schemas/screening.py` | `extra="forbid"` contract + recorded-shape coercion | ✓ VERIFIED | Coercion only for `None`/mapping/`str`/list/tuple; scalar still raises |
-| `app/db/repositories/screening_draft_repo.py` | draft store, warnings/band round-trip | ⚠️ VERIFIED (with IN-01) | Round-trips correctly; `replace_for_listing` is delete-then-insert (CR-01); deletes lack the docstring's SAVEPOINT |
-| `app/api/tailoring.py` | optional listing-scoped `artifact_id`; single latest control | ✓ VERIFIED | `read_for_download(ok_only=True)` + `record.listing_id == listing_id`; banner anchor removed |
-| `app/verify/screening.py` | deterministic grounding check | ✓ VERIFIED | 148 lines; warnings + advisory band; residuals stated (no false guarantee) |
-| `app/pipeline/draft.py` | one audited drafting call on the shared ceiling | ✓ VERIFIED | `_reserve` before call; frozen prompt now requests arrays |
+| `app/db/repositories/screening_draft_repo.py` | draft store, warnings/band round-trip; `replace_for_listing` now reachable only on a complete response | ✓ VERIFIED (IN-01) | Round-trips correctly; delete-then-insert guarded upstream by the route; deletes still lack the docstring's SAVEPOINT |
+| `app/api/tailoring.py` | optional listing-scoped `artifact_id`; single latest control | ✓ VERIFIED | `read_for_download(ok_only=True)` + `record.listing_id == listing_id` |
+| `app/verify/screening.py` | deterministic grounding check | ✓ VERIFIED | 148 lines; one verdict per answer via positional `zip(..., strict=False)` — the CR-01 predicate's basis |
+| `app/pipeline/draft.py` | one audited drafting call on the shared ceiling | ✓ VERIFIED | `_reserve` before call; frozen prompt requests arrays |
 | `app/db/repositories/application_repo.py`, `apply_config_repo.py` | record/transition/read; question singleton | ✓ VERIFIED | unchanged by the gap round |
 | `app/web/templates/html/apply.html`, `_screening_drafts.html`, `applications*.html`, `_application_row/history.html`, `tailoring.html` | package + tracker + answers + download surfaces | ✓ VERIFIED | warning/band lines render; per-row artifact links |
 | `static/vendor/app.css` | stage badges, `.queue-table` scroll, answer tokens | ✓ VERIFIED | unchanged by the gap round |
-| phase test lanes | evidence | ✓ VERIFIED | 264 phase-scoped tests pass; full default lane 1674 passed |
+| `tests/api/test_apply_draft_errors.py` | CR-01 regression | ✓ VERIFIED | 6 tests; partial-survival, complete-path, idempotency |
+| `tests/api/test_apply_package.py` | complete-response persistence | ✓ VERIFIED | 27 tests; both prior one-answer stubs converted to four-answer complete responses |
 
 ### Key Link Verification
 
@@ -217,9 +198,10 @@ behavior_unverified_items:
 | `latest_for_listing(ok_only=True)` | `package_state` gate → verified-PDF block | SQL ok predicate | ✓ WIRED | blocked/failed/absent all `gated` |
 | `score_repo.read_score_for_listing` | read-only gap checklist | `verdict in {gap,partial}` | ✓ WIRED | `met` deliberately excluded (D-123) |
 | record form (plain POST) | 303 → `GET /applications` | Post/Redirect/Get | ✓ WIRED | full styled document landing |
-| `apply_config.questions_json` (or defaults) | `POST .../apply/draft` → draft stage → grounding → `replace_for_listing` → `#apply-answers` | one call, persisted rows | ✓ WIRED | `test_the_draft_action_makes_one_call_and_persists_rows` |
+| `apply_config.questions_json` (or defaults) + ad-hoc drafts | `POST .../apply/draft` → draft stage → grounding → completeness guard → `replace_for_listing` → `#apply-answers` | one call; partial refused pre-write | ✓ WIRED | `test_a_partial_response_keeps_unanswered_ad_hoc_rows`, `test_a_complete_response_persists_the_full_asked_set` |
 | `ScreeningVerdict.warnings`/`.band` | `screening_drafts.warnings_json`/`.band` → `_one_row` → rendered lines | migration 0007 | ✓ WIRED | persisted, never re-derived |
 | filter/search controls | `hx-get="/applications/list"` → shared fragment | `hx-include="closest form"` | ✓ WIRED | page and swap share one template |
+| `screening_draft_repo.replace_for_listing` | route's `drafting_partial` guard | textual precedence (L355 vs L364) | ✓ WIRED | only caller is apply.py:364; no other DELETE path on a model response |
 
 ### Data-Flow Trace (Level 4)
 
@@ -236,13 +218,13 @@ behavior_unverified_items:
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Phase-scoped suite (all 4 gap closures + original lanes) | `.venv/bin/python -m pytest -q <27 files>` | `264 passed in 92.81s` | ✓ PASS |
-| Full default lane | `.venv/bin/python -m pytest -q` | `1674 passed, 14 deselected, 2 xfailed in 330.71s` | ✓ PASS |
-| Record submit redirects to a styled page | `test_record_submit_lands_on_the_full_styled_tracker_page` | full doc + `/static/vendor/app.css` + new row | ✓ PASS |
-| Named artifact serves its own bytes / foreign+blocked ids 404 | `tests/api/test_cv_pdf_route.py` | 4 cases pass | ✓ PASS |
-| Specific warning names the offender + advisory band renders | `tests/api/test_apply_package_warnings.py` | pass | ✓ PASS |
-| Two distinct refusal reasons; stored draft survives both | `tests/api/test_apply_draft_errors.py` | pass | ✓ PASS |
-| **CR-01 reproduction** (temporary probe, since removed) | partial 1-answer response against 3 seeded ad-hoc rows | **`1 failed`** — only `['Why are you interested in this role?']` remained; all 3 ad-hoc rows deleted | ✗ **FAIL** |
+| CR-01 regression lane | `.venv/bin/python -m pytest -q tests/api/test_apply_draft_errors.py` | `6 passed in 12.53s` | ✓ PASS |
+| Updated package lane (complete responses) | `.venv/bin/python -m pytest -q tests/api/test_apply_package.py` | `27 passed in 33.40s` | ✓ PASS |
+| Cross-cutting phase lane (tracker, CV route, events, grounding, draft stage, migrations, warnings) | `.venv/bin/python -m pytest -q tests/api/test_apply_package_warnings.py tests/api/test_applications_tracker.py tests/api/test_cv_pdf_route.py tests/db/test_application_events.py tests/db/test_application_repo.py tests/verify/test_screening.py tests/pipeline/test_draft_stage.py tests/db/test_screening_draft_repo.py tests/db/test_migration_contract.py` | `117 passed in 38.12s` | ✓ PASS |
+| Partial drafting response keeps seeded ad-hoc rows | `test_a_partial_response_keeps_unanswered_ad_hoc_rows` | 502 `drafting_partial`; `set(stored) == {"Ad-hoc A","Ad-hoc B","Ad-hoc C"}` | ✓ PASS |
+| Complete response persists the full asked set (guard does not over-refuse) | `test_a_complete_response_persists_the_full_asked_set` | 200; stored == 4 config + 3 ad-hoc | ✓ PASS |
+| Repeated partial POST is idempotent | `test_a_repeated_partial_post_is_idempotent_over_the_stored_set` | both 502; row set unchanged, len 3 | ✓ PASS |
+| Guard predicates | `grep 'len(verdicts) < len(questions)' app/api/apply.py` | present at L356; precedes `replace_for_listing` L364 | ✓ PASS |
 
 ### Probe Execution
 
@@ -254,36 +236,35 @@ All 7 phase requirement IDs are declared in PLAN frontmatter and mapped to Phase
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| APPLY-01 | 07-02, 07-03, 07-05, 07-06, 07-07, 07-09 | Apply package: verified PDF, apply link, drafted answers, gap checklist | ⚠️ PARTIAL | Package/page/grounding/coercion/warnings/download all verified, but the drafting write path can silently delete unanswered stored drafts (CR-01) — a gap in the package's answer-persistence integrity |
+| APPLY-01 | 07-02, 07-03, 07-05, 07-06, 07-07, 07-09, 07-10 | Apply package: verified PDF, apply link, drafted answers, gap checklist | ✓ SATISFIED | Package/page/grounding/coercion/warnings/download all verified; the drafting write path now refuses a partial response before the wholesale delete (CR-01 closed) |
 | APPLY-02 | 07-02 | The tool never submits on the user's behalf | ✓ SATISFIED | `test_no_submit_surface`; no submit route; plain anchor |
-| APPLY-03 | 07-01, 07-08 | Record an application with a status stage and notes | ✓ SATISFIED | record route now 303s to the styled tracker; refusal unchanged |
+| APPLY-03 | 07-01, 07-08 | Record an application with a status stage and notes | ✓ SATISFIED | record route 303s to the styled tracker; refusal unchanged |
 | APPLY-04 | 07-01 | Every recorded application links to the exact CV version sent | ✓ SATISFIED | ok-only `applied` gate; link survives later status change |
 | APPLY-05 | 07-01 | Status changes recorded as append-only events | ✓ SATISFIED | migration 0006 triggers; same-transaction event |
 | APPLY-06 | 07-01, 07-04, 07-08 | Next action date/deadline | ✓ SATISFIED | `parse_next_action`, needs-action ordering |
 | UI-04 | 07-04, 07-05, 07-08 | User can view and manage the application tracker | ✓ SATISFIED | tracker page/filters/search/needs-action/pager/transitions/notes/answers region |
 
-**Coverage:** 6/7 satisfied; APPLY-01 partial due to CR-01.
+**Coverage:** 7/7 satisfied.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
 | — | — | No `TBD`/`FIXME`/`XXX`/`HACK`/`PLACEHOLDER` markers in any phase-modified file | — | Clean (debt-marker gate satisfied) |
-| `app/api/apply.py` | 339-346 | partial-response path falls through to a wholesale replace (silent data loss) | 🛑 BLOCKER | CR-01 |
-| `app/api/tailoring.py` | 377 | `record.verification_json or {}` assumes a mapping (WR-02; pre-existing, not introduced by 07-09) | ⚠️ WARNING | A non-dict JSON row 500s a findings fragment; sibling `_parse_findings` already guards |
-| `app/web/templates/html/_screening_drafts.html` | 54-59 | delete form has no `hx-post`; a full-page submit lands on the bare region fragment (WR-01; same class as G-07-1) | ⚠️ WARNING | No-JS/JS-on stranding on the delete action; UAT test 6 accepted this leg |
+| `app/api/tailoring.py` | 377 | `record.verification_json or {}` assumes a mapping (WR-02; pre-existing, not in phase scope) | ⚠️ WARNING | A non-dict JSON row 500s a findings fragment; sibling `_parse_findings` already guards |
+| `app/web/templates/html/_screening_drafts.html` | 54-59 | delete form has no `hx-post`; a full-page submit lands on the bare region fragment (WR-01) | ⚠️ WARNING | No-JS/JS-on stranding on the delete action; UAT test 6 accepted this leg |
 | `app/db/repositories/screening_draft_repo.py` | 8-9, 163-184 | docstring claims every write uses a SAVEPOINT; the two deletes do not (IN-01) | ℹ️ INFO | Prose overclaim (CONVENTIONS rule 6) |
 | `app/web/templates/html/_screening_drafts.html` | 48 | clipboard handler dereferences `navigator.clipboard` unguarded (IN-04) | ℹ️ INFO | Throws on non-secure context; user-visible outcome matches the comment (label stays) |
 
 ### Advisory (New Scope, Unevidenced)
 
-The advisory code review (`07-REVIEW.md`, 2026-10-06) raised 1 Critical + 2 Warnings + 4 Info. The Critical (CR-01) was **independently reproduced** by this verifier and is therefore promoted from advisory to a blocking gap above. The remainder are recorded as warnings/info, not phase must-haves:
+The advisory code review (`07-REVIEW.md`, 2026-10-06) raised 1 Critical + 2 Warnings + 4 Info. The Critical (CR-01) is now closed and independently verified. The remainder are recorded as warnings/info, not phase must-haves:
 
 | # | Finding | Category | Why Not a Gap |
 |---|---------|----------|----------------|
-| 1 | WR-01: apply-region forms return a bare fragment on a full-page submit | ux/correctness | The `POST .../draft/delete` fragment response is by design (`delete_answer` docstring); UAT test 6 accepted the leg. Not covered by a must-have truth. |
-| 2 | WR-02: `_findings_fragment` can 500 on a non-dict `verification_json` | robustness | Pre-existing tailoring code, not introduced by 07-09's change; no phase must-have asserts it. |
-| 3 | IN-01…IN-04 | hygiene | Documentation/comments, duplicate-question edge, unguarded clipboard property. |
+| 1 | WR-01: apply-region delete form returns a bare fragment on a full-page submit | ux/correctness | The `POST .../draft/delete` fragment response is by design; UAT test 6 accepted the leg. Not covered by a must-have truth |
+| 2 | WR-02: `_findings_fragment` can 500 on a non-dict `verification_json` | robustness | Pre-existing tailoring code; no phase must-have asserts it |
+| 3 | IN-01…IN-04 | hygiene | Documentation/comments, duplicate-question edge, unguarded clipboard property |
 
 ## Human Verification Required
 
@@ -297,26 +278,22 @@ The advisory code review (`07-REVIEW.md`, 2026-10-06) raised 1 Critical + 2 Warn
 **Expected:** The paste equals the full untruncated answer; the label flips to `Copied` for ~2s.
 **Why human:** Non-inferable backstop — browser-only behaviour, no held-out test. UAT test 2 never reached this (blocked by G-07-2, now fixed).
 
-### 3. Note A — MVP mode / goal-format discrepancy (developer decision)
-**Observation:** ROADMAP marks Phase 7 `mode: mvp`, but the phase goal ("An apply package per listing plus an application tracker that links every outcome to the exact verified CV artefact that was sent.") is **not** in User-Story form — `user-story.validate` returns `valid: false`. Under strict MVP-mode verification this would require `/gsd mvp-phase 7` before a User-Flow-Coverage report could be produced. This verifier proceeded with standard goal-backward verification (the roadmap Success Criteria are the contract, and the prior verification did the same). **Developer decision:** confirm the `mvp` annotation is intentional, or run `/gsd mvp-phase 7` to convert the goal.
+### 3. MVP mode / goal-format discrepancy (developer decision)
+**Observation:** ROADMAP marks Phase 7 `mode: mvp`, but the phase goal is not in User-Story form — `user-story.validate` returns `valid: false` (errors: missing "As a [role]", "I want to", "so that"). Under strict MVP-mode verification this phase would require `/gsd mvp-phase 7` before a User-Flow-Coverage report could be produced. This verifier proceeded with standard goal-backward verification (the roadmap Success Criteria are the contract, matching the prior verification). **Developer decision:** confirm the `mvp` annotation is intentional, or run `/gsd mvp-phase 7` to convert the goal.
 
 ## Gaps Summary
 
-**One blocking gap: CR-01 — a partial drafting response silently deletes the user's unanswered stored drafts.**
+**No blocking gaps remain.** The single blocker from the prior verification — CR-01 — is genuinely closed:
 
-The four UAT gaps are genuinely closed and their gap-closure truths verified:
-- **G-07-1** — `POST /applications/record` now 303-redirects to the full styled tracker page (PRG); refusals unchanged.
-- **G-07-2** — the recorded non-list payload shape is coerced at the schema boundary and an unusable response is reported distinctly (`drafting_failed`) from a valid-but-empty one (`drafting_empty`); both refusals keep stored drafts.
-- **G-07-3** — migration 0007 persists the checker's warnings + advisory band; the answers region names the specific offender and marks the band advisory-only.
-- **G-07-4** — `?artifact_id=` serves a named, listing-owned, `ok` artifact; the compile banner no longer duplicates the Latest CV control.
+- `app/api/apply.py::draft_answers` now inserts a `len(verdicts) < len(questions)` completeness guard (`drafting_partial`, 502) **textually before** `screening_draft_repo.replace_for_listing` (L355 vs L364). `ground_screening_answers` aligns positionally via `zip(questions, response.answers, strict=False)`, so the guard is exactly a partial-response detector.
+- The verifier's original reproduction is now a passing regression: three seeded ad-hoc rows survive a one-answer POST (`set(stored) == set(ad_hoc)`, length 3, not 1). Two additional tests prove the guard does not over-refuse (a complete response persists the full asked set) and that a refused partial POST is idempotent over the stored set.
+- The two prior package tests that enshrined the shallow one-answer case were converted to complete four-answer responses and now assert the full asked set persists.
 
-**But the G-07-2 data-loss class survives on the partial-response path.** `ground_screening_answers` emits no verdict for an unanswered question, and `draft_answers` refuses only `None` and `[]` before calling `replace_for_listing`, which deletes the listing's entire draft set. A valid response covering a subset of questions therefore deletes every unanswered row — including ad-hoc questions whose text exists nowhere else. The user sees `Not yet drafted.` rather than a warning, and the route's own copy ("Your existing drafts were kept") is false on this path. Reproduced deterministically (temporary probe: 3 seeded ad-hoc rows → 1 row remained after a one-answer POST; probe since removed).
+The four earlier UAT gaps (G-07-1 … G-07-4) were already closed and remain verified. All 7 requirement IDs are satisfied.
 
-This is a must-have failure for the phase's drafting feature: APPLY-01's "drafted screening answers" cannot be called trustworthy while a realistic model response destroys stored user input. Fail-closed: status `gaps_found`.
-
-The two non-inferable backstop truths (note fidelity, clipboard fidelity) remain `PRESENT_BEHAVIOR_UNVERIFIED` and are preserved in `behavior_unverified_items` so they survive this `gaps_found` verdict; they would route to `human_needed` once the gap is closed.
+The two non-inferable backstop truths (tracker note `title` fidelity, clipboard multi-paragraph copy fidelity) remain `PRESENT_BEHAVIOR_UNVERIFIED`; they are preserved in `behavior_unverified_items` and surfaced under Human Verification, so the phase resolves to `human_needed` rather than `passed`. The MVP-mode goal-format discrepancy is a developer decision, not a code gap.
 
 ---
 
-_Verified: 2026-10-06T19:34:39Z_
+_Verified: 2026-10-06T21:16:59Z_
 _Verifier: the agent (gsd-verifier)_
