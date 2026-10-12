@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 7
 waived_count: 1
 fixed_count: 1
-total_count: 8
-last_updated: 2026-09-24T16:55:25.904Z
+total_count: 9
+last_updated: 2026-10-12T11:15:19.630Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-09-24T16:55:25.904Z
 | 6 | 3 | unrun-verify | tests/llm/test_contract_live.py |  | Operator-run live /doc contract lane (PLAT-05) is deselected by addopts and cannot run in the executor sandbox. The projection logic was validated during execution against the live 1.18.31 spec (22 pointers, 0 diffs; GET /global/health version 1.18.31 matched the fixture), but the pytest -m live lane itself remains for the operator per docs/runbook-opencode-contract.md. | open |  | 2026-09-17T21:18:10.209Z |  |
 | 7 | 3 | unrun-verify | tests/llm/test_trust_boundary.py |  | Operator-run live trust-boundary observation (success criterion 4): with the /settings selftest result page open on a real call, confirm the returned parts carry no tool invocation, the rendered system prompt is the module constant, and info_keys contains the structured payload key (closing Open Question Q1). The default lane proves the deny encoding with a fake transport; the live observation remains for the operator. | open |  | 2026-09-17T23:07:15.009Z |  |
 | 8 | 06 | unrun-verify |  |  | Layer-2 checks against a real pypdf extraction of a Tectonic-compiled tailored CV are unrun in the hermetic lane (extraction is stubbed; container latex lane only) | open |  | 2026-09-24T16:55:25.904Z |  |
+| 9 | 07 | unrun-verify | .planning/phases/07-assisted-apply-tracker/07-11-SUMMARY.md |  | 07-11 mandated rendered-rect human-check (button/date non-intersection at 1280px+375px) not performed: no layout engine in the repo; deferred to end-of-phase UAT | open |  | 2026-10-12T11:15:19.630Z |  |
 
 ````json
 [
@@ -120,6 +121,18 @@ last_updated: 2026-09-24T16:55:25.904Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T16:55:25.904Z",
+    "resolved_at": null
+  },
+  {
+    "id": 9,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".planning/phases/07-assisted-apply-tracker/07-11-SUMMARY.md",
+    "line": null,
+    "description": "07-11 mandated rendered-rect human-check (button/date non-intersection at 1280px+375px) not performed: no layout engine in the repo; deferred to end-of-phase UAT",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-12T11:15:19.630Z",
     "resolved_at": null
   }
 ]
