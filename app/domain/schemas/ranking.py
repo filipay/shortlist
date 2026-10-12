@@ -30,9 +30,11 @@ re-extracting it.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ._coerce import coerce_mapping_list
 
 #: A factor sub-score. ``-1.0`` is the absent sentinel; the bounds reject rather
 #: than clamp an out-of-range value (RANK-02 precision).
@@ -69,6 +71,17 @@ class RankingResponse(BaseModel):
     compensation: _SubScore = -1.0
     rationale: str = ""
     requirements: list[RequirementFit] = Field(default_factory=list)
+
+    @field_validator("requirements", mode="before")
+    @classmethod
+    def _coerce_requirements(cls, value: Any) -> Any:
+        """Route the recorded wire shapes through the shared helper (G-07-7).
+
+        A single-key wrapper ``{"item": [...]}`` is unwrapped; ``None`` -> ``[]``; a
+        single requirement-shaped mapping -> ``[value]`` and a ``list``/``tuple``
+        passes through. Any other shape is returned untouched and fails loudly.
+        """
+        return coerce_mapping_list(value)
 
 
 __all__ = ["RankingResponse", "RequirementFit"]

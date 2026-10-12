@@ -1,9 +1,10 @@
 """The machine-canonical CV document: models, stable IDs, and the render projection.
 
-**Purity.** This module imports the standard library plus ``pydantic`` only. No
-``yaml``, no ``jinja2``, no filesystem, no clock. ``app/cv/factstore.py`` is the
-single reader of ``cv.yaml``; this module is what makes the value it returns
-representable and addressable.
+**Purity.** This module imports the standard library plus ``pydantic``, and one pure
+sibling — ``app.domain.schemas._coerce`` — which itself imports no I/O (the shared
+single-key wrapper unwrap, G-07-7). No ``yaml``, no ``jinja2``, no filesystem, no
+clock. ``app/cv/factstore.py`` is the single reader of ``cv.yaml``; this module is
+what makes the value it returns representable and addressable.
 
 **"Source of truth" is never used unqualified** (ARCHITECTURE §0 A1).
 ``cv/base.tex`` is canonical *for the human*; ``cv.yaml`` is canonical *for the
@@ -51,9 +52,11 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Iterator
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.domain.schemas._coerce import coerce_str_list
 
 #: The fact-store format version. The YAML value is the int ``1``; the revision
 #: column that stores it (``cv_versions.schema_version``) is ``String(32)``, so the
@@ -470,6 +473,12 @@ class Suggestion(_Forbid):
     evidence_ids: list[str] = Field(default_factory=list)
     rationale: str
 
+    @field_validator("evidence_ids", mode="before")
+    @classmethod
+    def _coerce_evidence_ids(cls, value: Any) -> Any:
+        """Unwrap the recorded single-key wrapper on this list-typed field (G-07-7)."""
+        return coerce_str_list(value)
+
 
 class GapFinding(_Forbid):
     """One requirement the listing states and the CV's honest relationship to it.
@@ -482,6 +491,16 @@ class GapFinding(_Forbid):
     requirement: str
     status: Literal["direct", "transferable", "adjacent", "gap"] = "gap"
     evidence_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence_ids", mode="before")
+    @classmethod
+    def _coerce_evidence_ids(cls, value: Any) -> Any:
+        """Unwrap the recorded single-key wrapper on this list-typed field (G-07-7).
+
+        The tailoring sibling hit ``gaps[].evidence_ids == ""`` — the same
+        array-field-arrived-as-a-non-array class this helper family closes.
+        """
+        return coerce_str_list(value)
 
 
 #: The patch operation union, discriminated on ``op``. New operations are added by
