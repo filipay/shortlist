@@ -1815,3 +1815,71 @@
     background-color: var(--color-danger-bg);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * CR-01 reconciliation: component rules moved here from the hand-appended block
+ * of the built `static/vendor/app.css`. The built file is a build of THIS file,
+ * never hand-edited (D-14/D-15); a real build emits every one of these, so the
+ * committed artifact and the Dockerfile build cannot drift again.
+ * --------------------------------------------------------------------------- */
+@layer components {
+  /* Listing detail / ranking. */
+  .badge-score{background-color:var(--color-accent-bg);color:var(--color-accent-hover);font-family:var(--font-mono)}
+  .badge-score-tier-high{background-color:var(--color-success-bg);color:var(--color-success)}
+  .badge-score-tier-medium{background-color:var(--color-warning-bg);color:var(--color-warning)}
+  .badge-score-tier-low{background-color:var(--color-surface-2);color:var(--color-muted)}
+  .listing-detail-link{margin-left:.5rem;color:var(--color-accent);white-space:nowrap;font-size:.8rem;text-decoration:none}
+  .listing-detail-link:hover{text-decoration:underline}
+  .detail-rationale{max-width:65ch}
+  .detail-not-ranked{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);padding:1rem}
+  .detail-empty{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);text-align:center;padding:2rem}
+  .factor-table{border:1px solid var(--color-border);border-radius:var(--radius-lg);max-width:44rem;box-shadow:var(--shadow-sm);background-color:var(--color-paper);display:block;overflow-x:auto}
+  .factor-table th{text-transform:uppercase;letter-spacing:.025em;color:var(--color-muted);white-space:nowrap;padding:.75rem 1rem;font-size:.8rem;font-weight:600}
+  .factor-table td{border-bottom:1px solid var(--color-border);padding:.625rem 1rem}
+  .factor-table tbody tr:last-child td{border-bottom:none}
+  .factor-absent{color:var(--color-muted);font-style:italic}
+  .requirement-list{margin:0 0 1rem;padding-left:1.25rem;list-style:disc}
+  .requirement-list li{margin:.375rem 0}
+  .req-met{color:var(--color-success)}
+  .req-partial{color:var(--color-warning)}
+  .req-gap{color:var(--color-danger)}
+  .badge-unranked{background-color:var(--color-surface-2);color:var(--color-muted);border:1px dashed var(--color-border)}
+  .ranking-strip{color:var(--color-muted);margin-bottom:.75rem;font-size:.95rem}
+  .badge-flagged{background-color:var(--color-danger-bg);color:var(--color-danger)}
+  .cv-status{padding:.75rem 1rem;border-radius:var(--radius-md);margin-bottom:1rem;font-weight:500;background-color:var(--color-surface);border:1px solid var(--color-border);color:var(--color-muted)}
+
+  /* Queue filters / settings weights / tailoring. */
+  .queue-sort,.queue-threshold{color:var(--color-muted);flex-direction:column;gap:.25rem;font-size:.85rem;display:inline-flex}
+  .queue-sort select,.queue-threshold input{width:auto;padding:.35rem .5rem}
+  .weights-form{max-width:52rem}
+  .weight-grid{grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.75rem 1rem;margin-bottom:1rem;display:grid}
+  .weight-field{flex-direction:column;gap:.25rem;display:flex}
+  .weight-field input{margin:0}
+  .weights-note{margin-bottom:1rem}
+  .tailoring-review{border:1px solid var(--color-border);border-radius:var(--radius-lg);background-color:var(--color-surface);margin-top:1rem;padding:1rem}
+  .tailoring-empty{background-color:var(--color-surface);border:1px dashed var(--color-border);border-radius:var(--radius-lg);color:var(--color-muted);padding:1rem}
+  .cv-generate{align-self:flex-start}
+  .cv-download{font-weight:500}
+
+  /* Phase 7 stage badges (D-132). Each copies an existing declaration block and
+     reuses an existing token pair — no new hues. */
+  .badge-stage-discovered{background-color:var(--color-surface-2);color:var(--color-muted)}
+  .badge-stage-queued{background-color:var(--color-surface-2);color:var(--color-muted)}
+  .badge-stage-shortlisted{background-color:var(--color-info-bg);color:var(--color-info)}
+  .badge-stage-applied{background-color:var(--color-accent-bg);color:var(--color-accent-hover)}
+  .badge-stage-interviewing{background-color:var(--color-info-bg);color:var(--color-info)}
+  .badge-stage-offer{background-color:var(--color-success-bg);color:var(--color-success)}
+  .badge-stage-rejected{background-color:var(--color-danger-bg);color:var(--color-danger)}
+  .badge-stage-withdrawn{background-color:var(--color-surface-2);color:var(--color-muted)}
+
+  /* Overdue next-action emphasis; the apply package; drafted answers
+     (D-121, D-123, D-125, D-132). `.answer-text` keeps a real 65ch line length
+     (the element the Copy-answer handler reads), `.answer-warning` the warning
+     token. */
+  .next-overdue{color:var(--color-warning)}
+  .apply-assurance{background-color:var(--color-info-bg);border:1px solid var(--color-info);border-radius:var(--radius-md);color:#155e75;margin-bottom:1rem;padding:.75rem 1rem}
+  .apply-link{display:inline-block;background-color:var(--color-accent);border:1px solid var(--color-accent);border-radius:var(--radius-md);color:#fff;padding:.625rem 1.25rem;font-size:1rem;text-decoration:none}
+  .apply-link:hover{background-color:var(--color-accent-hover);border-color:var(--color-accent-hover)}
+  .answer-text{max-width:65ch}
+  .answer-warning{color:#92400e;margin:.375rem 0;font-size:.9rem}
+}
