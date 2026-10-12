@@ -509,3 +509,56 @@ async def test_read_tracker_unknown_view_is_a_value_error(
     async with session_factory() as session:
         with pytest.raises(ValueError):
             await application_repo.read_tracker(session, view="urgent", now=NOW)
+
+
+async def test_the_exact_cv_link_survives_every_later_transition(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """APPLY-04 failure class: the link to the exact CV sent must persist for life.
+
+    The tracker only shows the `cv_artifact_id` picker for the `applied` stage, so every
+    LATER stage move calls `transition_application(cv_artifact_id=None)`. A regression
+    that re-initialised the link on that path would silently drop the exact-CV provenance
+    on the first post-apply stage change, and every pre-existing test would still pass
+    (they only pin the attach-time gate). This mutates the status through each later stage
+    and asserts the id is byte-identical after each one.
+    """
+    listing_id = await _seed_listing(session_factory)
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
+    async with session_factory() as session:
+        app_id = await application_repo.record_application(
+            session,
+            listing_id=listing_id,
+            status="applied",
+            cv_artifact_id=ok_id,
+            notes=None,
+            next_action_at=None,
+            now=NOW,
+        )
+        await session.commit()
+    assert app_id is not None
+
+    for step, to_status in enumerate(("interviewing", "offer", "rejected"), start=1):
+        async with session_factory() as session:
+            moved = await application_repo.transition_application(
+                session,
+                application_id=app_id,
+                to_status=to_status,
+                cv_artifact_id=None,  # the later-stage form carries no picker value
+                note=None,
+                now=NOW + timedelta(days=step),
+            )
+            await session.commit()
+        assert moved == app_id
+        async with session_factory() as session:
+            row = await session.get(Application, app_id)
+        assert row is not None
+        assert row.status == to_status
+        assert row.cv_artifact_id == ok_id, (
+            f"the exact-CV link was lost on the {to_status} transition"
+        )
+        assert row.applied_at is not None, "applied_at must survive later transitions"
+
+    async with session_factory() as session:
+        page = await application_repo.read_tracker(session, now=NOW)
+    assert page.rows[0].cv_artifact_id == ok_id

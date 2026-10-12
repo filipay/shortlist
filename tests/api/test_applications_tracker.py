@@ -571,4 +571,36 @@ async def test_the_queue_row_still_uses_the_queue_action_cell(
     assert 'class="listing-actions"' in page.text, "the queue cell must be untouched"
 
 
+async def test_a_later_stage_move_keeps_the_exact_cv_link_over_http(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    """APPLY-04 over HTTP: a post-`applied` move sends no `cv_artifact_id`, and the row
+    must still select the exact CV that was sent (the failure class the repo test pins,
+    exercised through the route + the rendered row)."""
+    listing_id = await _seed_listing(session_factory)
+    ok_id = await _seed_artifact(session_factory, listing_id, status="ok")
 
+    recorded = await client.post(
+        "/applications/record",
+        data={
+            "listing_id": str(listing_id),
+            "status": "applied",
+            "cv_artifact_id": str(ok_id),
+        },
+    )
+    assert recorded.status_code == 303
+    row_id = _row_id((await client.get("/applications")).text)
+
+    moved = await client.post(
+        f"/applications/{row_id}/status",
+        data={"status": "interviewing"},
+    )
+    assert moved.status_code == 200
+    assert f'value="{ok_id}" selected' in moved.text, (
+        "the row no longer selects the exact CV that was sent"
+    )
+    async with session_factory() as session:
+        row = await session.get(Application, row_id)
+    assert row is not None
+    assert row.cv_artifact_id == ok_id
+    assert row.applied_at is not None
