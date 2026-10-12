@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -477,5 +478,97 @@ async def test_needs_action_view_renders_the_nothing_needs_action_copy(
     assert response.status_code == 200
     assert 'id="application-empty-filtered"' in response.text
     assert "Nothing needs action" in response.text
+
+
+# --- G-07-5 / G-07-6 layout contract (07-11) --------------------------------
+#
+# The tracker row stacks labelled full-width controls. Reusing the queue's
+# `.listing-*` cell vocabulary (nowrap / shrink-to-fit inline-block) forced the
+# table into horizontal scroll and let the second form's date input paint over
+# the first form's `Update status` button. These tests pin the scoped fix.
+
+STYLESHEET = Path(__file__).resolve().parents[2] / "static" / "vendor" / "app.css"
+
+
+def _row_markup(body: str, row_id: int) -> str:
+    """The `#application-row-<id>` markup, so absence checks stay row-scoped."""
+    start = body.index(f'id="application-row-{row_id}"')
+    return body[start : body.index("</tr>", start)]
+
+
+def _rule_declarations(css: str, klass: str) -> str:
+    """The declarations inside the first `.<klass>{...}` rule in `css`.
+
+    The trailing lookahead stops `.tracker-action` matching `.tracker-actions`.
+    """
+    match = re.search(r"\." + re.escape(klass) + r"(?![\w-])\s*\{([^}]*)\}", css)
+    assert match is not None, f"no rule for .{klass} in the built stylesheet"
+    return match.group(1)
+
+
+async def test_a_long_note_wraps_and_keeps_its_full_string_in_the_title(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+    long_note = " ".join(f"note{i}" for i in range(60))
+
+    page = await _record(client, listing_id, status="shortlisted", notes=long_note)
+    row = _row_markup(page, _row_id(page))
+
+    assert 'class="tracker-note"' in row
+    assert f'title="{long_note}"' in row, "the full note must stay in the title attribute"
+    assert long_note in row
+    assert 'class="truncate"' not in row, "the note cell must wrap, not truncate"
+
+
+async def test_the_tracker_row_uses_the_scoped_action_cell(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    listing_id = await _seed_listing(session_factory)
+
+    page = await _record(client, listing_id, status="shortlisted")
+    row = _row_markup(page, _row_id(page))
+
+    assert 'class="tracker-actions"' in row
+    assert row.count('class="tracker-action"') == 2
+    assert 'class="listing-actions"' not in row
+    assert 'class="listing-action"' not in row
+
+
+def test_the_tracker_action_cell_cannot_overlap_its_controls() -> None:
+    """The declaration values that determine the box geometry.
+
+    With the tracker's forms stacked as block-level boxes and no inherited
+    `white-space: nowrap`, the `Update status` button and the second form's
+    `Next action` date input occupy separate line boxes and cannot paint over one
+    another. This is the deterministic half of the G-07-6 evidence; the measured
+    rendered-rect verdict (the button rect must not intersect the date-input rect)
+    is a MANDATED `<human-check>` on this task, recorded in the SUMMARY at both
+    viewport widths, because no layout engine ships in the repo (CONVENTIONS 6 —
+    no false guarantee, and no silent skip either).
+    """
+    css = STYLESHEET.read_text(encoding="utf-8")
+
+    actions = _rule_declarations(css, "tracker-actions").replace(" ", "")
+    assert "white-space:normal" in actions
+    assert "nowrap" not in actions, "a nowrap action cell is what allowed the overlap"
+
+    assert "display:block" in _rule_declarations(css, "tracker-action").replace(" ", "")
+
+    note = _rule_declarations(css, "tracker-note").replace(" ", "")
+    assert "white-space:normal" in note
+    assert "overflow-wrap:anywhere" in note
+
+
+async def test_the_queue_row_still_uses_the_queue_action_cell(
+    session_factory: async_sessionmaker[AsyncSession], client
+) -> None:
+    await _seed_listing(session_factory)
+
+    page = await client.get("/")
+
+    assert page.status_code == 200
+    assert 'class="listing-actions"' in page.text, "the queue cell must be untouched"
+
 
 
