@@ -1,0 +1,275 @@
+{
+  "status": "ok",
+  "commands": [
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_application_repo.py tests/db/test_application_events.py tests/db/test_migration_contract.py tests/db/test_orm_drift.py tests/db/test_no_pii_columns.py tests/db/test_reset_coverage.py tests/db/test_skeleton_boot.py tests/test_auth_seam.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary line, or any of: `test_migration_contract` reports the head is not `0006`; `test_reset_coverage` reports `screening_drafts` undeclared; `test_orm_drift` reports a table/column mismatch; the append-only trigger test does not raise `IntegrityError(\"append-only\")`.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-01-PLAN.md",
+      "task": "Task 1: Record an application and render it in the tracker — migration 0006 through the row swap"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_application_repo.py tests/api/test_applications_tracker.py tests/test_auth_seam.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically `test_applied_requires_ok_artifact` fails if a `blocked`/missing artefact is accepted, if a refusal writes a row or event, or if the tracker read drops an existing link because the artefact is no longer `ok`.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-01-PLAN.md",
+      "task": "Task 2: The applied gate and the status-transition refusal"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_applications_tracker.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically the history partial renders the wrong number of entries, a `from_status` NULL does not render `created`, a refused transition writes a row/event, or `Save notes` appends an event instead of mutating the note column.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-01-PLAN.md",
+      "task": "Task 3: The inline history timeline and notes/next-action editing"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_package.py tests/test_stylesheet_coverage.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically the gated state renders ready blocks (or vice versa), the gap checklist shows an empty list instead of the documented empty copy, a new literal class token in `apply.html` has no stylesheet selector, or the page issues an LLM call on GET.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-02-PLAN.md",
+      "task": "Task 1: The apply package page — gate, verified PDF, apply link, gap checklist, record form"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_package.py tests/test_auth_seam.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically `test_no_submit_surface` fails if any outbound POST form or portal-targeting form exists, if the external anchor lacks `rel=\"noopener noreferrer\"`, or if recording from the package does not create a tracker row.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-02-PLAN.md",
+      "task": "Task 2: The no-submit guarantee and the record-from-package path"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/verify/test_screening.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically the grounded and legitimate-paraphrase fixtures warn (a false positive), the unknown-id or novel-digit fixtures pass clean (a false negative), or the mutation property test flags a valid answer.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-03-PLAN.md",
+      "task": "Task 1: The drafting contract and the deterministic grounding check"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_screening_draft_repo.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically a second replace accumulates rather than replaces, an empty draft set leaves stale rows, or a failed insert poisons the outer transaction.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-03-PLAN.md",
+      "task": "Task 2: The per-listing draft store"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/pipeline/test_draft_stage.py tests/test_config.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically the drafting stage writes zero or two `llm_calls` rows, calls the backend after a cap refusal, records a transport message instead of its class name, or `test_config` reports `apply_drafting_enabled` missing from the surface guard / wrongly present in `LIMIT_FIELDS`.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-03-PLAN.md",
+      "task": "Task 3: The drafting stage and its configuration switch"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_application_repo.py tests/api/test_applications_tracker.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically an unknown stage returns rows instead of raising, `q` matches against the wrong field, a predicate change keeps the old offset, or the fragment and the full page render divergent markup.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-04-PLAN.md",
+      "task": "Task 1: Stage filter, free-text search, and the two-way pager"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_application_repo.py tests/api/test_applications_tracker.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically `test_needs_action_ordering` shows an undated row before a dated one, terminal stages present, or the overdue flag computed at write time rather than read time.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-04-PLAN.md",
+      "task": "Task 2: The needs-action view"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_apply_config_repo.py tests/api/test_settings_page.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically an absent row returns an empty list instead of the default seed, a write does not round-trip through `/settings`, or an empty write falls back to the defaults instead of storing an explicit empty list.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-05-PLAN.md",
+      "task": "Task 1: The screening question list and its Settings editor"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_package.py tests/test_auth_seam.py tests/test_stylesheet_coverage.py -x",
+      "statement": "non-zero exit, or \"0 passed\" in the summary; specifically the region renders no warning for an unsupported row, the draft action notes zero or two backend calls, a refusal writes rows, the per-answer delete removes a sibling or accepts a foreign `draft_id`, a new literal class token has no stylesheet selector, or any of the three new routes lacks the auth seam.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-05-PLAN.md",
+      "task": "Task 2: The `#apply-answers` region, the draft action, and copy-to-clipboard"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_screening_schema.py tests/llm/test_salvage.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the golden payload raises, or the valid payload changes, or the unknown-key payload does not raise.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-06-PLAN.md",
+      "task": "Task 1: Coerce the recorded non-list screening shapes at the schema boundary, with a golden-payload fixture"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_draft_errors.py tests/pipeline/test_draft_stage.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the prompt-interpolation test fails, or the two refusals share a reason or a message, or a stored draft is lost on either path.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-06-PLAN.md",
+      "task": "Task 2: Harden the prompt for arrays and split the unusable-response refusal from the empty-response refusal"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/db/test_screening_draft_repo.py tests/db/test_migration_contract.py tests/db/test_skeleton_boot.py tests/db/test_no_pii_columns.py tests/db/test_orm_drift.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the head is not recorded as `0007`, or `test_orm_drift` reports a model/migration column mismatch, or the JSON-column allow-list test reports drift.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-07-PLAN.md",
+      "task": "Task 1: Persist warnings and band — migration 0007, model, repository, and the guard updates"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_package_warnings.py tests/api/test_apply_package.py tests/db/test_screening_draft_repo.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the named offender is absent from the rendered response, or the advisory band is missing when non-default, or a NULL-specifics unsupported row stops rendering the generic caution, or a grounded row renders a warning.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-07-PLAN.md",
+      "task": "Task 2: Map verdicts to the new columns and render the specific warning plus the advisory band"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_applications_tracker.py::test_record_refuses_an_applied_stage_without_an_ok_artifact tests/api/test_applications_tracker.py::test_record_route_is_not_shadowed_by_the_dynamic_route -x",
+      "statement": "non-zero exit, or the refusal status code/body changes, or the record route is shadowed by the dynamic route, or the static route no longer returns a 303 to `/applications`.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-08-PLAN.md",
+      "task": "Task 1: Return a 303 to /applications and move the shadow test's assertion with it"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_applications_tracker.py tests/api/test_apply_package.py tests/test_auth_seam.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or any record-submit test still expects a 200 fragment, or the regression test finds the stylesheet link absent on the landing page.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-08-PLAN.md",
+      "task": "Task 2: Get every record-submit test onto the redirect and assert the styled landing page"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_cv_pdf_route.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or a named artifact serves the wrong bytes, or a cross-listing id is served, or a blocked id is served, or the no-parameter request stops serving the latest ok PDF.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-09-PLAN.md",
+      "task": "Task 1: Add an optional, listing-scoped artifact id to the PDF route and link each history row to its own artifact"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_tailoring_review.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the compile banner still contains a download anchor, or the page no longer offers the persistent Latest CV download, or more than one download control for the latest is rendered after a compile.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-09-PLAN.md",
+      "task": "Task 2: Remove the duplicate post-compile download control and pin the single-affordance contract"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_package.py tests/api/test_apply_draft_errors.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or a partial POST (fewer answers than asked) returns 200 instead of a 502 carrying `drafting_partial`, or a complete four-answer POST stops persisting the asked rows.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-10-PLAN.md",
+      "task": "Task 1: Refuse a partial drafting response before any draft row is replaced"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_apply_draft_errors.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or any seeded ad-hoc `question_text` is missing after the partial POST, or a partial POST returns 200, or a complete POST fails to persist the asked set, or the repeated partial POST changes the stored row set.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-10-PLAN.md",
+      "task": "Task 2: Regression — seed unanswered ad-hoc rows, return a partial response, assert they survive"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_stylesheet_coverage.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or a `tracker-*` class appears in a template but has no rule in `static/vendor/app.css`, or `grep -c 'class=\"truncate\"' app/web/templates/html/_application_row.html` is not 0, or `grep -c 'tracker-actions' static/vendor/app.css` is 0, or the shared `.listing-actions`/`.listing-action` rules in `assets/tailwind/input.css` were edited.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-11-PLAN.md",
+      "task": "Task 1: Give the tracker row a wrapping note cell and a scoped, stackable action cell"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/api/test_applications_tracker.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or the note cell still carries `truncate`, or the action cell still reuses `listing-actions`, or a declared `white-space:normal` / `display:block` / `overflow-wrap:anywhere` rule is missing from the built stylesheet.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-11-PLAN.md",
+      "task": "Task 2: Regression — wrapped note, scoped action cell, and the no-overlap layout contract"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_coerce.py tests/domain/test_screening_schema.py tests/llm/test_salvage.py -x",
+      "statement": "the suite exits 0 — every new test here must FAIL on the pre-fix code (the positive cases with the recorded `list_type` error, the fail-loud cases only after the fix they should still fail on the same shapes). If any new \"validates\" assertion passes before the fix, the fixture is not exercising the defect.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-12-PLAN.md",
+      "task": "Task 1: Add the held-out fixture and the fail-loud cases (RED — must fail on today's code)"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_screening_schema.py tests/llm/test_salvage.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or `TOLERATED_SCHEMA_ERRORS` changed, or the screening fail-loud tests (`{\"nope\": 1}`, two-key mapping, scalar `answers`, unknown key) stop raising.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-12-PLAN.md",
+      "task": "Task 2: Extract the shared unwrap helper and wire the screening schema (GREEN)"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_coerce.py tests/domain/test_screening_schema.py tests/llm/test_salvage.py tests/api/test_apply_draft_errors.py tests/api/test_apply_package.py tests/test_import_discipline.py -x && .venv/bin/python -m ruff check app/domain",
+      "statement": "non-zero exit, or \"0 passed\", or `Suggestion`/`GapFinding`/`RankingResponse.requirements` do not unwrap the wrapper, or the route/stage test still returns 502, or the cv purity docstring still claims \"standard library plus pydantic only\".",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-12-PLAN.md",
+      "task": "Task 3: Wire the cv and ranking list-typed fields and finish the route/stage assertion"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_stylesheet_coverage.py -x",
+      "statement": "the suite exits 0 — the two coverage tests must FAIL on the pre-Task-2 source, and the failure message must name all 30 missing literal classes and all eleven missing suffix values. If either passes, the guard is not reading `assets/tailwind/input.css`.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-13-PLAN.md",
+      "task": "Task 1: The two source guards, written and confirmed RED on today's `input.css`"
+    },
+    {
+      "command": "./node_modules/.bin/tailwindcss -i ./assets/tailwind/input.css -o /tmp/opencode/app-rebuilt.css --minify && cmp static/vendor/app.css /tmp/opencode/app-rebuilt.css && .venv/bin/python -m pytest -q tests/test_stylesheet_coverage.py -x",
+      "statement": "non-zero exit, or `cmp` prints `differ` (the committed artifact is not the build of its source), or the coverage suite still lists any class or suffix value as missing.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-13-PLAN.md",
+      "task": "Task 2: Backfill the template rules into the source, regenerate the artifact, prove the build end-to-end"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_stylesheet_coverage.py -x && .venv/bin/python -m ruff check tests/test_stylesheet_coverage.py",
+      "statement": "non-zero exit, or \"0 passed\", or the byte-identity test does not appear in the summary (it must either run or show as skipped with the arming command), or it reports the committed file differing from a fresh build, or ruff reports a lint error.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-13-PLAN.md",
+      "task": "Task 3: The reproducibility guard — the committed artifact must equal a fresh build"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_coerce.py tests/domain/test_screening_schema.py -x",
+      "statement": "the suite exits 0 — `test_an_unknown_wrapper_key_with_a_list_value_still_fails_loudly`, the parametrised non-`item` cases, the self-referential-termination case and the `TailoringPatch` cases must all FAIL on the pre-fix code. If the unknown-key-with-a-list case passes, the fixture is not exercising the defect.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-14-PLAN.md",
+      "task": "Task 1: The failure-class tests, written and confirmed RED (the unknown key now carries a LIST value)"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_coerce.py tests/domain/test_screening_schema.py tests/llm/test_salvage.py tests/domain/test_patch_ops.py -x",
+      "statement": "non-zero exit, or \"0 passed\", or an unknown-key-with-a-list case stops raising, or `{\"item\": ...}` stops unwrapping, or the self-referential case hangs (the run exceeding the tool timeout is the observable signal), or `TOLERATED_SCHEMA_ERRORS` changed.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-14-PLAN.md",
+      "task": "Task 2: Restrict the unwrap to the literal wrapper key and bound it (GREEN)"
+    },
+    {
+      "command": ".venv/bin/python -m pytest -q tests/domain/test_coerce.py tests/domain/test_screening_schema.py tests/llm/test_salvage.py tests/domain/test_patch_ops.py tests/domain/test_cv_ids.py tests/api/test_apply_draft_errors.py tests/api/test_apply_package.py tests/pipeline/test_tailor_stage.py tests/test_import_discipline.py -x && .venv/bin/python -m ruff check app/domain",
+      "statement": "non-zero exit, or \"0 passed\", or a `TailoringPatch` wrapper case does not unwrap, or a bare non-`item` mapping on `ops`/`gaps`/`suggestions` is accepted instead of refused, or the cv purity docstring claims a purity the added import does not have, or ruff reports a lint error.",
+      "status": "ok",
+      "severity": "none",
+      "plan": "07-14-PLAN.md",
+      "task": "Task 3: Route the tailoring patch's list fields through the same helper (IN-01) and close the lane"
+    }
+  ],
+  "counts": {
+    "blocker": 0,
+    "warning": 0,
+    "total": 33
+  },
+  "readError": null
+}

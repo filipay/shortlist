@@ -36,7 +36,7 @@
     {
       "number": "7",
       "name": "Assisted Apply + Tracker",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "8",
@@ -46,8 +46,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 07 of 8 · 0% · ready to verify"
+    "label": "Advance to the next step (plan phase 6)",
+    "reason": "Phase 6 of 8 — needs a plan"
   },
-  "updated_at": "2026-10-12T11:33:07.399Z"
+  "updated_at": "2026-10-12T15:39:42.355Z"
 }
