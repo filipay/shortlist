@@ -92,10 +92,11 @@ def test_a_scalar_answers_value_still_fails_loudly() -> None:
 
 
 def test_an_unrecognised_mapping_evidence_ids_still_fails_loudly() -> None:
-    """`{"nope": 1}` unwraps to the scalar 1, which is not a `list[str]`."""
+    """Only the literal wrapper key `item` is unwrapped: an unknown key is left to
+    pydantic even when its value IS a list (the failure CLASS, not a scalar)."""
     with pytest.raises(ValidationError):
         ScreeningAnswer.model_validate(
-            {"question": "Q", "answer": "A", "evidence_ids": {"nope": 1}}
+            {"question": "Q", "answer": "A", "evidence_ids": {"nope": ["bul/x/1"]}}
         )
 
 
