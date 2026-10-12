@@ -353,7 +353,7 @@ Phase 6's surface.
 | -------- | ------- | ------ | ------ |
 | Phase-6 core lanes | `/tmp/opencode/gsdvenv13/bin/python -m pytest -q tests/verify tests/domain/test_patch_ops.py tests/domain/test_coerce.py tests/api/test_tailoring_review.py tests/api/test_tailoring_generate.py tests/api/test_cv_pdf_route.py` | `204 passed in 62.61s` | ✓ PASS |
 | Tailor stage + Layer-1/grounding + stylesheet | `/tmp/opencode/gsdvenv13/bin/python -m pytest -q tests/pipeline/test_tailor_stage.py tests/verify/test_grounding.py tests/verify/test_plan_checks.py tests/test_stylesheet_coverage.py` | `38 passed in 20.02s` | ✓ PASS |
-| Full hermetic suite | `/tmp/opencode/gsdvenv13/bin/python -m pytest -q` | see note below | ✓ PASS |
+| Full hermetic suite | `/tmp/opencode/gsdvenv13/bin/python -m pytest -q` | `1708 passed, 14 deselected, 2 xfailed in 296.11s` | ✓ PASS |
 | Truth 6 shape 1 — org-first bullet, no separator | independent repro | `found [True, True]`, `pass` | ✓ PASS |
 | Truth 6 shape 2 — merge beginning with later org | independent repro | `found [True, False]`, `warn ['exp/acme-2019']` | ✓ PASS |
 | Truth 6 negative control — fabricated `99` in A's own region | independent repro | `fail ['exp/globex-2018:99']` | ✓ PASS |
