@@ -31,7 +31,7 @@ reviewed_at: "2026-09-30"
 | Icon library | none — Unicode glyphs only. Existing precedent: `&#9733;` (`_listing_row.html:39`), the `—` em-dash placeholder (`app/web/filters.py:55`), `→` for transitions. Do not introduce an icon font or SVG sprite. |
 | Font | `--font-sans` (system UI stack) for body; `--font-display` (ui-serif/Georgia) for headings; `--font-mono` for ids, codes, dates and machine tokens. All three are declared in `app.css` (theme block, line 2). |
 
-**Rule for this phase:** extend the tokens and class vocabulary already in `static/vendor/app.css` and the markup already in `app/web/templates/html/`. **Do not introduce a second system.** New CSS is limited to (a) the `.badge-stage-*` variants mapped to existing semantic tokens in §Color, and (b) 1–2 phase-scoped wrapper classes named `apply-*` / `tracker-*` that copy an existing rule's declaration block verbatim (each such new class is called out below with the existing rule it mirrors).
+**Rule for this phase:** extend the tokens and class vocabulary already in `static/vendor/app.css` and the markup already in `app/web/templates/html/`. **Do not introduce a second system.** New CSS is limited to (a) the `.badge-stage-*` variants mapped to existing semantic tokens in §Color, and (b) the phase-scoped wrapper classes enumerated in the **New tokens this phase may add** list below — each copies an existing rule's declaration block verbatim, and is called out there with the existing rule it mirrors.
 
 ---
 
@@ -78,7 +78,7 @@ Enumerated by `python3 -c "import re;print(len(set(re.findall(r'\.([a-z][a-z0-9]
 | `.settings-banner` / `.settings-banner-error` | `app.css` L2 | `settings.html:13` | Result banner (accent left border; danger variant). Reuse for transition success/refusal. |
 | `.capability-warning` / `.capability-warnings` | `app.css` L2 | site-wide | Warning-token text + warning-bg panel. **Reuse for the unsupported-claim warning (D-125).** |
 | `.nav-link` / `.nav-current` | `app.css` L2 | `base.html:27-32` | Top-nav link + current marker. Add an "Applications" entry. |
-| `.truncate` | Tailwind utility in `app.css` L2 | — | `text-overflow:ellipsis; white-space:nowrap; overflow:hidden` — for the tracker's latest-note cell. |
+| `.tracker-note` | `app.css` (hand-appended block) | `_application_row.html:21` | The tracker's latest-note cell **wraps** (`white-space:normal; overflow-wrap:anywhere`, column `max-width:24rem`) with the full string kept in `title=""` — never a one-line `.truncate` (07-UAT G-07-5). |
 
 **New tokens this phase may add (nothing else):**
 - `.badge-stage-discovered` … `.badge-stage-withdrawn` (8 rules) — each copies an existing `.badge-*` declaration block; see §Color.
@@ -87,6 +87,9 @@ Enumerated by `python3 -c "import re;print(len(set(re.findall(r'\.([a-z][a-z0-9]
 - `.answer-warning` — copies `.capability-warning` (warning token, muted size) for the per-answer unsupported-claim line.
 - `.next-overdue` — copies `.req-partial` (`color: var(--color-warning)`) for an overdue next-action cell.
 - `.answer-text` — copies `.detail-rationale` (`max-width:65ch`) so a drafted answer gets a readable line length; the generic `p{margin:0 0 1rem}` rule still applies. This is the element the `Copy answer` handler reads, so it stays a real styled `<p>`, never an input value.
+- `.tracker-note` — copies `.listing-title`'s column bound (`max-width:24rem`, `white-space:normal`) plus `overflow-wrap:anywhere`, so the tracker's latest-note cell wraps instead of reusing the queue's one-line `.truncate` (07-UAT G-07-5).
+- `.tracker-actions` — resets `white-space` to `normal` (keeping a `min-width:16rem` floor) so the shared `.listing-actions` nowrap contract no longer reaches the tracker's stacked full-width forms (07-UAT G-07-6).
+- `.tracker-action` — stacks each labelled tracker form as a block (`display:block`) instead of the queue's shrink-to-fit `inline-block` `.listing-action`, so a `width:100%` control and its button cannot share a line box and overlap (07-UAT G-07-6).
 
 ---
 
@@ -319,7 +322,7 @@ drafting call is the explicit `Draft answers` action.
   | Stage | `<span class="badge badge-stage-{{ row.status }}">{{ row.status \| human_label }}</span>` |
   | Applied | `format_datetime(row.applied_at)` (em-dash when absent — never a fake date) |
   | Next action | `format_datetime(row.next_action_at)`, `.next-overdue` when `next_action_at < now` and the stage is non-terminal |
-  | Latest note | one-line `.truncate` with the full text duplicated into `title=""`; the inline history carries the complete notes |
+  | Latest note | `.tracker-note` **wraps** (`white-space:normal; overflow-wrap:anywhere`, `max-width:24rem`) with the full text duplicated into `title=""`; the inline history carries the complete notes |
   | Actions | `History (n)` toggle + the `Move to` transition control |
 
 - **Primary visual anchor:** the **Stage badge** column. It is the only colour-coded element in an
@@ -406,13 +409,13 @@ Applicable state considerations resolved: **21 covered, 2 backstop, 0 unresolved
 | error | drafting action | ✅ covered | A refusal swaps a `data-error` fragment into `#apply-answers` (the `_error_fragment` convention, `tailoring.py:253-259`); a transport failure reuses the `base.html:57-65` copy (`The request did not reach the server…`). |
 | error | status transition | ✅ covered | A refused transition returns a 4xx `data-error` fragment (`routes.py:198-213`) re-rendered in the row slot; nothing is written. |
 | error | tracker fragment fetch (list + history) | ✅ covered | A failed fragment fetch reuses the `base.html:57-65` transport-failure convention; with JS off every control is a real form/anchor, so the server-rendered page remains usable. |
-| populated | tracker table | ✅ covered | At a typical volume the table renders one row per application, at most the Settings-fixed page size per page, with the Stage badge column as the scanning anchor, notes truncated to one line (full text in `title=""`). |
+| populated | tracker table | ✅ covered | At a typical volume the table renders one row per application, at most the Settings-fixed page size per page, with the Stage badge column as the scanning anchor, notes wrapping onto multiple lines (full text also in `title=""`). |
 | populated | drafted answers (`#apply-answers`) | ✅ covered | Each stored question renders one block with its answer, evidence chips and, when applicable, the `.answer-warning` line; blocks stack in the saved question order. |
 | populated | inline history | ✅ covered | A row with a long history lists every event in chronological order inside the expandable `<details>`, and the entry count matches the summary's `History (n)`. |
 | partial | apply package | ✅ covered | A missing `apply_url` renders the documented fallback text instead of a dead anchor; a missing PDF is impossible while `ready` (the `ok` gate); a partially drafted question set renders per-question, never all-or-nothing. |
 | partial | tracker row | ✅ covered | A row with no `applied_at` or no `next_action_at` renders an em-dash rather than a fabricated date, and the empty note cell does not collapse the row. |
 | overflow | tracker table | ✅ covered | `.queue-table` ships `display:block; overflow-x:auto`, so on a narrow screen the table scrolls horizontally and never clips. |
-| overflow | long notes and long titles | 🧪 backstop | Titles and the latest-note cell wrap (`white-space:nowrap` stays off) and the note truncates to one line with the full string in `title=""`; a held-out UI-state test asserts the history partial renders the complete untruncated note string. |
+| overflow | long notes and long titles | 🧪 backstop | Titles wrap (`.listing-title`) and the latest-note cell wraps too (`.tracker-note`: `white-space:normal; overflow-wrap:anywhere; max-width:24rem`) with the full string also in `title=""`; the bounded column max-width + `overflow-wrap:anywhere` stop a long unbroken token forcing horizontal scroll; a held-out UI-state test asserts the history partial renders the complete untruncated note string. |
 | overflow | nav and filter labels | ✅ covered | The `Applications` nav link and the filter labels use the shipped `.nav-link` / `.field` text and no fixed width, so they wrap inside `base.html`'s header rather than overflowing. |
 | zero-one-many | tracker counts and toggles | ✅ covered | Count copy switches on `n` (`1 application` vs `N applications`), the history toggle reads `History (1)` vs `History (N)`, and the stage select always lists the fixed eight. |
 | zero-one-many | drafted answers and history entries | ✅ covered | One question or one history event renders through the same per-block markup as many, with no pluralised container label beyond the documented count. |

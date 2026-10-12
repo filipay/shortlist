@@ -18,14 +18,14 @@
   <td><span class="badge badge-stage-{{ row.status }}">{{ row.status | human_label }}</span></td>
   <td class="listing-posted">{{ row.applied_at | format_datetime }}</td>
   <td class="{% if row.is_overdue %}next-overdue{% endif %}">{{ row.next_action_at | format_datetime }}</td>
-  <td class="truncate" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
-  <td class="listing-actions">
+  <td class="tracker-note" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
+  <td class="tracker-actions">
     {# The guided transition (D-128/D-129). A refused transition returns the same
        `<tr id="application-row-N">` with `data-error`, swapped in place. Selecting
        `applied` reveals — and the server REQUIRES — an ok-only artefact picker
        (`row.ok_artifacts`, SQL-filtered to `compile_status = 'ok'`). With JS off the
        picker renders always and the server ignores it unless `status = applied`. #}
-    <form class="listing-action"
+    <form class="tracker-action"
           hx-post="/applications/{{ row.id }}/status"
           hx-target="#application-row-{{ row.id }}"
           hx-swap="outerHTML"
@@ -47,7 +47,7 @@
     {# Notes + next action are ordinary mutable columns (D-135): saving appends NO
        event. An absent/blank next action clears the date. The applied date is never
        an input here — it is stamped by the transition (D-130). #}
-    <form class="listing-action"
+    <form class="tracker-action"
           hx-post="/applications/{{ row.id }}"
           hx-target="#application-row-{{ row.id }}"
           hx-swap="outerHTML">

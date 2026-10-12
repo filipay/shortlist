@@ -712,6 +712,27 @@
     margin-right: 0;
   }
 
+  /* Tracker-row cell vocabulary (07-11, G-07-5/G-07-6). The tracker row stacks
+     labelled full-width controls, which the queue's nowrap/button-only
+     `.listing-*` contract cannot size; these wrap instead. The queue's shared
+     rules above are deliberately left untouched. */
+  .tracker-note {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 24rem;
+  }
+
+  .tracker-actions {
+    min-width: 16rem;
+    white-space: normal;
+    vertical-align: top;
+  }
+
+  .tracker-action {
+    display: block;
+    margin: 0 0 0.5rem;
+  }
+
   .listing-save-button,
   .listing-hide-button {
     padding: 0.375rem 0.625rem;
