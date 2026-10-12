@@ -22,10 +22,45 @@ import pytest
 from pydantic import BaseModel, ValidationError, WrapValidator
 from pydantic_core import PydanticUseDefault
 
+from app.db.repositories.apply_config_repo import DEFAULT_QUESTIONS
 from app.domain.schemas.probe import ProbeResult
 from app.domain.schemas.screening import ScreeningDraftResponse
 from app.llm import opencode_server
 from tests.llm.test_complete_structured import LIVE_MESSAGE_BODY, Recorder, _backend
+
+#: The literal captured drafting payload (G-07-7), recovered from the opencode host's
+#: own store. `answers` is a proper 4-element array, but `evidence_ids` arrives as the
+#: single-key wrapper `{"item": ...}` (answers 0 and 3), a wrapped bare id (answer 1),
+#: and the empty string (answer 2). The `17`/`3` lengths and the literal wrapper key
+#: `"item"`, the `"exp/self-employed-2026"` id and the `""` are the finding's repro
+#: (CONVENTIONS rule 3); the question text is the server-side `DEFAULT_QUESTIONS` set
+#: so the same fixture drives the route/stage test.
+LITERAL_CAPTURED_PAYLOAD: dict[str, object] = {
+    "answers": [
+        {
+            "question": DEFAULT_QUESTIONS[0],
+            "answer": "Because I build pipelines.",
+            "evidence_ids": {
+                "item": [f"bul/northwind-2021/{index}" for index in range(1, 18)]
+            },
+        },
+        {
+            "question": DEFAULT_QUESTIONS[1],
+            "answer": "I can start after my notice period.",
+            "evidence_ids": {"item": "exp/self-employed-2026"},
+        },
+        {
+            "question": DEFAULT_QUESTIONS[2],
+            "answer": "I am flexible on salary.",
+            "evidence_ids": "",
+        },
+        {
+            "question": DEFAULT_QUESTIONS[3],
+            "answer": "Yes, I have the right to work here.",
+            "evidence_ids": {"item": [f"bul/other/{index}" for index in range(1, 4)]},
+        },
+    ]
+}
 
 
 def _salvage(schema: type, payload: object) -> object:
@@ -203,6 +238,27 @@ def test_the_recorded_non_list_screening_payload_salvages_with_its_answer() -> N
     assert len(result.answers) == 1
     assert result.answers[0].answer == "Because I build pipelines."
     assert result.answers[0].evidence_ids == ["bul/northwind-labs-2021/1"]
+
+
+# --- the literal captured payload (G-07-7) ------------------------------------
+
+
+def test_the_literal_captured_payload_salvages_to_four_answers() -> None:
+    """The held-out fixture: the real `{"item": ...}` wrapper through production salvage.
+
+    On the pre-fix code `_salvage` re-raises a ``list_type`` ``ValidationError`` at
+    ``('answers', 0, 'evidence_ids')`` — the exact stored ``llm_calls.error``. After the
+    fix the wrapped `evidence_ids` unwrap and all four answers survive with their
+    17 / 1 / 0 / 3 evidence ids.
+    """
+    result = _salvage(ScreeningDraftResponse, LITERAL_CAPTURED_PAYLOAD)
+
+    assert isinstance(result, ScreeningDraftResponse)
+    assert len(result.answers) == 4
+    assert len(result.answers[0].evidence_ids) == 17
+    assert result.answers[1].evidence_ids == ["exp/self-employed-2026"]
+    assert result.answers[2].evidence_ids == []
+    assert len(result.answers[3].evidence_ids) == 3
 
 
 if __name__ == "__main__":  # pragma: no cover

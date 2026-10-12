@@ -19,6 +19,7 @@ from app.config import settings
 from app.db.models import ScreeningDraft
 from app.db.repositories.apply_config_repo import DEFAULT_QUESTIONS
 from app.domain.schemas.screening import ScreeningAnswer, ScreeningDraftResponse
+from app.llm import opencode_server
 from app.llm.base import StructuredCallResult
 from tests.api.test_apply_package import (
     FIXTURE,
@@ -27,6 +28,7 @@ from tests.api.test_apply_package import (
     _seed_listing,
 )
 from tests.conftest import OfflineLLMBackend
+from tests.llm.test_salvage import LITERAL_CAPTURED_PAYLOAD
 
 
 async def _stored_questions(
@@ -291,6 +293,40 @@ async def test_a_repeated_partial_post_is_idempotent_over_the_stored_set(
     assert set(after_first) == set(ad_hoc), "the ad-hoc rows survive the first partial POST"
     assert after_first == after_second, "a repeated partial POST must not grow or shrink the set"
     assert len(after_second) == 3
+
+
+async def test_the_literal_wrapped_payload_persists_four_rows(
+    client,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """G-07-7: the literal `{"item": ...}` payload is a usable draft, not a 502.
+
+    The real route + stage run with the payload routed through the PRODUCTION
+    ``_salvage`` (so the coercion is exercised, not bypassed). The wrapped
+    ``evidence_ids`` must unwrap, all four ``DEFAULT_QUESTIONS`` must be answered
+    (so the CR-01 partial guard does not trip), and four rows persist — never a
+    ``drafting_failed`` refusal.
+    """
+    (tmp_path / "cv.yaml").write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
+
+    listing_id = await _seed_listing(session_factory, index=7)
+    await _seed_artifact(session_factory, listing_id, status="ok")
+
+    salvaged = opencode_server._salvage(ScreeningDraftResponse, LITERAL_CAPTURED_PAYLOAD)
+    response = await _post_with_result(
+        client,
+        monkeypatch,
+        listing_id,
+        StructuredCallResult(ok=True, status="ok", data=salvaged),
+    )
+
+    assert response.status_code == 200
+    assert 'data-error="drafting_failed"' not in response.text
+    stored = await _stored_questions(session_factory, listing_id)
+    assert stored == list(DEFAULT_QUESTIONS), "all four asked questions persist"
 
 
 if __name__ == "__main__":  # pragma: no cover

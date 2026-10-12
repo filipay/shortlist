@@ -88,5 +88,32 @@ def test_a_scalar_answers_value_still_fails_loudly() -> None:
         ScreeningDraftResponse.model_validate({"answers": "not-an-answer"})
 
 
+# --- G-07-7: the single-key `{"item": ...}` wrapper is unwrapped; others are not ---
+
+
+def test_an_unrecognised_mapping_evidence_ids_still_fails_loudly() -> None:
+    """`{"nope": 1}` unwraps to the scalar 1, which is not a `list[str]`."""
+    with pytest.raises(ValidationError):
+        ScreeningAnswer.model_validate(
+            {"question": "Q", "answer": "A", "evidence_ids": {"nope": 1}}
+        )
+
+
+def test_a_multi_key_mapping_evidence_ids_still_fails_loudly() -> None:
+    """Only a single-key wrapper is unwrapped — a 2-key mapping is left to pydantic."""
+    with pytest.raises(ValidationError):
+        ScreeningAnswer.model_validate(
+            {"question": "Q", "answer": "A", "evidence_ids": {"a": 1, "b": 2}}
+        )
+
+
+def test_a_stray_top_level_key_alongside_answers_still_fails_loudly() -> None:
+    """`extra="forbid"` (A4) is NOT weakened by the wrapper unwrap."""
+    with pytest.raises(ValidationError):
+        ScreeningDraftResponse.model_validate(
+            {"answers": [], "item": {"item": []}}
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
