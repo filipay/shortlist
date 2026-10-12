@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
-status: executing
-stopped_at: Completed 07-13-PLAN.md
-last_updated: "2026-10-12T14:01:19.197Z"
+status: verifying
+stopped_at: Completed 07-14-PLAN.md
+last_updated: "2026-10-12T14:12:38.098Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: 2ae0d4720a6aa6d89cec384b1c0f3a2c52ff6a1d
+state_head: f2cf1a7e5064cedfe33951c345af2dfba5cd8162
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 70
-  completed_plans: 69
+  completed_plans: 70
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 07 (Assisted Apply + Tracker) — READY TO EXECUTE
 Plan: 10 of 10
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-12 — Phase 07 execution resumed (wave continue)
 
 Progress: [░░░░░░░░░░] 0%
@@ -103,6 +103,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P11 | 63 min | 2 tasks | 5 files |
 | Phase 07 P07-12 | 15min | 3 tasks | 8 files |
 | Phase 07 P13 | ~10min | 3 tasks | 4 files |
+| Phase 07 P14 | 9 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -221,6 +222,9 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-13: CR-01 closed by backfilling the template component rules into assets/tailwind/input.css FIRST, then regenerating static/vendor/app.css with the pinned tailwindcss/@tailwindcss/cli 4.3.3 (the Dockerfile:19 command), so the committed artifact IS the build of its source — a rebuild-before-backfill would delete them (the CR-01 mechanism).
 - [Phase 07]: 07-13: the eleven dynamic-suffix values (eight badge-stage-* over APPLICATION_STATUSES + three badge-score-tier-*) are an explicit asserted list because _literal_class_tokens drops a token ending in '-'; a justification test makes deleting a value itself a failure.
 - [Phase 07]: 07-13: the reproducibility guard emits a visible pytest.skip naming the arming command when node/the CLI is absent — never a silent pass; the Node-free source guards still fail closed in that environment (CONVENTIONS 2/6).
+- [Phase 07]: WR-01 (07-14): the wrapper unwrap is restricted to the literal provider key "item" (WRAPPER_KEY, named once) — a single-key mapping with any other key is returned untouched and fails loudly at pydantic, so the module docstring's claim is delivered rather than aspirational
+- [Phase 07]: WR-01 (07-14): the unwrap loop breaks when the inner value IS the outer Mapping, so the exported helper terminates on a caller-constructed self-reference (IN-02); the failure-class tests pass a LIST under an unknown key, replacing the two scalar false-name tests (CONVENTIONS rule 4)
+- [Phase 07]: IN-01 (07-14): TailoringPatch.ops/.gaps/.suggestions route through coerce_mapping_list, so every list-typed field on the salvage path shares one key-restricted unwrap; extra="forbid" and TOLERATED_SCHEMA_ERRORS are unchanged
 
 ### Pending Todos
 
@@ -255,6 +259,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T14:01:19.090Z
-Stopped at: Completed 07-13-PLAN.md
+Last session: 2026-10-12T14:12:37.991Z
+Stopped at: Completed 07-14-PLAN.md
 Resume file: None

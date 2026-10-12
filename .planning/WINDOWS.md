@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 7
 waived_count: 1
-fixed_count: 1
-total_count: 9
-last_updated: 2026-10-12T11:15:19.630Z
+fixed_count: 2
+total_count: 10
+last_updated: 2026-10-12T14:13:30.027Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,7 @@ last_updated: 2026-10-12T11:15:19.630Z
 | 7 | 3 | unrun-verify | tests/llm/test_trust_boundary.py |  | Operator-run live trust-boundary observation (success criterion 4): with the /settings selftest result page open on a real call, confirm the returned parts carry no tool invocation, the rendered system prompt is the module constant, and info_keys contains the structured payload key (closing Open Question Q1). The default lane proves the deny encoding with a fake transport; the live observation remains for the operator. | open |  | 2026-09-17T23:07:15.009Z |  |
 | 8 | 06 | unrun-verify |  |  | Layer-2 checks against a real pypdf extraction of a Tectonic-compiled tailored CV are unrun in the hermetic lane (extraction is stubbed; container latex lane only) | open |  | 2026-09-24T16:55:25.904Z |  |
 | 9 | 07 | unrun-verify | .planning/phases/07-assisted-apply-tracker/07-11-SUMMARY.md |  | 07-11 mandated rendered-rect human-check (button/date non-intersection at 1280px+375px) not performed: no layout engine in the repo; deferred to end-of-phase UAT | open |  | 2026-10-12T11:15:19.630Z |  |
+| 10 | 07 | deviation | app/domain/schemas/_coerce.py |  | 07-14 Rule 3: Task 2's declared verify command includes the IN-01 TailoringPatch tests that only Task 3's wiring makes green; Task 2's gate was run with -k 'not tailoring_patch' and the full combined gate passed at Task 3 | fixed |  | 2026-10-12T14:13:08.268Z | 2026-10-12T14:13:30.027Z |
 
 ````json
 [
@@ -134,6 +135,18 @@ last_updated: 2026-10-12T11:15:19.630Z
     "reason": "",
     "recorded_at": "2026-10-12T11:15:19.630Z",
     "resolved_at": null
+  },
+  {
+    "id": 10,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "app/domain/schemas/_coerce.py",
+    "line": null,
+    "description": "07-14 Rule 3: Task 2's declared verify command includes the IN-01 TailoringPatch tests that only Task 3's wiring makes green; Task 2's gate was run with -k 'not tailoring_patch' and the full combined gate passed at Task 3",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-12T14:13:08.268Z",
+    "resolved_at": "2026-10-12T14:13:30.027Z"
   }
 ]
 ````

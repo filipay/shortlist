@@ -324,7 +324,7 @@ Plans:
   3. User can record an application with a status stage, notes, and a next-action date/deadline, and every application links to the exact verified CV artefact that was sent.
   4. Application status changes are recorded as an append-only event history the user can view and manage.
 
-**Plans:** 13/14 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06); UAT gap-closure plans 07-11/07-12 planned (2026-10-12); re-verification gap-closure plans 07-13/07-14 planned (2026-10-12)
+**Plans:** 14/14 plans executed; 4 gap-closure plans executed (2026-10-05); CR-01 gap-closure plan 07-10 planned (2026-10-06); UAT gap-closure plans 07-11/07-12 planned (2026-10-12); re-verification gap-closure plans 07-13/07-14 planned (2026-10-12)
 **UI hint**: yes
 
 Plans:
@@ -361,7 +361,7 @@ Plans:
 **Gap closure — re-verification** *(planned 2026-10-12 from `07-VERIFICATION.md` `status: gaps_found` + `07-REVIEW.md`: CR-01, WR-01; wave 1 = 07-13/07-14)*
 
 - [x] 07-13-PLAN.md — CR-01: backfill the 33 template component rules into `assets/tailwind/input.css`, regenerate and commit `static/vendor/app.css` with the pinned Tailwind 4.3.3 CLI, and guard the build (source coverage + byte-identity), so the Docker image stops shipping an unstyled tracker/apply/detail/settings UI
-- [ ] 07-14-PLAN.md — WR-01: restrict the wire wrapper unwrap to the literal `"item"` key, bound the loop, and replace the two scalar-value tests with unknown-key-with-a-list-value cases, so code, docstrings and tests agree and the failure class — not an instance — is pinned (also closes IN-01/IN-02)
+- [x] 07-14-PLAN.md — WR-01: restrict the wire wrapper unwrap to the literal `"item"` key, bound the loop, and replace the two scalar-value tests with unknown-key-with-a-list-value cases, so code, docstrings and tests agree and the failure class — not an instance — is pinned (also closes IN-01/IN-02)
 
 ### Phase 8: Operations + Polish
 
@@ -395,7 +395,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | In Progress|  |
-| 7. Assisted Apply + Tracker | 13/14 | In Progress|  |
+| 7. Assisted Apply + Tracker | 14/14 | In Progress|  |
 | 8. Operations + Polish | 0/0 | Not started | - |
 
 ---
