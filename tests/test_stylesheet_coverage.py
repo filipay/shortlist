@@ -29,6 +29,31 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = PROJECT_ROOT / "app" / "web" / "templates" / "html"
 STYLESHEET = PROJECT_ROOT / "static" / "vendor" / "app.css"
+SOURCE_STYLESHEET = PROJECT_ROOT / "assets" / "tailwind" / "input.css"
+
+#: Classes reached through a dynamic suffix in a template, which the static token
+#: scan cannot derive: `_literal_class_tokens` drops a token that ends in `-`
+#: (`badge-stage-` from `badge-stage-{{ row.status }}`). Each value below is a
+#: real class the templates emit and must be defined in the source stylesheet.
+#: This mirrors the enumerated dynamic values the source already spells out for
+#: `run-status-*`, `health-*`, `rule-chip-*` and `run-row-*`.
+DYNAMIC_SUFFIX_CLASSES: tuple[str, ...] = (
+    # The eight stage badges: `_application_row.html:18` uses
+    # `badge-stage-{{ row.status }}`, over APPLICATION_STATUSES.
+    "badge-stage-discovered",
+    "badge-stage-queued",
+    "badge-stage-shortlisted",
+    "badge-stage-applied",
+    "badge-stage-interviewing",
+    "badge-stage-offer",
+    "badge-stage-rejected",
+    "badge-stage-withdrawn",
+    # The three score tiers: `listing_detail.html:56` / `_listing_row.html:50`
+    # use `badge-score-tier-{{ row.confidence_tier }}`.
+    "badge-score-tier-high",
+    "badge-score-tier-medium",
+    "badge-score-tier-low",
+)
 
 #: Classes deliberately not required to have a rule in the built stylesheet.
 #: Keys are the exact class token; values state the reason, so that an exemption
@@ -137,6 +162,53 @@ def test_the_selection_check_flags_an_unstyled_class() -> None:
     assert not _stylesheet_has_class(".badge-new{color:red}", "zz-sentinel-unstyled")
     # A shorter class must not be satisfied by a longer one.
     assert not _stylesheet_has_class(".badge-new{color:red}", "badge")
+
+
+def test_every_template_class_has_a_rule_in_the_source_stylesheet() -> None:
+    """The source is the definition site a fresh build emits from; the committed
+    artifact is read by `test_every_template_class_has_a_stylesheet_rule`, which
+    therefore cannot see a rule that exists only in the artifact. This Node-free
+    guard closes that: a class a template uses must be definable from the source.
+    """
+    css = SOURCE_STYLESHEET.read_text(encoding="utf-8")
+
+    missing: dict[str, list[str]] = {}
+    for path in _template_files():
+        for klass in sorted(_literal_class_tokens(path.read_text(encoding="utf-8"))):
+            if klass in EXEMPT_CLASSES:
+                continue
+            if not _stylesheet_has_class(css, klass):
+                missing.setdefault(klass, []).append(path.name)
+
+    assert missing == {}, (
+        "these classes appear in a template but have no rule in "
+        f"assets/tailwind/input.css: {missing}"
+    )
+
+
+def test_every_dynamic_suffix_class_is_defined_in_the_source_stylesheet() -> None:
+    """The eleven values `_literal_class_tokens` can never derive (it drops a
+    token ending in `-`) must be enumerated and defined explicitly."""
+    css = SOURCE_STYLESHEET.read_text(encoding="utf-8")
+
+    missing = [k for k in DYNAMIC_SUFFIX_CLASSES if not _stylesheet_has_class(css, k)]
+
+    assert missing == [], (
+        "these dynamic-suffix classes are used by a template but have no rule in "
+        f"assets/tailwind/input.css: {missing}"
+    )
+
+
+def test_the_dynamic_suffix_class_list_is_justified() -> None:
+    """Deleting a value to make the guard pass is itself a failure."""
+    assert len(DYNAMIC_SUFFIX_CLASSES) == 11
+    assert len(set(DYNAMIC_SUFFIX_CLASSES)) == len(DYNAMIC_SUFFIX_CLASSES)
+
+
+def test_the_source_guard_flags_an_unstyled_class() -> None:
+    """A guard that cannot fail is not a guard."""
+    assert _stylesheet_has_class(".answer-text{max-width:65ch}", "answer-text")
+    assert not _stylesheet_has_class(".other-rule{color:red}", "answer-text")
 
 
 def test_the_jinja_tokeniser_keeps_literals_and_drops_dynamic_prefixes() -> None:
