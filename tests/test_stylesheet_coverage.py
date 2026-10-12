@@ -22,6 +22,8 @@ that token is a real, statically-known class.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = PROJECT_ROOT / "app" / "web" / "templates" / "html"
 STYLESHEET = PROJECT_ROOT / "static" / "vendor" / "app.css"
 SOURCE_STYLESHEET = PROJECT_ROOT / "assets" / "tailwind" / "input.css"
+TAILWIND_CLI = PROJECT_ROOT / "node_modules" / ".bin" / "tailwindcss"
 
 #: Classes reached through a dynamic suffix in a template, which the static token
 #: scan cannot derive: `_literal_class_tokens` drops a token that ends in `-`
@@ -224,6 +227,42 @@ def test_the_jinja_tokeniser_keeps_literals_and_drops_dynamic_prefixes() -> None
         "dimmed",
         "rule-chip",
     }
+
+
+def test_the_committed_stylesheet_is_the_build_of_its_source(tmp_path: Path) -> None:
+    """The committed artifact must be the byte-identical build of `input.css`.
+
+    This is the guard CR-01 lacked: the artifact had been hand-extended, so a
+    real rebuild (``Dockerfile:19``) diverged from it and dropped 30 template
+    classes. Byte-identity is only meaningful when the Tailwind CLI version is
+    pinned (4.3.3, per ``Dockerfile:15-16``); a failure caused by a different
+    local Tailwind is resolved by pinning the toolchain, never by loosening this
+    assertion.
+    """
+    if shutil.which("node") is None or not TAILWIND_CLI.exists():
+        pytest.skip(
+            "byte-identity assertion is unarmed: the Tailwind CLI is not present. "
+            "Arm it with: npm install --no-save --no-audit --no-fund "
+            "tailwindcss@4.3.3 @tailwindcss/cli@4.3.3"
+        )
+
+    built = tmp_path / "app.css"
+    result = subprocess.run(
+        [str(TAILWIND_CLI), "-i", str(SOURCE_STYLESHEET), "-o", str(built), "--minify"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, f"tailwindcss build failed: {result.stderr}"
+
+    assert built.read_bytes() == STYLESHEET.read_bytes(), (
+        "static/vendor/app.css is not the build of assets/tailwind/input.css. "
+        "Regenerate it with the pinned CLI "
+        "(./node_modules/.bin/tailwindcss -i ./assets/tailwind/input.css "
+        "-o ./static/vendor/app.css --minify) — never edit the artifact by hand."
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
