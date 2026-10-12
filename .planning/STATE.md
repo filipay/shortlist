@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
-status: executing
-stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-10-12T11:15:53.194Z"
+status: verifying
+stopped_at: Completed 07-12-PLAN.md
+last_updated: "2026-10-12T11:33:28.375Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: b3a3c37ef0ebc1c87950a124cf5c450dfc7e42bc
+state_head: 9523b1095eb16db93119c707a063323127c6d37f
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 68
-  completed_plans: 67
+  completed_plans: 68
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 07 (Assisted Apply + Tracker) — EXECUTING
 Plan: 10 of 10
-Status: Executing Phase 07
+Status: Phase complete — ready for verification
 Last activity: 2026-10-12 — Phase 07 execution resumed (wave continue)
 
 Progress: [░░░░░░░░░░] 0%
@@ -101,6 +101,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P07 | 8min | 2 tasks | 11 files |
 | Phase 07 P10 | 8 min | 2 tasks | 3 files |
 | Phase 07 P11 | 63 min | 2 tasks | 5 files |
+| Phase 07 P07-12 | 15min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,9 @@ Recent decisions affecting current work:
 - [Phase 07]: CR-01 (07-10): a valid-but-partial drafting response is refused with drafting_partial (502) before replace_for_listing; ground_screening_answers emits one verdict per answer via positional zip(strict=False), so len(verdicts) < len(questions) is exactly a partial response and returning there keeps every stored row (including ad-hoc question text) that the wholesale DELETE would drop.
 - [Phase 07]: Phase 07: 07-11: the tracker row gets phase-scoped tracker-note/tracker-actions/tracker-action cells instead of editing the shared .listing-actions/.listing-action rules, so the queue row's one-line Save/Hide layout cannot regress (G-07-5/G-07-6)
 - [Phase 07]: Phase 07: 07-11: static/vendor/app.css carries the tracker rules by hand-append (not a full Tailwind rebuild), because assets/tailwind/input.css has been out of sync with the built artefact since phase 5 — a rebuild would silently drop every phase 6/7 component rule
+- [Phase 07]: G-07-7: the fix lives at the coercion boundary — TOLERATED_SCHEMA_ERRORS stays {"missing", "int_parsing"}; widening it to tolerate list_type would substitute the field default and silently discard every drafted answer (M1).
+- [Phase 07]: G-07-7: one shared pure helper (app/domain/schemas/_coerce.py) unwraps a SINGLE-key {"item": ...} wrapper on every list-typed wire field (screening answers/evidence_ids, cv Suggestion/GapFinding, ranking requirements); a scalar, a multi-key mapping and a stray top-level key still raise (extra=forbid A4 not weakened).
+- [Phase 07]: G-07-7: app/domain/cv.py purity docstring amended to name its one pure sibling import (app.domain.schemas._coerce, I/O-free) so the claim stays true (CONVENTIONS 6).
 
 ### Pending Todos
 
@@ -247,6 +251,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T11:15:53.079Z
-Stopped at: Completed 07-11-PLAN.md
+Last session: 2026-10-12T11:33:28.254Z
+Stopped at: Completed 07-12-PLAN.md
 Resume file: None
