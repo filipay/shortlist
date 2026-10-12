@@ -1,198 +1,177 @@
 ---
 phase: 07-assisted-apply-tracker
-reviewed: 2026-10-06T21:22:29Z
+reviewed: 2026-10-12T11:52:16Z
 depth: standard
-files_reviewed: 3
+files_reviewed: 12
 files_reviewed_list:
-  - app/api/apply.py
-  - tests/api/test_apply_package.py
+  - app/domain/cv.py
+  - app/domain/schemas/_coerce.py
+  - app/domain/schemas/ranking.py
+  - app/domain/schemas/screening.py
+  - app/web/templates/html/_application_row.html
+  - assets/tailwind/input.css
+  - static/vendor/app.css
+  - tests/api/test_applications_tracker.py
   - tests/api/test_apply_draft_errors.py
+  - tests/domain/test_coerce.py
+  - tests/domain/test_screening_schema.py
+  - tests/llm/test_salvage.py
 findings:
-  critical: 0
-  warning: 2
-  info: 3
-  total: 5
+  critical: 1
+  warning: 1
+  info: 2
+  total: 4
 status: issues_found
 ---
 
-# Phase 07: Code Review Report — CR-01 gap closure (plan 07-10)
+# Phase 07: Code Review Report (07-11 / 07-12 gap closure)
 
-**Reviewed:** 2026-10-06T21:22:29Z
+**Reviewed:** 2026-10-12T11:52:16Z
 **Depth:** standard
-**Files Reviewed:** 3
+**Files Reviewed:** 12
 **Status:** issues_found
-
-> Scope note: this is a **scoped re-review of the CR-01 gap-closure change only**
-> (commits `0c01ab2`, `94c3421`), replacing the earlier phase-wide review at this
-> path. It covers `app/api/apply.py` and the two named test modules. It does not
-> re-certify the rest of phase 07.
 
 ## Summary
 
-The CR-01 fix is **correct and well-targeted**. The new branch
-`if len(verdicts) < len(questions): return _answers_error("drafting_partial", …, 502)`
-(`app/api/apply.py:356-362`) sits textually between the pre-refusal
-`await session.commit()` (`:328`) and `screening_draft_repo.replace_for_listing`
-(`:364`), so a short model response can no longer reach the wholesale
-`DELETE`-then-`INSERT` at `screening_draft_repo.py:109-112`. The `<` comparison is
-the right one: `ground_screening_answers` iterates
-`zip(questions, response.answers, strict=False)` (`app/verify/screening.py:108`), so
-`len(verdicts) == min(len(questions), len(answers))` and only `<=` / `==` are
-attainable — `<` is exact, not off-by-one. The two updated package stubs now return
-one answer per asked `DEFAULT_QUESTIONS` entry, the reworded-question test still
-pins WR-04 positional merging, and the four new tests in
-`test_apply_draft_errors.py` genuinely fail if the guard is removed (a one-answer
-response against three seeded ad-hoc rows currently returns `200` and collapses the
-set to one row without it). `tests/api` as a whole: **356 passed, 1 xfailed**.
+Scope is the 07-11 tracker layout fix (G-07-5/G-07-6) and the 07-12 `{"item": ...}`
+single-key-wrapper coercion (G-07-7), reviewed against base `118d8ed`.
 
-Two defects remain. The first is the residual of the same wholesale-replace
-data-loss class the fix was meant to close: the guard only defends against a short
-*response*, not against a row that is added *between* the question-set snapshot and
-the replace — a concurrent tab adding an ad-hoc question while the model call runs
-is still silently deleted. The second is a latent order-dependence in the test
-assertions that the repo's own read path avoids.
+The two functional changes themselves are sound:
 
-## Per-File Assessment
+- The tracker row now uses phase-scoped `tracker-note` / `tracker-actions` /
+  `tracker-action` classes; the note cell wraps while retaining the full string in
+  `title=`, and the action cell drops the inherited `white-space: nowrap`. The queue's
+  `.listing-*` vocabulary is untouched, and the added tests are load-bearing (they
+  fail on the pre-fix markup/CSS).
+- The coercion helper is pure (stdlib only), the `extra="forbid"` posture and
+  `TOLERATED_SCHEMA_ERRORS` are untouched, and `list_type` is correctly still not
+  tolerated.
 
-### `app/api/apply.py`
-Guard placement, comparison, and refusal semantics are correct; the docstring's
-"three distinct 502 refusals, all writing no draft rows" is accurate for the
-`drafting_failed` / `drafting_empty` / `drafting_partial` paths. The `apply_url`
-`http_url` gate and the `|safe`-free rendering of answers are intact. The one
-substantive defect is the concurrency hole below.
-
-### `tests/api/test_apply_package.py`
-The two former one-answer stubs are now complete four-answer responses, so no test
-enshrines the shallow persistence case. The remaining issue is that the new ordered
-assertions read from un-ordered `select()` results.
-
-### `tests/api/test_apply_draft_errors.py`
-The regression, boundary, and idempotency tests are the right shape and would catch
-removal/inversion/`<=` mutation of the guard, as well as a reordering of the
-`drafting_empty` and `drafting_partial` branches. No correctness defect found.
+The serious finding is not in the Python logic: the committed stylesheet
+`static/vendor/app.css` is **not reproducible** from its source `assets/tailwind/input.css`,
+and the Docker runtime ships the freshly built stylesheet. A fresh build drops 35+
+template classes that the app relies on, and the repo's own stylesheet-coverage guard
+cannot see it because it reads the committed artifact. The coercion helper also carries
+a prose guarantee (and a test name) that the code does not deliver.
 
 ## Critical Issues
 
-None.
+### CR-01: `static/vendor/app.css` diverges from its Tailwind source; the Docker image ships an unstyled UI
+
+**File:** `static/vendor/app.css:64-69` (the appended rules), `assets/tailwind/input.css` (missing rules)
+**Issue:** The committed stylesheet is treated as the render of `assets/tailwind/input.css`
+(`input.css` header: "every semantic class used in the templates is defined here so
+Tailwind v4 emits a rule for it"), but it is not. 07-11 hand-appended the three
+`tracker-*` rules into `app.css` instead of only editing the source and re-running the
+CLI. Those three rules happen to also exist in `input.css`, so the tracker fix itself
+survives a rebuild — but the hand-edit pattern masks a pre-existing divergence that this
+change perpetuates.
+
+Running the exact command the Dockerfile runs:
+
+```
+./node_modules/.bin/tailwindcss -i ./assets/tailwind/input.css -o /tmp/built-app.css --minify
+```
+
+proves the source does not produce the committed file. Classes used by live templates but
+absent from a fresh build (all present only in the committed `app.css`):
+
+`badge-stage-*` (all 8 tracker status badge colours, used by `_application_row.html`),
+`answer-text`, `answer-warning`, `badge-score*`, `badge-flagged`, `badge-unranked`,
+`listing-detail-link`, `next-overdue`, `detail-empty`, `detail-not-ranked`,
+`detail-rationale`, `factor-table*`, `factor-absent`, `requirement-list`, `req-met`,
+`req-partial`, `req-gap`, `ranking-strip`, `queue-sort`, `queue-threshold`,
+`apply-link`, `apply-assurance`, `tailoring-empty`, `tailoring-review`, `cv-status`,
+`cv-download`, `cv-generate`, `weights-form`, `weights-note`, `weight-grid`,
+`weight-field`.
+
+`Dockerfile` line 116 is `COPY --from=assets /app/static/vendor ./static/vendor`, so the
+runtime image ships the **rebuilt** stylesheet, not the committed one — i.e. the deployed
+UI loses the tracker status colours, the drafted-answer styling, the listing-detail /
+factor / tailoring / apply / settings styling. Independently verified: the repo's own
+`tests/test_stylesheet_coverage.py` (which scans every `class="..."` token in every
+template and requires a selector in `static/vendor/app.css`) **fails** when pointed at the
+freshly built file, for the classes listed above. It passes today only because it reads
+the committed artifact, so the green suite gives false assurance.
+
+Secondary consequence of the same root cause: the appended `tracker-*` rules sit
+**unlayered** at the end of the committed file, whereas a real build emits them inside
+`@layer components`. Unlayered rules outrank `@layer utilities`, so dev and prod resolve a
+utility/component conflict on these cells differently (currently latent — the template
+puts no utility on those elements).
+
+**Fix:** Move every component class the templates depend on into `assets/tailwind/input.css`
+(the `@layer components` blocks), then regenerate `static/vendor/app.css` with the CLI
+command above and commit the regenerated file. Do not regenerate first — the source is
+missing the rules, so a rebuild-before-backfill would delete them. Consider adding a test
+that runs the CLI over `input.css` and asserts the committed `app.css` is byte-identical
+(this is the guard that would have caught this).
 
 ## Warnings
 
-### WR-01: A concurrent ad-hoc question added during the drafting call is still silently deleted
+### WR-01: The unwrap is arity-based, so the docstring's "unknown key fails loudly" guarantee is false
 
-**File:** `app/api/apply.py:294-298` (snapshot) and `:364-379` (replace); the delete itself is `app/db/repositories/screening_draft_repo.py:109-112`
+**File:** `app/domain/schemas/_coerce.py:1-29`, `tests/domain/test_coerce.py:43-48`, `tests/domain/test_screening_schema.py:94-99`
+**Issue:** `unwrap_single_key_mapping` unwraps on `len(value) == 1` alone; the wrapper key
+name is never inspected. The module docstring states the opposite:
 
-**Issue:** The guard closes the *partial-response* path but not the underlying
-wholesale-replace hazard. `draft_answers` snapshots the question set once, before the
-network call:
+> Every OTHER shape (a scalar, a multi-key mapping, **an unknown key**) is returned
+> untouched and fails loudly at pydantic
 
-```python
-drafts = await screening_draft_repo.read_for_listing(session, listing_id)
-questions = await apply_config_repo.read_questions(session)
-questions += [d.question_text for d in drafts if d.question_text not in questions]
-```
+and the plan repeats the claim ("every other shape keeps failing loudly"). In fact
+`{"anything": ["bul/x/1"]}` unwraps and validates (verified against
+`ScreeningAnswer.model_validate`). The two tests that appear to pin this —
+`test_an_unknown_single_key_wrapper_still_fails_loudly` and
+`test_an_unrecognised_mapping_evidence_ids_still_fails_loudly` — both pass a *scalar*
+value (`{"nope": 1}`), so they fail on the scalar, not on the unknown key; neither
+exercises an unknown key with a list value. This is a fail-open in a helper that
+processes untrusted model output, hidden behind a guarantee the code does not deliver
+(CONVENTIONS rule 6), and it is exactly the "test the failure class, not the instance"
+trap (rule 4).
 
-The model call then runs for up to a minute (`session.commit()` at `:174` releases
-the transaction first, so nothing is held). If a second tab POSTs
-`/listings/{id}/apply/question` in that window, its row is committed to the DB. When
-the first request resumes, the answer count matches its *stale* snapshot
-(`len(verdicts) == len(questions)`), the new `drafting_partial` guard passes, and
-`replace_for_listing` deletes **every** row for the listing — including the new
-ad-hoc question, whose text exists nowhere else. This is the same information-loss
-class as CR-01 (`screening_drafts.question_text` is the only record of an ad-hoc
-question) and it directly contradicts the 07-10 plan's concurrency assumption that
-"the `drafting_partial` guard returns before any write, so an interrupted/partial
-drafting attempt cannot half-replace the listing's rows." The codebase itself
-explicitly designs for multi-tab use (`add_question`'s docstring: "a page open in
-another tab keeps valid per-answer delete targets"), so this is a reachable path, not
-a theoretical one.
+Related: `coerce_mapping_list`'s docstring says "a `Mapping` -> `[value]` (a single
+item-shaped object)", but because the unwrap runs first a **single-key** item-shaped
+mapping is unwrapped to its value instead (e.g. `RankingResponse(requirements={"text":
+"Five years Python"})` raises rather than becoming one `RequirementFit`).
 
-**Fix:** Minimal — re-read after the model call and refuse if the stored set moved:
+The parent task frames the invariant as "stray/unknown keys must still raise". If that
+reading is intended, promote this to a blocker and check the key name; otherwise the
+docstrings and the two tests are wrong.
 
-```python
-current = await screening_draft_repo.read_for_listing(session, listing_id)
-if {d.question_text for d in current} != set(questions):
-    return _answers_error(
-        "drafting_stale",
-        "Your question list changed while drafting. Your existing drafts were kept.",
-        409,
-    )
-```
-
-Stronger (and the fix the original CR-01 review recommended) — make the repository
-upsert-by-question: delete only rows whose `question_text` is in the incoming verdict
-set, then upsert those, leaving unrelated rows untouched.
-
-### WR-02: New ordered assertions compare against an un-ordered query
-
-**File:** `tests/api/test_apply_package.py:553-567` and `:629-636`; `tests/api/test_apply_draft_errors.py:246-247`
-
-**Issue:** The tests assert exact list equality:
-
-```python
-rows = (await session.execute(
-    select(ScreeningDraft).where(ScreeningDraft.listing_id == listing_id)
-)).scalars().all()
-assert [r.question_text for r in rows] == list(apply_config_repo.DEFAULT_QUESTIONS)
-```
-
-`select()` has no `ORDER BY`, so the assertion depends on SQLite's incidental
-rowid-scan order. It happens to hold today (no index on `screening_drafts.listing_id`,
-and all rows in `replace_for_listing` share one `created_at`), but it is a latent
-flaky pattern and diverges from the project's own deterministic read
-(`screening_draft_repo.read_for_listing` orders by `(created_at, id)`). The same
-applies to `stored == asked` in `test_a_complete_response_persists_the_full_asked_set`.
-
-**Fix:** Order explicitly, e.g. `.order_by(ScreeningDraft.id)`, or reuse
-`screening_draft_repo.read_for_listing(session, listing_id)` for the assertions.
+**Fix:** Either restrict the unwrap to the literal provider wrapper key
+(`return value[key] if isinstance(value, Mapping) and len(value) == 1 and (key := next(iter(value))) == "item" else value`),
+or correct the docstring to say "any single-key Mapping (whatever its key)" and replace
+the two scalar-value tests with `{"nope": ["bul/x/1"]}`-shaped cases that pin the real
+behaviour.
 
 ## Info
 
-### IN-01: Duplicate config questions inflate the guard's denominator
+### IN-01: `TailoringPatch`'s top-level list fields carry no wrapper coercion
 
-**File:** `app/api/apply.py:295-298`, `app/db/repositories/apply_config_repo.py:40-42`
+**File:** `app/domain/cv.py:515-527`
+**Issue:** `TailoringPatch.ops`, `.gaps` and `.suggestions` are list-typed fields on a
+schema routed through the same salvage path (`app/pipeline/tailor.py:245` →
+`opencode_server._salvage`). If the provider wraps one of them as `{"item": [...]}`, the
+call fails exactly as `answers`/`evidence_ids` used to. The 07-12 plan/summary honestly
+scope the fix to "the five named list-typed fields", so this is not a broken guarantee —
+it is residual exposure to the same documented provider class on the tailoring call.
+**Fix:** Route these three fields through `coerce_mapping_list` too, for one behaviour on
+every list-typed wire field, or record the exclusion explicitly in `_coerce.py`'s
+docstring.
 
-**Issue:** `read_questions`/`_clean` preserve order and drop blanks but never dedupe,
-and `_answer_rows` later collapses duplicate `question_text` values. If the user
-stores the same question twice, `len(questions)` counts both while a well-behaved
-model may return one answer per *distinct* question; the new `drafting_partial`
-check then false-refuses a legitimate drafting attempt (and, on the success path,
-`replace_for_listing` would persist two indistinguishable rows). Related to the
-prior review's IN-03; the new guard adds a second symptom to it.
+### IN-02: `unwrap_single_key_mapping` can loop forever on a self-referential Mapping
 
-**Fix:** Dedupe in `_clean`/`read_questions` while preserving first-seen order, or
-enforce `UniqueConstraint("listing_id", "question_text")` in the repository.
-
-### IN-02: The answers/error fragments re-emit `id="apply-answers"` into an `innerHTML` target
-
-**File:** `app/api/apply.py:108-112` (`_answers_error`) and `:188-190` (`_answers_response`), responding to `app/web/templates/html/_screening_drafts.html:75,89`
-
-**Issue:** The HTMX forms target `#apply-answers` with `hx-swap="innerHTML"`, and
-`base.html` forces the swap for HTML error bodies. But both server fragments return a
-root element that *is* `#apply-answers` (`<section id="apply-answers">` /
-`<div id="apply-answers">`), so each swap places a second element with the same id
-inside the first — a stable duplicate-id document rather than an accumulation, but
-invalid HTML that can confuse selection/assertive-tech references. Pre-existing and
-shared with the tailoring region, so recorded as Info only.
-
-**Fix:** Return the inner content without the region id (target stays `innerHTML`), or
-change the form to `hx-swap="outerHTML"` and keep the root id.
-
-### IN-03: The refusal discards the partial answers the model did return
-
-**File:** `app/api/apply.py:356-362`
-
-**Issue:** On a partial response the route returns `drafting_partial` and stores
-nothing new, so the model's usable answers are thrown away and, if the model
-consistently returns fewer answers than asked, the user can never draft at all. This
-is the trade-off the 07-10 plan chose deliberately (refuse rather than risk the
-delete), and it is strictly safer than the prior behavior — noted so the UX ceiling
-is tracked rather than silently accepted.
-
-**Fix:** The upsert-by-question path in WR-01 both removes the concurrency hole and
-lets a partial response be applied without deleting unanswered rows.
+**File:** `app/domain/schemas/_coerce.py:27-29`
+**Issue:** The `while isinstance(value, Mapping) and len(value) == 1` loop never
+terminates if a Mapping's single value is itself (e.g. `d = {}; d["x"] = d`). This is not
+reachable from the wire (payloads are `json.loads`-derived and cannot be cyclic), but the
+helper is a shared pure-function exported in `__all__` and could be called with a
+caller-constructed dict.
+**Fix:** Bound the loop (e.g. stop if the next value `is value`) or note the acyclic
+precondition in the docstring.
 
 ---
 
-_Reviewed: 2026-10-06T21:22:29Z_
+_Reviewed: 2026-10-12T11:52:16Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
