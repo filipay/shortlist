@@ -1,4 +1,4 @@
-# Job Search Copilot
+# Shortlist
 
 > Working title — rename freely once branding matters.
 

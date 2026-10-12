@@ -82,8 +82,8 @@ drop the sandbox the primary engine has. Do not "simplify" that asymmetry away.
 hand, to *measure* the fallback:
 
 ```bash
-docker build -f Dockerfile.texlive -t job-search-copilot:texlive .
-LATEX_ENGINE=texlive docker run --rm job-search-copilot:texlive pytest -m latex
+docker build -f Dockerfile.texlive -t shortlist:texlive .
+LATEX_ENGINE=texlive docker run --rm shortlist:texlive pytest -m latex
 ```
 
 Record the image size **in megabytes**, the build duration **in minutes**, the

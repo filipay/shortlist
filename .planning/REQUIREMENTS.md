@@ -1,4 +1,4 @@
-# Requirements: Job Search Copilot
+# Requirements: Shortlist
 
 **Defined:** 2026-09-15
 **Core Value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.

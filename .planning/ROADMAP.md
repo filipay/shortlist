@@ -1,4 +1,4 @@
-# Roadmap: Job Search Copilot
+# Roadmap: Shortlist
 
 ## Overview
 

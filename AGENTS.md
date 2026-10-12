@@ -2,7 +2,7 @@
 
 ## Project
 
-**Job Search Copilot**
+**Shortlist**
 
 A local, self-hosted job-search pipeline for the author and a few friends. It
 aggregates listings from pluggable sources (LinkedIn and Indeed first), cuts them

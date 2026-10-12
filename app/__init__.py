@@ -1,1 +1,1 @@
-"""Job Search Copilot application package."""
+"""Shortlist application package."""

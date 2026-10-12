@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Job Search Copilot", lifespan=lifespan)
+    app = FastAPI(title="Shortlist", lifespan=lifespan)
 
     # Vendored assets only (UI-07) — no CDN. The directory is created if absent
     # so the app is importable before the asset build runs.

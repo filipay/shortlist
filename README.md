@@ -1,4 +1,4 @@
-# Job Search Copilot
+# Shortlist
 
 A local, self-hosted job-search pipeline. It aggregates listings, cuts them down with
 deterministic rules, ranks the survivors with an LLM against your CV, drafts a tailored CV

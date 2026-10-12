@@ -1,6 +1,6 @@
 # Project Research Summary
 
-**Project:** Job Search Copilot
+**Project:** Shortlist
 **Domain:** Local, self-hosted AI-assisted job-search pipeline (aggregation → deterministic filter → LLM ranking → LaTeX CV tailoring → assisted apply → tracker)
 **Researched:** 2026-09-15
 **Confidence:** MEDIUM-HIGH

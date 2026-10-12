@@ -10,7 +10,7 @@ import pytest
 
 from app.domain.tex import sanitise_preamble
 
-_MARKER = "% [pdftex-only, commented by job-search-copilot]"
+_MARKER = "% [pdftex-only, commented by shortlist]"
 
 _PREAMBLE = r"""\documentclass{article}
 \usepackage{fontspec}

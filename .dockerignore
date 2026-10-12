@@ -17,6 +17,6 @@
 /.env
 /jobsearch.db
 /pytest-of-unknown
-/job_search_copilot.egg-info
+/shortlist.egg-info
 **/__pycache__
 **/*.pyc

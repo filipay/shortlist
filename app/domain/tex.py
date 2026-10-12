@@ -231,7 +231,7 @@ def sanitise_preamble(tex: str) -> tuple[str, list[str]]:
         if match is not None and guard_depth == 0:
             removed.append(match.group("cmd"))
             out_lines.append(
-                "% [pdftex-only, commented by job-search-copilot] " + line.lstrip()
+                "% [pdftex-only, commented by shortlist] " + line.lstrip()
             )
         else:
             out_lines.append(line)
