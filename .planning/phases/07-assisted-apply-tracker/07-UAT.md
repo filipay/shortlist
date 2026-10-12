@@ -1,161 +1,67 @@
 ---
-status: diagnosed
+status: testing
 phase: 07-assisted-apply-tracker
 source: [07-VERIFICATION.md]
-started: 2026-10-06T21:16:59Z
-updated: 2026-10-12T09:50:00Z
+started: 2026-10-12T15:45:00Z
+updated: 2026-10-12T15:45:00Z
 ---
 
 <!-- Presentation preference (user): every UAT checkpoint MUST be shown with exact, step-by-step instructions (setup + numbered actions + what to observe + how to reply). Never present the bare expected-behavior line alone. -->
 
 ## Current Test
 
-[testing complete]
+[testing not started]
 
 ## Tests
 
-### 1. Tracker note-fidelity (backstop truth, 07-04)
+### 1. Tracker layout re-run (G-07-5 + G-07-6)
 expected: |
-  Open `/applications` and inspect a row whose note is longer than the cell; read the DOM
-  `title` attribute. The note truncates to one line with an ellipsis and the complete
-  untruncated string is present in `title=""`.
-result: issue
-reported: "I think the notes should wrap and scroll vertically rather than do a horizontal scroll, since actions are at the end of that table. Also \"Update Status\" has dd/mm/yyyy overlaying it, making it hard to read and press. I dont see it wrapping"
-severity: major
+  Record an application with a ~300-character note and a next-action date; open `/applications`
+  at 1280px and 375px; run the rendered-rect snippet from 07-11-PLAN Task 2 per row.
+  Note wraps (no horizontal scrollbar); `intersects: false` for every row; `Update status`
+  legible with no `dd/mm/yyyy` glyph band.
+why_human: |
+  Runtime layout — no layout engine in the repo. The mandated rendered-rect check was not
+  performed (WINDOWS #9 open).
+result: pending
 
-### 2. Clipboard multi-paragraph copy fidelity (backstop truth, 07-05)
+### 2. Drafting round-trip + clipboard re-run (G-07-7, backstop)
 expected: |
-  Open an apply package, draft or seed a multi-paragraph answer, click `Copy answer`, and
-  paste into a scratch field. The paste equals the full untruncated multi-paragraph answer;
-  the button label flips to `Copied` for ~2s (and stays `Copy answer` if the clipboard API
-  is unavailable).
-result: issue
-reported: "The drafting call did not return a usable response. Your existing drafts were kept. So there is no answer i can copy for http://192.168.0.105:8000/listings/109/apply"
-severity: major
+  Click `Draft answers` on a package whose provider wraps a list-typed field as `{"item": …}`;
+  confirm four reviewable answers render, then click `Copy answer` and paste into a scratch
+  field. The paste reproduces the full untruncated multi-paragraph answer.
+why_human: |
+  Depends on the live provider emission and the browser clipboard; the deterministic half is
+  tested but not re-run live.
+result: pending
 
-### 3. MVP-mode / goal-format discrepancy (developer decision)
+### 3. MVP mode / goal-format (developer decision)
 expected: |
-  Either the `mvp` annotation is confirmed intentional (standard goal-backward verification,
-  as performed here) or the developer runs `/gsd mvp-phase 7` to convert the goal before any
-  User-Flow-Coverage report.
-result: pass (2026-10-06) — the `mvp` annotation is confirmed intentional; standard goal-backward verification (as performed) is sufficient, no goal rewrite needed.
+  Either the `mvp` annotation is confirmed intentional (standard goal-backward verification, as
+  performed here) or the developer runs `/gsd mvp-phase 7` to convert the goal.
+why_human: Developer decision, not a code check.
+result: pending
 
 ## Summary
 
 total: 3
-passed: 1
-issues: 2
-pending: 0
+passed: 0
+issues: 0
+pending: 3
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-- gap_id: G-07-5
-  truth: "The tracker Notes column is readable without horizontal scrolling; long notes wrap and the row's actions remain reachable."
-  status: failed
-  reason: "User reported: notes should wrap and scroll vertically rather than horizontal scroll, since actions are at the end of that table (and 'I dont see it wrapping')."
-  severity: major
-  test: 1
-  root_cause: |
-    The tracker row reuses the queue's non-wrapping table-cell vocabulary, so every column is
-    forced to max-content width and the table overflows horizontally instead of wrapping.
-    (1) _application_row.html:21 puts `.truncate` on the note <td>; `.truncate` in the built
-    static/vendor/app.css is `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` with
-    no width, and in an auto-layout table a nowrap cell's min-content width is the entire note —
-    so the column expands to fit the whole note instead of truncating ("I dont see it wrapping").
-    (2) `.queue-table` (assets/tailwind/input.css:531-539) is `display:block; overflow-x:auto`
-    (`table{width:100%}` at :152-155), so that column growth renders as a horizontal scrollbar.
-    (3) `.listing-actions` (input.css:701-704, `min-width:10rem; white-space:nowrap`) forces the
-    last (Actions) column to sum-of-forms min-content, so the actions sit off the right edge
-    behind the scroll ("actions are at the end of that table"). `.truncate` is used nowhere else.
-  artifacts:
-    - path: "app/web/templates/html/_application_row.html"
-      issue: "line 21 note <td> carries `.truncate` (nowrap) in an auto-layout table"
-    - path: "static/vendor/app.css"
-      issue: ".truncate{text-overflow:ellipsis;white-space:nowrap;overflow:hidden} (no width) — built Tailwind output, regenerated by the Dockerfile"
-    - path: "assets/tailwind/input.css"
-      issue: ".queue-table{display:block;overflow-x:auto;max-width:100%} (:531-539); .listing-actions{min-width:10rem;white-space:nowrap} (:701-704); .listing-action{display:inline-block} (:706-709)"
-  missing:
-    - "Drop `.truncate` on _application_row.html:21 and let the note wrap (white-space:normal; overflow-wrap:anywhere;) plus a column max-width; keep title=\"\" for the full string"
-    - "Make the tracker action cell stop forcing min-content width (allow the two forms to wrap/stack) via a phase-scoped tracker-* action-cell class (per 07-UI-SPEC.md:34) rather than changing the shared .listing-actions used by the queue"
-    - "Edit assets/tailwind/input.css and regenerate static/vendor/app.css (Tailwind build); editing the built file alone would be overwritten"
-  debug_session: ".planning/debug/DEBUG-tracker-notes-wrap-g07-5.md"
+No open gaps. The previous round's G-07-5, G-07-6 and G-07-7 were diagnosed and fixed by
+07-11/07-12 and re-verified closed on 2026-10-12 (`07-VERIFICATION.md`, `status: human_needed`,
+`score: 16/18`, `gaps: []`). Their diagnoses live in
+`.planning/debug/DEBUG-tracker-notes-wrap-g07-5.md`,
+`.planning/debug/DEBUG-tracker-control-overlap-g07-6.md` and
+`.planning/debug/DEBUG-drafting-no-usable-answers-g07-7.md`, plus this file's prior revision in
+git history.
 
-- gap_id: G-07-6
-  truth: "The row's controls do not overlap: the 'Update status' button is legible and clickable, with no date field (dd/mm/yyyy) overlaid on it."
-  status: failed
-  reason: "User reported: 'Update Status' has dd/mm/yyyy overlaying it, making it hard to read and press."
-  severity: major
-  test: 1
-  root_cause: |
-    The tracker action cell (_application_row.html:22) reuses the queue's button-only
-    action-cell classes on a cell that now holds labelled width:100% form controls.
-    `.listing-actions{white-space:nowrap}` (assets/tailwind/input.css:701-704) is inherited into
-    the forms and `.listing-action{display:inline-block}` (:706-709) makes each form a
-    shrink-to-fit box; the `width:100%` select (:299-313) fills the whole form content box and
-    nowrap suppresses the soft wrap before the following `Update status` button
-    (_application_row.html:45), so the button overflows its form's right edge by its full width.
-    The second form (:50-59) begins exactly at that edge and its `Next action` date input — the
-    leading item of its last line box — paints on top of the overflowing button. No
-    position:absolute/float/negative-margin is involved; it is pure inline-block overflow paint
-    order, confirmed by pixel geometry in .planning/ui-reviews/test-applications.png (button band
-    x2141-2409 sits at the select's right edge, entirely outside its form, over form 2's date
-    input). Queue rows are unaffected because their forms contain only hidden inputs + buttons.
-  artifacts:
-    - path: "app/web/templates/html/_application_row.html"
-      issue: "lines 22,28,34-45,50-59 reuse .listing-actions/.listing-action around full-width controls + a date input"
-    - path: "assets/tailwind/input.css"
-      issue: ".listing-actions (:701-704) and .listing-action (:706-709); input/select{width:100%} (:299-313); .field-label (:843-849)"
-    - path: "static/vendor/app.css"
-      issue: "built artefact holding the offending rules (rebuild required after any CSS change)"
-  missing:
-    - "Give the tracker action cell its own scoped class whose layout allows normal wrapping and full-width stacked forms (white-space:normal / display:block on the forms), leaving .listing-actions/.listing-action untouched for the queue"
-    - "Regenerate static/vendor/app.css via the Tailwind build"
-    - "Verify with a geometry assertion (the Update status button rect must not intersect the date input rect), not a presence-only check — scoped to the JS-on, picker-hidden default state that ships"
-  debug_session: ".planning/debug/DEBUG-tracker-control-overlap-g07-6.md"
-
-- gap_id: G-07-7
-  truth: "Clicking 'Draft answers' on an apply package returns usable drafted answers that the user can review and copy."
-  status: failed
-  reason: "User reported: 'The drafting call did not return a usable response. Your existing drafts were kept.' with no answer available to copy on /listings/109/apply."
-  severity: major
-  test: 2
-  root_cause: |
-    CONFIRMED (the original pre-diagnosis was wrong — `answers` was always a proper 4-element
-    array). The real defect is one level deeper: the model encodes the list-typed field
-    `ScreeningAnswer.evidence_ids` as a single-key array-wrapper object `{"item": <value>}`
-    (sometimes `{"item": [...]}`, once the raw string ""). `_coerce_evidence_ids`
-    (app/domain/schemas/screening.py:37-53) tolerates None/str/list/tuple but returns any Mapping
-    untouched, so pydantic raises `list_type` ("Input should be a valid list") at loc
-    ('answers', 0, 'evidence_ids'). `_salvage` re-raises (list_type is deliberately excluded from
-    TOLERATED_SCHEMA_ERRORS, app/llm/opencode_server.py:93,912-930) -> status="invalid" ->
-    `draft_screening_answers` returns None (app/pipeline/draft.py:212-213) -> route 502
-    `drafting_failed` with no rows written (existing drafts preserved) (app/api/apply.py:335-341).
-    The G-07-2 fix WAS deployed (the reported copy only exists from commit c993c7a) and still
-    failed: it handled `evidence_ids=""` but not the `{"item":...}` Mapping. Given the wrapper the
-    failure is deterministic (the "intermittence" is only the provider's emission); prompt
-    tightening cannot fix it (the G-07-2 prompt already demanded a JSON array and the model
-    wrapped it anyway). The raw payload was recovered read-only from the opencode host store
-    (/home/opencode/.local/share/opencode/opencode.db, session ses_eec95112fffesM3mxIMTW5scmO,
-    msg_1136b148b001KdoS5UXS9WsJ51, tool part prt_1136b7588001Dcuq1W7cRYId6M, tool=StructuredOutput).
-    Same class affects a tailoring call (id 48, gaps[0].evidence_ids == "") and possibly ranking.
-  artifacts:
-    - path: "app/domain/schemas/screening.py"
-      issue: "_coerce_evidence_ids (:37-53) is the defect — a single-key array-wrapper Mapping ({\"item\": ...}) is not unwrapped; _coerce_answers (:63-80) has the same blind spot for a stray top-level `item`"
-    - path: "app/llm/opencode_server.py"
-      issue: "TOLERATED_SCHEMA_ERRORS (:93) and _salvage (:912-930) correctly re-raise list_type — must NOT be widened (M1 hazard: silently discarding answers)"
-    - path: "app/pipeline/draft.py"
-      issue: ":176-185,212-213 returns None on not ok"
-    - path: "app/api/apply.py"
-      issue: ":335-341 maps None -> 502 drafting_failed (correct given None)"
-    - path: "app/domain/cv.py"
-      issue: "GapFinding/Suggestion.evidence_ids are the same list-typed class"
-    - path: "tests/domain/test_screening_schema.py"
-      issue: ":85-88 and tests/llm/test_salvage.py:184-205 encode the inferred (wrong) shape"
-  missing:
-    - "Unwrap a single-key array-wrapper Mapping ({\"item\": ...}, looping for nesting) in _coerce_evidence_ids and _coerce_answers; a Mapping is never valid for list[str], so this is invalid->valid only, every other shape still fails loudly"
-    - "Extract the unwrap to ONE shared helper and reuse it on every list-typed field of the wire-adjacent schemas (screening, GapFinding/Suggestion, possibly RankingResponse.requirements)"
-    - "Do NOT widen TOLERATED_SCHEMA_ERRORS"
-    - "Held-out fixture: the literal payload through _salvage(ScreeningDraftResponse, ...) asserting 4 answers with 17/1/0/3 evidence ids (fails today); plus fail-loud cases (scalar answers, unknown key, {\"nope\":1} still raise), a nested {\"item\":{\"item\":[...]}} case, and a route/stage assertion that 4 rows persist instead of drafting_failed"
-  debug_session: ".planning/debug/DEBUG-drafting-no-usable-answers-g07-7.md"
+Non-blocking carry-forward (not a gap): **WR-02** — `unwrap_single_key_mapping` bounds only the
+direct self-reference, so a two-node mutual `{"item": …}` cycle loops while its docstring claims
+self-reference "cannot hang". Not wire-reachable (JSON-derived payloads cannot be cyclic).
+Recommended follow-up: visited-identity bound + honest prose (`/gsd-code-review 07 --fix`).
