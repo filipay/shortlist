@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: 07
 current_phase_name: Assisted Apply + Tracker
 status: executing
-stopped_at: Completed 07-12-PLAN.md
-last_updated: "2026-10-12T13:33:27.629Z"
+stopped_at: Completed 07-13-PLAN.md
+last_updated: "2026-10-12T14:01:19.197Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: 0eff19b86622879edf9e91e00b46c0b15dd485f4
+state_head: 2ae0d4720a6aa6d89cec384b1c0f3a2c52ff6a1d
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 70
-  completed_plans: 68
+  completed_plans: 69
   percent: 0
 ---
 
@@ -102,6 +102,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P10 | 8 min | 2 tasks | 3 files |
 | Phase 07 P11 | 63 min | 2 tasks | 5 files |
 | Phase 07 P07-12 | 15min | 3 tasks | 8 files |
+| Phase 07 P13 | ~10min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,9 @@ Recent decisions affecting current work:
 - [Phase 07]: G-07-7: the fix lives at the coercion boundary — TOLERATED_SCHEMA_ERRORS stays {"missing", "int_parsing"}; widening it to tolerate list_type would substitute the field default and silently discard every drafted answer (M1).
 - [Phase 07]: G-07-7: one shared pure helper (app/domain/schemas/_coerce.py) unwraps a SINGLE-key {"item": ...} wrapper on every list-typed wire field (screening answers/evidence_ids, cv Suggestion/GapFinding, ranking requirements); a scalar, a multi-key mapping and a stray top-level key still raise (extra=forbid A4 not weakened).
 - [Phase 07]: G-07-7: app/domain/cv.py purity docstring amended to name its one pure sibling import (app.domain.schemas._coerce, I/O-free) so the claim stays true (CONVENTIONS 6).
+- [Phase 07]: 07-13: CR-01 closed by backfilling the template component rules into assets/tailwind/input.css FIRST, then regenerating static/vendor/app.css with the pinned tailwindcss/@tailwindcss/cli 4.3.3 (the Dockerfile:19 command), so the committed artifact IS the build of its source — a rebuild-before-backfill would delete them (the CR-01 mechanism).
+- [Phase 07]: 07-13: the eleven dynamic-suffix values (eight badge-stage-* over APPLICATION_STATUSES + three badge-score-tier-*) are an explicit asserted list because _literal_class_tokens drops a token ending in '-'; a justification test makes deleting a value itself a failure.
+- [Phase 07]: 07-13: the reproducibility guard emits a visible pytest.skip naming the arming command when node/the CLI is absent — never a silent pass; the Node-free source guards still fail closed in that environment (CONVENTIONS 2/6).
 
 ### Pending Todos
 
@@ -251,6 +255,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T11:33:28.254Z
-Stopped at: Completed 07-12-PLAN.md
+Last session: 2026-10-12T14:01:19.090Z
+Stopped at: Completed 07-13-PLAN.md
 Resume file: None
