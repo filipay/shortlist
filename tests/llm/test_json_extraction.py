@@ -1,10 +1,11 @@
 """GEN-2 — `_extract_json` tolerates fences and prose, and fails loud otherwise.
 
 V2 `generate` returns plain model prose, so the JSON object may arrive wrapped in a
-```json fence or preceded by a sentence. `_extract_json` takes the OUTERMOST brace
-block (quoting-aware, so a `}` inside a string cannot close the block early), and
-returns a genuinely brace-free body UNCHANGED — so `_salvage` still fails loudly on
-non-JSON rather than the extractor inventing a value (D-141).
+```json fence or preceded by a sentence. `_extract_json` tries each balanced brace
+block in order and returns the first that parses as JSON (quoting-aware, so a `}`
+inside a string cannot close the block early), and returns a genuinely brace-free
+body UNCHANGED — so `_salvage` still fails loudly on non-JSON rather than the
+extractor inventing a value (D-141).
 """
 
 from __future__ import annotations
@@ -37,6 +38,25 @@ def test_the_outermost_brace_block_is_taken_when_braces_are_nested() -> None:
 def test_a_brace_inside_a_string_does_not_close_the_block() -> None:
     text = '{"a": "a } brace", "b": 2}'
     assert _extract_json(text) == text
+
+
+# --- WR-01: a leading prose brace pair must not shadow the real object ---------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('use {x} then {"a":1}', '{"a":1}'),
+        ('The set {a, b} is not JSON. Here: {"a": 1}', '{"a": 1}'),
+    ],
+)
+def test_a_leading_prose_brace_pair_does_not_shadow_the_object(
+    text: str, expected: str
+) -> None:
+    """WR-01 literal repros: committing to the FIRST balanced block returned the
+    prose pair (`{x}` / `{a, b}`) and discarded the JSON object that follows; the
+    parse-first search must return the object instead."""
+    assert _extract_json(text) == expected
 
 
 def test_an_escaped_quote_inside_a_string_is_respected() -> None:

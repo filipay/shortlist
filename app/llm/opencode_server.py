@@ -1084,19 +1084,12 @@ def _dig(payload: object, path: tuple[str, ...]) -> object:
     return node
 
 
-def _extract_json(text: str) -> str:
-    """The outermost `{…}` block of `text`, tolerating fences and leading prose.
+def _balanced_brace_span(text: str, start: int) -> str | None:
+    """The `{…}` block starting at `start`, or None when it never closes.
 
-    V2 `generate` returns plain model prose, so the JSON object may be wrapped in
-    a ```json fence or preceded by a sentence. This returns the substring from the
-    first `{` to its matching outermost `}` (brace depth tracked, quotes and
-    backslash escapes respected so a brace inside a string value cannot close the
-    block early). When no brace block is found the input is returned UNCHANGED, so
-    a genuinely non-JSON body still fails loudly downstream in `_salvage` (D-141).
+    Quote- and escape-aware, so a brace inside a string value cannot close the
+    block early. `start` is assumed to be a `{`.
     """
-    start = text.find("{")
-    if start == -1:
-        return text
     depth = 0
     in_string = False
     escaped = False
@@ -1117,7 +1110,37 @@ def _extract_json(text: str) -> str:
             depth -= 1
             if depth == 0:
                 return text[start : index + 1]
-    return text
+    return None
+
+
+def _extract_json(text: str) -> str:
+    """The JSON object inside `text`, tolerating fences, prose and stray braces.
+
+    V2 `generate` returns plain model prose, so the JSON object may be wrapped in
+    a ```json fence or preceded by a sentence. A leading sentence can itself carry
+    a balanced brace pair (``use {x} then {"a":1}``), so committing to the FIRST
+    block would return the prose and discard the real object (WR-01). Instead each
+    balanced `{…}` block is tried in order and the first that
+    `from_json(..., allow_partial=True)` accepts is returned; when none parses the
+    FIRST balanced block is returned unchanged, so a genuinely non-JSON body still
+    fails loudly downstream in `_salvage` (D-141). With no balanced block at all
+    (including an unterminated `{`) the input is returned UNCHANGED.
+    """
+    first_span: str | None = None
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        span = _balanced_brace_span(text, start)
+        if span is None:
+            continue
+        if first_span is None:
+            first_span = span
+        try:
+            from_json(span, allow_partial=True)
+        except ValueError:
+            continue
+        return span
+    return first_span if first_span is not None else text
 
 
 def _part_types(payload: object) -> list[str] | None:
