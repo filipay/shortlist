@@ -43,6 +43,18 @@ class SurfaceProbe:
     error: str | None
 
 
+#: Process-local verdict cache keyed by `base_url`. The backend is built per
+#: request by `get_llm_backend()`, so a per-instance cache would re-probe on every
+#: call; this one lives for the process (RESEARCH A2). An `unknown` verdict is
+#: NEVER cached — a server that starts later must become detectable.
+_CACHE: dict[str, SurfaceProbe] = {}
+
+
+def clear_cache() -> None:
+    """Drop every cached verdict (tests, and an operator forcing a re-probe)."""
+    _CACHE.clear()
+
+
 def _content_type(response: object) -> str | None:
     """The response's `content-type` header, or None when absent/unreadable.
 
@@ -65,8 +77,9 @@ def classify_surface(
     """Pure classifier: V2 / V1 / unknown from one probe response.
 
     Requires HTTP 200 AND a JSON OBJECT body (an HTML content type is a veto):
-    * a body carrying `version` ⇒ V2;
-    * a body carrying `healthy` ⇒ V1;
+    * a body carrying `healthy` ⇒ V1 — checked FIRST, because a V1
+      `/global/health` body carries BOTH `healthy` and `version`;
+    * a body carrying `version` ⇒ V2 (the `/api/info` identity body);
     * anything else ⇒ unknown.
     """
     if status_code != 200:
@@ -75,10 +88,10 @@ def classify_surface(
         return "unknown"
     if not isinstance(body, dict):
         return "unknown"
-    if SERVER_INFO_VERSION_FIELD in body:
-        return "v2"
     if HEALTH_HEALTHY_FIELD in body:
         return "v1"
+    if SERVER_INFO_VERSION_FIELD in body:
+        return "v2"
     return "unknown"
 
 
@@ -97,9 +110,21 @@ async def detect_surface(
 
     V2-first because it is the installed server's surface and its JSON carries
     `version`. Total: a transport error or a non-JSON/HTML 200 yields `unknown`,
-    never an exception. `base_url` identifies the probed server (the caller may
-    cache on it).
+    never an exception. A V1/V2 verdict is cached per `base_url` for the process;
+    an `unknown` verdict is never cached (RESEARCH A2).
     """
+    cached = _CACHE.get(base_url)
+    if cached is not None:
+        return cached
+
+    probe = await _probe_surface(client=client)
+    if probe.surface != "unknown":
+        _CACHE[base_url] = probe
+    return probe
+
+
+async def _probe_surface(*, client: httpx.AsyncClient) -> SurfaceProbe:
+    """Run the two liveness probes and classify the first recognisable surface."""
     last_error: str | None = None
     for path in (INFO_PATH, GLOBAL_HEALTH_PATH):
         try:
@@ -123,4 +148,10 @@ async def detect_surface(
     return SurfaceProbe(surface="unknown", version=None, error=last_error)
 
 
-__all__ = ["Surface", "SurfaceProbe", "classify_surface", "detect_surface"]
+__all__ = [
+    "Surface",
+    "SurfaceProbe",
+    "classify_surface",
+    "clear_cache",
+    "detect_surface",
+]
