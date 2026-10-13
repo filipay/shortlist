@@ -542,7 +542,9 @@ class OpenCodeServerBackend:
         On V1 a schema failure is never retried client-side — the server already
         did its retries. `attempts` is the server's own `info.error.data.retries`
         when it supplies one, else the client's issued-request count; on V2
-        `attempts` is always the total `generate` requests issued.
+        `attempts` is the total `generate` requests issued (transport retries
+        included), or the session POST count when session creation itself never
+        completes.
 
         `parts` is the only channel for untrusted content; `system` is passed
         through untouched. `tools` is a port-level `Sequence[str]` of tool NAMES
@@ -572,7 +574,8 @@ class OpenCodeServerBackend:
                 return resolved
             provider_id, model_id = resolved
 
-            # The caller's ceiling governs the V1 transport loop; `Settings`
+            # The caller's ceiling governs the transport loop on BOTH surfaces
+            # (V1 message POST, and V2 session + generate POSTs); `Settings`
             # supplies only the DEFAULT, so a future caller passing a different
             # bound is honoured (PLAT-04: no literal ceiling).
             budget = retries if retries is not None else settings.opencode_max_retries
@@ -592,6 +595,7 @@ class OpenCodeServerBackend:
                         model_id=model_id,
                         server_version=probe.version,
                         started=started,
+                        transport_budget=budget,
                     )
                 if probe.surface == "unknown":
                     return _failure(
@@ -753,6 +757,7 @@ class OpenCodeServerBackend:
         model_id: str,
         server_version: str | None,
         started: float,
+        transport_budget: int,
     ) -> StructuredCallResult:
         """One V2 completion: session → generate (schema loop) → typed result.
 
@@ -761,7 +766,13 @@ class OpenCodeServerBackend:
         and a pydantic `ValidationError` re-issues `generate` with the first error
         fed back, bounded to `1 + settings.opencode_structured_retry_count`
         requests total (the initial attempt plus the configured schema retries).
-        `attempts` is the total number of `generate` requests issued (Pitfall P6).
+        `attempts` is the total number of `generate` requests issued (Pitfall P6),
+        or the session POST count when session creation itself never completes.
+
+        Transport failures are retried on this surface too: the session POST and
+        each `generate` POST run through `_post_with_transport_retries`, bounded by
+        `transport_budget` — the `retries` argument (or `opencode_max_retries`),
+        so `OPENCODE_MAX_RETRIES` is honoured under V2 exactly as under V1 (D-151).
 
         Telemetry (D-143/D-144): `model` records the REQUESTED model, and
         `provider`/`agent`/`provider_tokens` stay None because the V2 `generate`
@@ -770,14 +781,24 @@ class OpenCodeServerBackend:
         Failure is a value; the transport taxonomy is handled by the caller's
         outer envelope.
         """
-        session_response = await client.post(
-            V2_SESSION_PATH,
-            json=to_v2_session_body(provider_id=provider_id, model_id=model_id),
+        session_response, session_failure, session_issued = (
+            await _post_with_transport_retries(
+                client,
+                V2_SESSION_PATH,
+                body=to_v2_session_body(provider_id=provider_id, model_id=model_id),
+                budget=transport_budget,
+                model_id=model_id,
+                server_version=server_version,
+                started=started,
+            )
         )
+        if session_failure is not None:
+            return session_failure
+        assert session_response is not None  # a None response is always a failure
         classified = self._v2_http_failure(
             session_response,
             what="session create",
-            attempts=0,
+            attempts=session_issued,
             started=started,
             model_id=model_id,
             server_version=server_version,
@@ -794,20 +815,33 @@ class OpenCodeServerBackend:
                 status="error",
                 error_kind=ERROR_KIND_INVALID_SESSION,
                 error="session create returned no usable id",
-                attempts=0,
+                attempts=session_issued,
                 started=started,
                 model=model_id,
                 server_version=server_version,
             )
 
-        budget = 1 + int(settings.opencode_structured_retry_count)
+        schema_budget = 1 + int(settings.opencode_structured_retry_count)
         prompt = to_generate_prompt(schema=schema, system=system, parts=parts)
         url = GENERATE_PATH.format(session_id=session_id)
         issued = 0
         last_error: str | None = None
-        for _attempt in range(budget):
-            response = await client.post(url, json=to_generate_body(prompt))
-            issued += 1
+        for _attempt in range(schema_budget):
+            response, transport_failure, attempted = (
+                await _post_with_transport_retries(
+                    client,
+                    url,
+                    body=to_generate_body(prompt),
+                    budget=transport_budget,
+                    model_id=model_id,
+                    server_version=server_version,
+                    started=started,
+                )
+            )
+            issued += attempted
+            if transport_failure is not None:
+                return transport_failure
+            assert response is not None  # a None response is always a failure
             classified = self._v2_http_failure(
                 response,
                 what="generate",
@@ -971,6 +1005,69 @@ def _bounded_excerpt(response: object) -> str:
     if not isinstance(text, str):
         return ""
     return text[:NON_200_BODY_EXCERPT_CHARS]
+
+
+async def _post_with_transport_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    body: Mapping[str, object],
+    budget: int,
+    model_id: str,
+    server_version: str | None,
+    started: float,
+) -> tuple[httpx.Response | None, StructuredCallResult | None, int]:
+    """POST `url` up to `budget` times, resending only TRANSPORT failures (D-151).
+
+    The V2 twin of the V1 transport loop: a `TimeoutException` or any other
+    `TransportError` resends the SAME request, bounded by the caller's `budget`,
+    and the issued count is accumulated so `attempts` is honest. A `ConnectTimeout`
+    (a failure to ESTABLISH a connection) is `unreachable`; a connected-but-slow
+    response is a genuine `timeout`.
+
+    Returns `(response, failure, issued)`: on success `failure` is None and
+    `response` is the reply; when every attempt fails at the transport layer,
+    `response` is None and `failure` is the classified value already carrying
+    `issued`. `budget` is `max(1, …)` at the call site, so the loop always runs.
+    """
+    issued = 0
+    failure: StructuredCallResult | None = None
+    for _attempt in range(1, budget + 1):
+        try:
+            response = await client.post(url, json=body)
+        except httpx.TimeoutException as exc:
+            issued += 1
+            failure = _failure(
+                status=(
+                    "error" if isinstance(exc, httpx.ConnectTimeout) else "timeout"
+                ),
+                error_kind=(
+                    ERROR_KIND_UNREACHABLE
+                    if isinstance(exc, httpx.ConnectTimeout)
+                    else ERROR_KIND_TIMEOUT
+                ),
+                error=f"{type(exc).__name__}: {exc}",
+                attempts=issued,
+                started=started,
+                model=model_id,
+                server_version=server_version,
+            )
+            continue
+        except httpx.TransportError as exc:
+            issued += 1
+            failure = _failure(
+                status="error",
+                error_kind=ERROR_KIND_UNREACHABLE,
+                error=f"{type(exc).__name__}: {exc}",
+                attempts=issued,
+                started=started,
+                model=model_id,
+                server_version=server_version,
+            )
+            continue
+        issued += 1
+        return response, None, issued
+    return None, failure, issued
 
 
 def _dig(payload: object, path: tuple[str, ...]) -> object:

@@ -63,6 +63,7 @@ class Recorder:
         generate_body: Any = None,
         error: BaseException | None = None,
         post_error: BaseException | None = None,
+        generate_error: BaseException | None = None,
     ) -> None:
         self.requests: list[tuple[str, str, Any]] = []
         self.paths: list[str] = []
@@ -74,6 +75,7 @@ class Recorder:
         self._generate_body = generate_body
         self._error = error
         self._post_error = post_error
+        self._generate_error = generate_error
 
     def module(self) -> types.SimpleNamespace:
         recorder = self
@@ -120,6 +122,8 @@ class Recorder:
                     raise recorder._post_error
                 if url == V2_SESSION_PATH:
                     return FakeResponse(recorder._session[0], recorder._session[1])
+                if recorder._generate_error is not None:
+                    raise recorder._generate_error
                 body = (
                     recorder._generate_body
                     if recorder._generate_body is not None
@@ -295,6 +299,67 @@ async def test_the_reissued_prompt_carries_the_first_validation_error(
     assert first_validation_message not in messages[0]
     for prompt in messages[1:]:
         assert first_validation_message in prompt
+
+
+# --- CR-01: the transport-retry loop runs on V2 too (D-151) --------------------
+
+
+@pytest.mark.parametrize("budget", [1, 2, 3])
+async def test_a_v2_transport_failure_is_retried_bounded_by_retries(
+    monkeypatch: pytest.MonkeyPatch, budget: int
+) -> None:
+    """CR-01: `OPENCODE_MAX_RETRIES` governs the V2 arm too, and `attempts` is honest.
+
+    Before the transport loop, a single `ConnectError` on `/api/session` escaped to
+    the outer envelope and returned `attempts=0` with exactly ONE POST issued, so
+    the configured retry budget was inert. The repro class is "all completion POSTs
+    raise at the transport layer"; the budget must bound the resends and `attempts`
+    must report the issued count — the V1 arm's behaviour, now mirrored.
+    """
+    recorder = Recorder(post_error=httpx.ConnectError("connection refused"))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=budget
+    )
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert result.error_kind == "unreachable"
+    assert len(recorder.requests) == budget
+    assert result.attempts == budget
+
+
+async def test_an_omitted_retries_honours_the_settings_ceiling_on_v2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An omitted `retries` is bounded by `opencode_max_retries` on V2 as on V1."""
+    monkeypatch.setattr(settings, "opencode_max_retries", 3)
+    recorder = Recorder(post_error=httpx.ConnectError("connection refused"))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
+
+    assert len(recorder.requests) == 3
+    assert result.attempts == 3
+    assert result.error_kind == "unreachable"
+
+
+async def test_a_v2_generate_transport_failure_is_retried_after_a_good_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The session succeeds once; each `generate` POST resends to the transport budget."""
+    recorder = Recorder(generate_error=httpx.ReadTimeout("slow response"))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"], retries=2
+    )
+
+    assert len(_generate_requests(recorder)) == 2
+    assert result.status == "timeout"
+    assert result.error_kind == "timeout"
+    assert result.attempts == 2
 
 
 # --- AUTH: empty password fails fast; 401 is `unauthenticated` (D-136/D-137) ----
