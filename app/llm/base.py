@@ -84,8 +84,12 @@ class StructuredCallResult(BaseModel):
     #: completed in plan 03-03).
     error_kind: str | None = None
     latency_ms: int | None = None
-    #: The authoritative per-call identity (D-12) — read from the response's
-    #: `info.providerID` / `info.modelID` / `info.agent`, never inferred.
+    #: Per-call identity. Under the retained V1 contract these are read from the
+    #: response's `info.providerID` / `info.modelID` / `info.agent`. Under the V2
+    #: contract `model` records the REQUESTED `OPENCODE_MODEL` and `provider` /
+    #: `agent` stay NULL — the V2 `generate` response carries no served-model
+    #: identity, so "authoritative served identity" is not available there
+    #: (D-143/D-144).
     provider: str | None = None
     model: str | None = None
     agent: str | None = None

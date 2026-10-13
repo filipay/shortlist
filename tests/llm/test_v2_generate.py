@@ -240,3 +240,138 @@ async def test_a_spa_html_200_is_not_v1_and_not_reachable(
 
     assert outcome.reachable is False
     assert outcome.version is None
+
+
+# --- GEN-3: the client-side schema-retry loop (D-139/D-140) --------------------
+
+INVALID_TEXT = json.dumps({"acknowledged": "not-a-bool"})
+
+
+def _first_validation_message() -> str:
+    """The exact pydantic message the retry feeds back (D-140)."""
+    try:
+        ProbeResult(acknowledged="not-a-bool")  # type: ignore[arg-type]
+    except ValueError as exc:  # noqa: BLE001 — ValidationError is a ValueError
+        errors = getattr(exc, "errors", lambda: [])()
+        assert errors, "the control input must actually fail validation"
+        return errors[0]["msg"]
+    raise AssertionError("the control input unexpectedly validated")
+
+
+def _generate_requests(recorder: Recorder) -> list[tuple[str, str, Any]]:
+    return [entry for entry in recorder.requests if entry[1].endswith("/generate")]
+
+
+async def test_the_schema_retry_loop_issues_one_plus_the_configured_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(generate=(200, {"data": {"text": INVALID_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    expected = 1 + settings.opencode_structured_retry_count
+    generates = _generate_requests(recorder)
+    assert len(generates) == expected
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    assert result.attempts == expected
+
+
+async def test_the_reissued_prompt_carries_the_first_validation_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(generate=(200, {"data": {"text": INVALID_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    await backend.complete_structured(schema=ProbeResult, system="s", parts=["p"])
+
+    messages = [entry[2]["prompt"] for entry in _generate_requests(recorder)]
+    first_validation_message = _first_validation_message()
+    # The initial prompt carries no feedback; every retry does.
+    assert first_validation_message not in messages[0]
+    for prompt in messages[1:]:
+        assert first_validation_message in prompt
+
+
+# --- AUTH: empty password fails fast; 401 is `unauthenticated` (D-136/D-137) ----
+
+
+async def test_an_empty_password_fails_fast_with_no_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder()
+    backend = OpenCodeServerBackend(password="")
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.ok is False
+    assert result.status == "error"
+    assert result.error_kind == "unauthenticated"
+    assert result.attempts == 0
+    # Not even the detection probe is issued.
+    assert recorder.requests == []
+    assert recorder.paths == []
+
+
+async def test_a_session_401_is_unauthenticated_not_a_generic_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder(
+        session=(401, {"_tag": "UnauthorizedError", "message": "Authentication required"})
+    )
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.status == "error"
+    assert result.error_kind == "unauthenticated"
+
+
+async def test_a_generate_401_is_unauthenticated(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = Recorder(
+        generate=(401, {"_tag": "UnauthorizedError", "message": "Authentication required"})
+    )
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.status == "error"
+    assert result.error_kind == "unauthenticated"
+    assert result.attempts == 1
+
+
+# --- TEL-1: the V2 telemetry semantics (D-143/D-144) ---------------------------
+
+
+async def test_a_v2_result_records_the_configured_model_and_no_served_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder()
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.ok is True
+    assert result.model == settings.opencode_model
+    assert result.provider is None
+    assert result.agent is None
+    assert result.provider_tokens is None
+    assert isinstance(result.server_version, str) and result.server_version
+
+
+if __name__ == "__main__":  # pragma: no cover
+    pytest.main([__file__])
+

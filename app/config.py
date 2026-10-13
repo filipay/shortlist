@@ -74,10 +74,13 @@ class Settings(BaseSettings):
     #: for two of them before seeing an error.
     opencode_completion_timeout_seconds: float = 300.0
     #: How many times the client resends a completion that failed at the transport
-    #: layer. The server-side schema retry count is `opencode_structured_retry_count`.
+    #: layer. Distinct from the CLIENT-side schema-retry budget
+    #: (`opencode_structured_retry_count`).
     opencode_max_retries: int = 2
-    #: Sent as `format.retryCount`: how many times the SERVER re-asks the model when
-    #: its output fails the JSON Schema. Optional on the wire, pinned here.
+    #: The CLIENT-side schema-retry budget (D-139). Under the retained V1 contract
+    #: this was sent as `format.retryCount` (the SERVER re-asked the model); V2 has
+    #: no server-side schema, so the V2 `generate` call now issues `1 + this many`
+    #: requests total — the initial attempt plus this many schema retries.
     opencode_structured_retry_count: int = 2
 
     # --- Ingest sanitise policy (C2) -----------------------------------------

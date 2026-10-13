@@ -557,11 +557,17 @@ class LlmCall(Base):
     purpose = Column(String(16), nullable=False)
     backend = Column(String(16))
     provider = Column(String(64))
+    #: The model this call REQUESTED. Phase 07.1 (D-143): under the V2 contract
+    #: this records the configured `OPENCODE_MODEL` string — "requested", not
+    #: "confirmed served" (the V2 `generate` response carries no served identity,
+    #: so `provider`/`agent` stay NULL). The retained V1 contract stored the
+    #: resolved `modelID` from `info`. Historical rows keep the old meaning.
     model = Column(String(128))
     agent = Column(String(64))
-    #: D-12 / PITFALLS M9 — the opencode server version this call ran against,
-    #: read from `GET /global/health` (never `/doc`'s static spec version, P12).
-    #: Migration 0003 adds it; nullable because older rows have no recorded value.
+    #: D-12 / PITFALLS M9 / D-144 — the opencode server version this call ran
+    #: against (never `/doc`'s static spec version, P12). V2 reads it from
+    #: `GET /api/info`; the retained V1 path from `GET /global/health`. Migration
+    #: 0003 adds it; nullable because older rows have no recorded value.
     server_version = Column(String(32))
     prompt_tokens = Column(Integer)
     completion_tokens = Column(Integer)
