@@ -8,6 +8,7 @@ prompt, the CV facts/listing/questions all in the parts, one audit row with
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,10 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.db.models import Listing, LlmCall
 from app.domain.schemas.screening import ScreeningAnswer, ScreeningDraftResponse
+from app.llm import detection
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
 from app.pipeline import draft as draft_module
 from app.pipeline import rank as rank_module
 from app.pipeline.draft import DRAFT_SYSTEM_PROMPT, draft_screening_answers
+from tests.llm.test_v2_generate import Recorder, _v2_backend
 from tests.pipeline.test_rank_stage import _add_listing, _facts
 
 NOW = datetime(2026, 9, 30, tzinfo=UTC)
@@ -99,6 +102,14 @@ def _reset_in_flight(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(rank_module, "_in_flight", 0)
     yield
     monkeypatch.setattr(rank_module, "_in_flight", 0)
+
+
+@pytest.fixture(autouse=True)
+def _clear_surface_cache() -> Iterator[None]:
+    """A recorder's probe must be authoritative; a leaked V1/V2 verdict is not."""
+    detection.clear_cache()
+    yield
+    detection.clear_cache()
 
 
 # --- the frozen prompt ---------------------------------------------------------
@@ -307,6 +318,123 @@ def test_drafting_skip_reason_is_none_when_a_store_loads(
     monkeypatch.setattr(draft_module, "load_facts", lambda path: object())
 
     assert draft_module.drafting_skip_reason() is None
+
+
+# --- FIX 1: the prompt, the extractor and the schema agree on the object shape --
+#
+# The live 07.1 failure: `DRAFT_SYSTEM_PROMPT` asked for a top-level JSON array,
+# but `_extract_json` returns the first balanced `{…}` OBJECT and
+# `ScreeningDraftResponse` requires an object with an `answers` array. The model's
+# array-shaped reply was salvaged to one inner answer object, failed validation and
+# surfaced as "The drafting call did not return a usable response."
+
+#: The literal `generate` text for the agreed shape (CONVENTIONS rule 3: a literal
+#: reproduction fixture, not assembled from the schema).
+OBJECT_SHAPE_TEXT = json.dumps(
+    {
+        "answers": [
+            {
+                "question": "Have you cut latency?",
+                "answer": "Yes — I reduced p99 latency by 40%.",
+                "evidence_ids": [KNOWN_BULLET],
+            },
+            {
+                "question": "Do you know Kubernetes?",
+                "answer": "Yes, extensively.",
+                "evidence_ids": ["bul/does-not-exist/9"],
+            },
+        ]
+    }
+)
+
+#: The OLD shape the prompt used to request — a top-level JSON array. `_extract_json`
+#: keeps only the first inner object, so this cannot validate as the schema.
+OLD_ARRAY_SHAPE_TEXT = json.dumps(
+    [
+        {
+            "question": "Have you cut latency?",
+            "answer": "Yes — I reduced p99 latency by 40%.",
+            "evidence_ids": [KNOWN_BULLET],
+        },
+        {
+            "question": "Do you know Kubernetes?",
+            "answer": "Yes, extensively.",
+            "evidence_ids": ["bul/does-not-exist/9"],
+        },
+    ]
+)
+
+
+def test_the_prompt_instructs_the_object_shape_the_schema_requires() -> None:
+    """Drift guard: the prompt must request the OBJECT `_extract_json` returns.
+
+    Anchored on ``ScreeningDraftResponse``/``ScreeningAnswer.model_fields`` so a field
+    rename fails this, and on the "single JSON object" instruction that the old
+    array-shaped prompt lacked — that is the exact drift that broke the live run.
+    """
+    assert "single JSON object" in DRAFT_SYSTEM_PROMPT, (
+        "`_extract_json` returns the first balanced {...} OBJECT and "
+        "`ScreeningDraftResponse` requires one — the prompt must ask for a single "
+        "JSON object, not a top-level array"
+    )
+    top_level = next(iter(ScreeningDraftResponse.model_fields))
+    assert f'"{top_level}"' in DRAFT_SYSTEM_PROMPT
+    for field in ScreeningAnswer.model_fields:
+        assert f'"{field}"' in DRAFT_SYSTEM_PROMPT
+
+
+async def test_the_object_shape_reaches_a_usable_grounded_draft_end_to_end(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Model text → `_extract_json` → `_salvage` → `draft_screening_answers`.
+
+    The real `OpenCodeServerBackend` (no socket) turns the recorded object-shaped V2
+    reply into a usable `ScreeningDraftResponse`, and the drafting consumer into
+    grounded verdicts — the path the array-shaped prompt broke.
+    """
+    listing_id = await _add_listing(session_factory, title="Object Shape Role")
+    recorder = Recorder(generate=(200, {"data": {"text": OBJECT_SHAPE_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    async with session_factory() as session:
+        listing = await session.get(Listing, listing_id)
+        verdicts = await draft_screening_answers(
+            backend,
+            session,
+            listing=listing,
+            facts=_facts(),
+            questions=["Have you cut latency?", "Do you know Kubernetes?"],
+            now=NOW,
+        )
+        await session.commit()
+
+    assert verdicts is not None
+    assert [verdict.unsupported for verdict in verdicts] == [False, True]
+
+
+async def test_the_old_top_level_array_shape_is_rejected(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Negative control: the shape the prompt used to request yields no draft."""
+    listing_id = await _add_listing(session_factory, title="Array Shape Role")
+    recorder = Recorder(generate=(200, {"data": {"text": OLD_ARRAY_SHAPE_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    async with session_factory() as session:
+        listing = await session.get(Listing, listing_id)
+        verdicts = await draft_screening_answers(
+            backend,
+            session,
+            listing=listing,
+            facts=_facts(),
+            questions=["Have you cut latency?"],
+            now=NOW,
+        )
+        await session.commit()
+
+    assert verdicts is None
 
 
 if __name__ == "__main__":  # pragma: no cover

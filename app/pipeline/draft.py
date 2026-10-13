@@ -96,8 +96,9 @@ DRAFT_SYSTEM_PROMPT = (
     "\n"
     "Never state a number that does not appear in the candidate's facts or the listing.\n"
     "\n"
-    "Return the answers collection as a JSON array with one object per asked question, "
-    "and return each answer's evidence_ids as a JSON array of strings."
+    'Return a single JSON object whose only key is "answers"; its value is a JSON '
+    'array with one object per asked question, and every answer object carries '
+    '"question", "answer" and "evidence_ids" (a JSON array of strings).'
 )
 
 
