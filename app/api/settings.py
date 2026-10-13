@@ -51,7 +51,6 @@ from app.domain.schemas.probe import ProbeResult
 from app.latex.render import LAYOUTS
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend, StructuredCallResult
-from app.llm.contract import STRUCTURED_RESPONSE_PATH
 from app.pipeline.rank import CV_FILENAME
 from app.pipeline.run import TERMINAL_STATUSES
 from app.web.template_env import make_templates
@@ -885,9 +884,12 @@ async def test_llm_backend(
     )
     # The observation of THIS call (success criterion 4): the returned part TYPE
     # names and the `info` KEY names — names only, never text or values.
-    structured_present = bool(
-        result.ok and result.info_keys and STRUCTURED_RESPONSE_PATH[-1] in result.info_keys
-    )
+    #
+    # Contract-agnostic success signal (D-145): a successful V1 call and a
+    # successful V2 call both set `.data` to a validated model. The old V1-only
+    # probe (`"structured" in result.info_keys`) reported "absent" on a V2
+    # success, because the V2 `generate` response carries no `structured` key.
+    structured_present = bool(result.ok and result.data is not None)
     return templates.TemplateResponse(
         request,
         SETTINGS_TEMPLATE,

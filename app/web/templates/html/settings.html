@@ -65,12 +65,13 @@
       </p>
       <p class="settings-note" id="probe-observation-structured">
         Structured payload: {% if probe_structured %}present{% else %}absent{% endif %}.
-        A healthy successful call returns the server-internal structured-output tool
-        part plus the <code>structured</code> key. A tool part that is not that
-        internal tool, or a missing <code>structured</code> key on a success, is a
-        finding — not a guess. When a structured call fails, the Cause line above
-        names which side is at fault: a ruleset that stripped the internal tool, or a
-        model that declined the forced tool call.
+        A healthy successful call returns a validated typed payload, so this line
+        reads "present". Under the V2 <code>generate</code> contract the model's JSON
+        arrives as plain text in the response's <code>data.text</code>, so there is no
+        server-internal structured-output tool part and no <code>structured</code>
+        response key to look for. The part-types and response-keys lines above report
+        what the V1 contract returned; on a V2 server they show "not reported", which
+        is not a failure. When a call fails, the Cause line above names the failure.
       </p>
     </div>
     {% endif %}
