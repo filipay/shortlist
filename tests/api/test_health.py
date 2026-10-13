@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import health as health_module
-from app.config import settings
+from app.config import Settings, settings
 from app.db.models import Run, Source
 from app.db.repositories.listing_repo import upsert_listing_source
 from app.db.session import get_session, get_session_factory
@@ -283,6 +283,33 @@ async def test_health_never_leaks_the_server_password(
 
     assert response.json()["opencode"]["auth_configured"] is True
     assert sentinel not in response.text
+
+
+async def test_health_auth_report_ignores_the_ambient_environment(
+    health_env: HealthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default lane's settings must not inherit the developer's `.env`/env.
+
+    `settings = Settings()` runs at import and reads the ambient environment, so a
+    leaked `OPENCODE_SERVER_PASSWORD` flips `/health`'s `auth_configured` to True —
+    the exact defect this suite was bitten by. `monkeypatch.setenv` proves the
+    vector is live (a freshly constructed `Settings()` sees the leaked value)
+    while the hermetic fixture keeps the app's own settings on the documented
+    default. The guard is only non-vacuous where an ambient leak exists: in a
+    clean environment the pinned default already matches the ambient one.
+    """
+    monkeypatch.setenv("OPENCODE_SERVER_PASSWORD", "ambient-leak")
+    monkeypatch.setenv("OPENCODE_MODEL", "ambient-model")
+    monkeypatch.setenv("OPENCODE_BASE_URL", "http://ambient.invalid:1")
+
+    # The ambient vector is real: a fresh Settings() would inherit it ...
+    assert Settings().opencode_server_password == "ambient-leak"
+
+    # ... but the app's own settings, and `/health`, stay on the documented default.
+    assert settings.opencode_server_password == ""
+    assert settings.opencode_model == "minimax-m3"
+    body = (await health_env.client.get("/health")).json()
+    assert body["opencode"]["auth_configured"] is False
 
 
 async def test_health_reports_database_reachability(health_env: HealthEnv) -> None:
