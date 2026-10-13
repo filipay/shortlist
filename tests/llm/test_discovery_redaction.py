@@ -85,6 +85,7 @@ class Recorder:
         status_code: int = 200,
         body: Any = None,
         bodies: dict[str, Any] | None = None,
+        statuses: dict[str, int] | None = None,
         error: BaseException | None = None,
         json_error: BaseException | None = None,
     ) -> None:
@@ -93,6 +94,7 @@ class Recorder:
         self._status_code = status_code
         self._body = body
         self._bodies = dict(bodies or {})
+        self._statuses = dict(statuses or {})
         self._error = error
         self._json_error = json_error
 
@@ -127,7 +129,7 @@ class Recorder:
                 if recorder._error is not None:
                     raise recorder._error
                 return types.SimpleNamespace(
-                    status_code=recorder._status_code,
+                    status_code=recorder._statuses.get(url, recorder._status_code),
                     json=lambda u=url: _json_for(u),
                 )
 
@@ -304,6 +306,30 @@ async def test_v2_discovery_requests_model_then_provider(
     assert result.reachable is True
     assert result.providers
     assert recorder.paths == ["/api/model", "/api/provider"]
+
+
+@pytest.mark.parametrize("status_code", [404, 500, 503])
+async def test_a_failing_api_provider_does_not_take_down_discovery(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    """WR-02: `/api/provider` is never read, so its failure must not fail discovery.
+
+    The authoritative pair source is `/api/model` (`parse_v2_models` ignores the
+    provider payload), so a 5xx/404 on the provider endpoint must not take down
+    model resolution — and, through `_resolve_model`, every completion.
+    """
+    await _prime_v2_verdict()
+    recorder = Recorder(
+        bodies={V2_MODEL_PATH: _model_payload(), V2_PROVIDER_PATH: None},
+        statuses={V2_PROVIDER_PATH: status_code},
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await OpenCodeServerBackend().discover_models()
+
+    assert result.reachable is True
+    assert result.providers
+    assert recorder.paths == [V2_MODEL_PATH, V2_PROVIDER_PATH]
 
 
 def test_the_module_never_references_the_full_catalogue_endpoint() -> None:

@@ -383,13 +383,21 @@ class OpenCodeServerBackend:
                             reachable=False,
                             error=f"discovery returned HTTP {model_response.status_code}",
                         )
-                    provider_response = await client.get(V2_PROVIDER_PATH)
-                    if provider_response.status_code != 200:
-                        return DiscoveryResult(
-                            reachable=False,
-                            error=f"discovery returned HTTP {provider_response.status_code}",
+                    # WR-02: `/api/provider` is NOT the authoritative pair source
+                    # (`parse_v2_models` never reads its values, and a cold server can
+                    # legitimately return an empty payload), so a 5xx/404 or an
+                    # unreadable body there must not take down model resolution. A
+                    # failed provider GET degrades to the empty payload; only the
+                    # `/api/model` status is checked (D-146).
+                    try:
+                        provider_response = await client.get(V2_PROVIDER_PATH)
+                        provider_payload: object = (
+                            provider_response.json()
+                            if provider_response.status_code == 200
+                            else {}
                         )
-                    provider_payload = provider_response.json()
+                    except Exception:  # noqa: BLE001 — the payload is never read
+                        provider_payload = {}
                     providers = parse_v2_models(model_response.json(), provider_payload)
                     if not providers:
                         # Cold start (Pitfall P3): the registry loads lazily right
