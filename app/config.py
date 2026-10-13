@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     #: no server-side schema, so the V2 `generate` call now issues `1 + this many`
     #: requests total — the initial attempt plus this many schema retries.
     opencode_structured_retry_count: int = 2
+    #: The bounded pause before `discover_models` re-probes `/api/model` once after
+    #: an empty result. A freshly started 2.0.26 server populates its model registry
+    #: lazily (measured: `data` is `[]` for ~32 s after boot), so an immediate
+    #: re-probe sees an empty registry. Kept to a couple of seconds: enough to catch
+    #: a registry that is about to appear, short enough that no request is ever
+    #: pinned for the full warm window. Configuration, not a literal (PLAT-04).
+    opencode_discovery_retry_delay_seconds: float = 2.0
 
     # --- Ingest sanitise policy (C2) -----------------------------------------
     description_max_chars: int = 20000

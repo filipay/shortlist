@@ -40,12 +40,20 @@ class ProviderModel(BaseModel):
 
 
 class DiscoveryResult(BaseModel):
-    """The redacted discovery outcome: identifiers only, never the response."""
+    """The redacted discovery outcome: identifiers only, never the response.
+
+    `reachable=True` with an empty `providers` is HONEST, not a success: the server
+    answered but advertised nothing. `error_kind` carries the distinct cause
+    (`models_warming` for a cold registry, `unauthenticated` for a 401) so a caller
+    can tell "still starting" from "broken" instead of reducing both to an empty
+    list (D-52 / IN-02).
+    """
 
     providers: list[ProviderModel] = Field(default_factory=list)
     reachable: bool
     version: str | None = None
     error: str | None = None
+    error_kind: str | None = None
 
 
 class ProbeOutcome(BaseModel):

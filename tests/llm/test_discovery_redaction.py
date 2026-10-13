@@ -589,6 +589,10 @@ async def test_a_cold_start_empty_api_model_is_retried_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pitfall P3: the registry warms up lazily; ONE re-probe, never a loop."""
+    # The pause is asserted separately; keep it out of this test's wall time.
+    monkeypatch.setattr(
+        opencode_server.settings, "opencode_discovery_retry_delay_seconds", 0.0
+    )
     recorder = Recorder(
         bodies={
             INFO_PATH: {"version": V2_SERVER_VERSION},
@@ -609,12 +613,57 @@ async def test_a_cold_start_empty_api_model_is_retried_once(
     ]
     assert recorder.paths.count(V2_MODEL_PATH) == 2
     assert any(event.get("retried") is True for event in events)
+    # A registry that did warm is NOT reported as still warming.
+    assert result.error_kind is None
 
 
-async def test_a_permanently_empty_api_model_fails_loud(
+async def test_a_cold_start_retry_pauses_before_the_single_reprobe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No hard-coded provider papering over a genuinely empty registry (D-145)."""
+    """The bounded re-probe waits a short configured pause, not zero (DEFECT 2).
+
+    It is deliberately short — a couple of seconds — so a cold server is given a
+    chance to publish its registry without pinning the request for the full ~32 s
+    warm window. `asyncio.sleep` is replaced with a recorder so this test is instant
+    and the delay VALUE is asserted, not merely that some pause occurred.
+    """
+    monkeypatch.setattr(
+        opencode_server.settings, "opencode_discovery_retry_delay_seconds", 0.25
+    )
+    slept: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    monkeypatch.setattr(opencode_server.asyncio, "sleep", _fake_sleep)
+    recorder = Recorder(
+        bodies={
+            INFO_PATH: {"version": V2_SERVER_VERSION},
+            V2_MODEL_PATH: [{"data": []}, _model_payload()],
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await OpenCodeServerBackend().discover_models()
+
+    assert result.providers
+    assert slept == [0.25], "the single re-probe must pause for the configured delay"
+    assert recorder.paths.count(V2_MODEL_PATH) == 2
+
+
+async def test_a_permanently_empty_api_model_is_reported_as_warming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reachable but empty registry is `models_warming`, not a silent empty result.
+
+    No hard-coded provider papers over a genuinely empty registry (D-145), and the
+    empty outcome is a DISTINCT cause so "still starting" is not reported as a
+    generic failure (DEFECT 2). Iterating the pause keeps the test instant.
+    """
+    monkeypatch.setattr(
+        opencode_server.settings, "opencode_discovery_retry_delay_seconds", 0.0
+    )
     recorder = Recorder(
         bodies={
             INFO_PATH: {"version": V2_SERVER_VERSION},
@@ -630,10 +679,33 @@ async def test_a_permanently_empty_api_model_fails_loud(
     assert isinstance(resolved, StructuredCallResult)
     assert resolved.ok is False
     assert resolved.status == "error"
-    assert resolved.error_kind == "model_not_found"
-    assert settings.opencode_model in (resolved.error or "")
+    assert resolved.error_kind == "models_warming"
     # One bounded retry per discovery; `_resolve_model` issued no completion.
     assert recorder.paths.count(V2_MODEL_PATH) == 2
+
+
+async def test_an_empty_registry_is_reachable_but_flags_the_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`discover_models` itself carries the warming cause, not just `_resolve_model`."""
+    monkeypatch.setattr(
+        opencode_server.settings, "opencode_discovery_retry_delay_seconds", 0.0
+    )
+    recorder = Recorder(
+        bodies={
+            INFO_PATH: {"version": V2_SERVER_VERSION},
+            V2_MODEL_PATH: {"data": []},
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await OpenCodeServerBackend().discover_models()
+
+    assert result.reachable is True
+    assert result.providers == []
+    assert result.error_kind == "models_warming"
+    assert result.error is not None and "warm" in result.error
 
 
 async def test_the_retained_v1_discovery_resolves_from_config_providers(
@@ -667,6 +739,7 @@ async def test_the_retained_v1_discovery_resolves_from_config_providers(
     ]
     assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH, CONFIG_PROVIDERS_PATH]
     assert await backend._resolve_model() == ("legacy", settings.opencode_model)
+
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -77,6 +77,18 @@ across a restart is not documented by opencode and is a known operational caveat
 if calls begin failing as `unauthenticated`, update `.env` from the freshly printed
 line.
 
+## Cold start: the model registry warms up over ~30 s
+
+Immediately after `opencode serve` starts, `GET /api/model` returns `{"data": []}`
+and only populates after roughly **32 seconds** (measured on 2.0.26:
+`warm_seconds=32 models=12`). `discover_models` therefore re-probes `/api/model`
+exactly once after a short pause (`OPENCODE_DISCOVERY_RETRY_DELAY_SECONDS`, default
+2 s) — never a loop, and never long enough to pin the request for the full warm
+window. If the registry is still empty after that, the empty outcome is reported as
+the **distinct** `models_warming` cause (with a `reachable=True` discovery result),
+so "the backend is still starting" is told apart from "the backend is broken". Wait
+~30 s and retry; if it persists, the server has no provider configured.
+
 ## Procedure
 
 1. **Confirm the default lane is green.** The snapshot test must pass before any

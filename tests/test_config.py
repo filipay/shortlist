@@ -450,6 +450,17 @@ def test_the_phase_three_ceilings_are_environment_tunable(
     assert refreshed.opencode_structured_retry_count == 4
 
 
+def test_the_discovery_retry_delay_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bounded re-probe pause is configuration, not a literal (DEFECT 2)."""
+    assert Settings.model_fields["opencode_discovery_retry_delay_seconds"].default == 2.0
+
+    monkeypatch.setenv("OPENCODE_DISCOVERY_RETRY_DELAY_SECONDS", "0.5")
+
+    assert Settings().opencode_discovery_retry_delay_seconds == 0.5
+
+
 def test_the_phase_four_ceilings_are_environment_tunable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

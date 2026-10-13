@@ -32,6 +32,7 @@ a result object rather than raised, so a broken backend can never 500 a route.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Annotated
@@ -107,6 +108,11 @@ ERROR_KIND_INVALID_SESSION = "invalid_session"
 #: practice. With none configured the call is still ATTEMPTED (no fail-fast) and
 #: the resulting `401` is this cause.
 ERROR_KIND_UNAUTHENTICATED = "unauthenticated"
+#: The server is reachable but advertises no models, which is normal for ~30 s
+#: after a cold start while the registry warms up (Pitfall P3). Distinct from
+#: `model_not_found` (a populated registry missing the requested id) so
+#: "still starting" is not reported as "broken".
+ERROR_KIND_MODELS_WARMING = "models_warming"
 #: Prefix for a non-200 response, e.g. `http_400`.
 HTTP_ERROR_KIND_PREFIX = "http_"
 #: A non-200 body excerpt is a diagnostic, not a copy: enough to recognise the
@@ -366,8 +372,10 @@ class OpenCodeServerBackend:
         V2: `GET /api/model` + `GET /api/provider`, parsed by `parse_v2_models`.
         A cold server can return `data: []` on the first `/api/model` call while
         the registry warms up (Pitfall P3), so an empty model list triggers exactly
-        ONE bounded re-probe (never a loop) before the honest empty result is
-        returned. V1 (retained, D-148): `GET /config/providers` via `parse_providers`.
+        ONE bounded re-probe (never a loop), after a short configured pause. A
+        registry that is STILL empty is returned as `reachable=True` with
+        `error_kind="models_warming"` — an honest distinct cause, not a silent empty
+        success. V1 (retained, D-148): `GET /config/providers` via `parse_providers`.
 
         The body carries a plaintext provider credential. It is consumed as an
         argument to the parse and never assigned to an attribute, never logged,
@@ -378,6 +386,7 @@ class OpenCodeServerBackend:
             async with self._client() as client:
                 probe = await detect_surface(base_url=self._base_url, client=client)
                 retried = False
+                warming = False
                 if probe.surface == "v2":
                     model_response = await client.get(V2_MODEL_PATH)
                     if model_response.status_code != 200:
@@ -403,14 +412,19 @@ class OpenCodeServerBackend:
                     providers = parse_v2_models(model_response.json(), provider_payload)
                     if not providers:
                         # Cold start (Pitfall P3): the registry loads lazily right
-                        # after server start. ONE extra probe, never a loop; an
-                        # honestly-empty registry still fails loud downstream.
+                        # after server start. ONE extra probe, never a loop, after a
+                        # short configured pause; an honestly-empty registry is
+                        # reported below as `models_warming`, not a silent empty.
                         retried = True
+                        delay = settings.opencode_discovery_retry_delay_seconds
+                        if delay > 0:
+                            await asyncio.sleep(delay)
                         retry_response = await client.get(V2_MODEL_PATH)
                         if retry_response.status_code == 200:
                             providers = parse_v2_models(
                                 retry_response.json(), provider_payload
                             )
+                    warming = not providers
                 else:
                     # V1 arm (retained, D-148). An `unknown` surface falls here — the
                     # original single discovery path, so a V1 server is unchanged.
@@ -431,7 +445,17 @@ class OpenCodeServerBackend:
             model_count=len(providers),
             retried=retried,
         )
-        return DiscoveryResult(providers=providers, reachable=True)
+        return DiscoveryResult(
+            providers=providers,
+            reachable=True,
+            error=(
+                "reachable but advertising no models yet (the registry warms up over "
+                "~30s after a cold start)"
+                if warming
+                else None
+            ),
+            error_kind=ERROR_KIND_MODELS_WARMING if warming else None,
+        )
 
     async def _resolve_model(
         self, model: str | None = None
@@ -458,6 +482,16 @@ class OpenCodeServerBackend:
                 status="error",
                 error=discovery.error or "model discovery failed",
                 error_kind=ERROR_KIND_UNREACHABLE,
+            )
+        if discovery.error_kind == ERROR_KIND_MODELS_WARMING:
+            # Reachable but advertising nothing: a cold server's registry warms up
+            # over ~30 s (Pitfall P3). Distinct from a populated registry that simply
+            # lacks `wanted`, so "still starting" is not reported as "broken".
+            return StructuredCallResult(
+                ok=False,
+                status="error",
+                error=discovery.error or "server is still warming its model registry",
+                error_kind=ERROR_KIND_MODELS_WARMING,
             )
         matches = sorted(
             (entry.provider_id, entry.model_id)
@@ -1508,6 +1542,7 @@ __all__ = [
     "ERROR_KIND_INVALID",
     "ERROR_KIND_INVALID_SESSION",
     "ERROR_KIND_MODEL_NOT_FOUND",
+    "ERROR_KIND_MODELS_WARMING",
     "ERROR_KIND_TIMEOUT",
     "ERROR_KIND_UNAUTHENTICATED",
     "ERROR_KIND_UNREACHABLE",
