@@ -385,6 +385,9 @@ Plans:
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
 - [ ] 07.1-05-PLAN.md — The operator live lanes retargeted to `/openapi.json` + `/api/info` and the real positive/negative `generate` check, plus the selftest's contract-agnostic success signal (D-135/D-144/D-145/D-150)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 07.1-06-PLAN.md — The operator documentation: the V2 runbook, `.env.example`, README, and the `AGENTS.md` security note recording the accepted residual prompt-injection risk (D-135/D-138/D-150)
 
 **Notes:** `POST /api/session/{id}/generate` is chosen for the completion call because it has no tool-execution surface (unlike `/api/session/{id}/prompt`). The V2 spec's declared `security: []` is not honoured by the running server — every `/api/*` call is authenticated. `TOLERATED_SCHEMA_ERRORS` and `_salvage` stay byte-identical (D-142). The residual prompt-injection risk from V2's missing `system` field is accepted and documented, to be revisited in a later phase.
