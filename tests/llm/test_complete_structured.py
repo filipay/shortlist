@@ -205,19 +205,23 @@ def _backend(
     recorder: Recorder,
     *,
     provider_id: str = "opencode-go",
-    model_id: str = settings.opencode_model,
+    model_id: str | None = None,
 ) -> OpenCodeServerBackend:
     """A backend whose discovery/health are stubbed and whose transport is `recorder`.
 
     The stubbed discovery advertises `settings.opencode_model`, so its 24
     `complete_structured` callers resolve the model the port actually looks for
     without passing `model=` — moving the shipped default then leaves every
-    default-lane resolution site green by construction.
+    default-lane resolution site green by construction. `model_id` resolves at
+    CALL time (the hermetic fixture pins the setting per test), so it is the value
+    `complete_structured` will actually look for.
 
     `detect_surface` is stubbed to the V1 surface so the retained V1 arm is
     exercised regardless of the fake `/api/info` body; the non-empty password
     keeps the configured-auth path covered.
     """
+    if model_id is None:
+        model_id = settings.opencode_model
     backend = OpenCodeServerBackend(password="test-server-password")
 
     async def _discover() -> DiscoveryResult:
@@ -880,9 +884,11 @@ def test_parse_providers_accepts_the_live_dict_shape() -> None:
 
 
 def test_the_new_phase_three_ceilings_are_settings_fields() -> None:
-    assert Settings().opencode_completion_timeout_seconds == 300.0
-    assert Settings().opencode_max_retries == 2
-    assert Settings().opencode_structured_retry_count == 2
+    # Read the DECLARED defaults, never an ambient-env-affected `Settings()`:
+    # `Settings()` also loads `.env`, so a developer's file could flake this.
+    assert Settings.model_fields["opencode_completion_timeout_seconds"].default == 300.0
+    assert Settings.model_fields["opencode_max_retries"].default == 2
+    assert Settings.model_fields["opencode_structured_retry_count"].default == 2
     assert Settings(opencode_max_retries=5).opencode_max_retries == 5
 
 

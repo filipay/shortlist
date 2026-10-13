@@ -148,10 +148,17 @@ def _v2_backend(
     recorder: Recorder,
     *,
     provider_id: str = "opencode-go",
-    model_id: str = settings.opencode_model,
+    model_id: str | None = None,
     password: str = "test-server-password",
 ) -> OpenCodeServerBackend:
-    """A backend whose discovery is stubbed; detection runs through the recorder."""
+    """A backend whose discovery is stubbed; detection runs through the recorder.
+
+    `model_id` resolves at CALL time, not at import: the hermetic fixture pins
+    `settings.opencode_model` per test, so a default bound at collection would
+    advertise a different model than the port then looks for.
+    """
+    if model_id is None:
+        model_id = settings.opencode_model
     backend = OpenCodeServerBackend(password=password)
 
     async def _discover() -> DiscoveryResult:

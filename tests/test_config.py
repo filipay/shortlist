@@ -589,7 +589,10 @@ def test_default_query_reads_its_location_and_count_from_settings(
 def _distinctive_thresholds() -> set[int]:
     values: set[int] = set()
     for field in LIMIT_FIELDS:
-        default = getattr(Settings(), field)
+        # The DECLARED default, not `getattr(Settings(), field)`: a constructed
+        # `Settings()` also reads `.env`/the ambient environment, so an operator's
+        # override of a ceiling could otherwise change which literals are scanned.
+        default = Settings.model_fields[field].default
         if isinstance(default, int) and default >= DISTINCTIVE_THRESHOLD_FLOOR:
             values.add(int(default))
     return values

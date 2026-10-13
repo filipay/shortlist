@@ -24,10 +24,49 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.config import Settings, settings
 from app.llm import get_llm_backend
 from app.llm.base import DiscoveryResult, ProbeOutcome, StructuredCallResult
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+#: The opencode settings the default lane must not inherit from the machine.
+#: `settings = Settings()` runs at import and reads `.env` and the ambient
+#: environment, so without pinning a developer's `.env` silently changes what the
+#: suite observes — a non-empty `OPENCODE_SERVER_PASSWORD` flips `/health`'s
+#: `auth_configured`, `OPENCODE_MODEL` changes what the stub backends advertise,
+#: and the timeouts change what a call believes its budget is.
+OPENCODE_SETTINGS_FIELDS = (
+    "opencode_base_url",
+    "opencode_model",
+    "opencode_server_password",
+    "opencode_timeout_seconds",
+    "opencode_completion_timeout_seconds",
+    "opencode_max_retries",
+    "opencode_structured_retry_count",
+    "opencode_discovery_retry_delay_seconds",
+)
+
+
+@pytest.fixture(autouse=True)
+def _pin_opencode_settings(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pin the app's opencode settings to their declared defaults, per test.
+
+    The default lane must not depend on the developer's `.env` or exported env
+    vars (the defect this fixture closes: a non-empty `OPENCODE_SERVER_PASSWORD`
+    made `/health` report `auth_configured: True`). A test that wants a
+    non-default value sets it itself with `monkeypatch.setattr`; the pin is the
+    starting point, not a ceiling. The operator lanes (`-m live` / `-m latex`)
+    deliberately read the real environment and are left untouched.
+    """
+    if request.node.get_closest_marker("live") or request.node.get_closest_marker(
+        "latex"
+    ):
+        return
+    for field in OPENCODE_SETTINGS_FIELDS:
+        monkeypatch.setattr(settings, field, Settings.model_fields[field].default)
 
 
 class OfflineLLMBackend:
