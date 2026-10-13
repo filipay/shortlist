@@ -41,19 +41,22 @@ and in `tests/llm/test_live_structured_call.py`.
   `opencode serve --hostname 0.0.0.0`.) A bare "connection refused" here usually
   means the server bound to `127.0.0.1` and you are testing from somewhere that
   is not the host — it is **not** evidence that the contract drifted.
-- **V2 requires HTTP basic auth on `/api/*`.** The V2 spec declares
-  `security: []` and `securitySchemes: {}`, but the running 2.0.26 server returns
-  **401 unauthenticated** on `/api/info` and `/openapi.json` (Pitfall P8, verified
-  live). Never rely on the spec's security declaration — always send auth. The
-  live lane sends `httpx.BasicAuth("opencode", <password>)` exactly as the app's
-  `_auth()` does, and an empty password means "send no header", which fails as
-  `unauthenticated` (D-136).
+- **V2 auth is opt-in.** `opencode serve` requires HTTP basic auth on `/api/*`
+  only when it was started with a password
+  (`required = Option.isSome(password) && password !== ""`); with no password it
+  serves `/api/*` unauthenticated and prints a "server is unsecured" warning. The
+  spec's `security: []` is therefore accurate. When a password IS configured, the
+  server returns **401 unauthenticated** if it is missing or wrong; the live lane
+  and the app's `_auth()` both send `httpx.BasicAuth("opencode", <password>)` in
+  that case, and an empty password means "send no header" (D-136).
 
 ## The server password (V2, D-135)
 
-Under V2 the password is **effectively required**, not optional: an empty
-configured password makes a completion fail fast as `unauthenticated` before any
-request is issued (D-136). Obtain it via the **documented pairing flow**:
+Under V2 the password is **optional**: configure it only when the server was
+started WITH a password. An empty `OPENCODE_SERVER_PASSWORD` sends no auth header
+and reaches an unsecured server normally; a `401` from a secured server is
+classified `unauthenticated` (D-136). To obtain a password for a secured server,
+use the **documented pairing flow**:
 
 1. `POST /api/pair` → `{"code": "…", "expires_in": <int>}` (a single-use code).
 2. `GET /auth/connect/{code}` → `{"token": "…"}` (a session token).
