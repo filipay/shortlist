@@ -51,7 +51,7 @@ SENTINEL = json.loads(
     (PROJECT_ROOT / "tests" / "fixtures" / "opencode_providers.json").read_text(
         encoding="utf-8"
     )
-)["providers"][0]["key"]
+)["provider"]["data"][0]["key"]
 
 #: No key in the body may carry a raw upstream payload (T-01-30).
 FORBIDDEN_BODY_KEYS = frozenset(
