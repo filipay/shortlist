@@ -148,9 +148,10 @@ def _v2_backend(
     *,
     provider_id: str = "opencode-go",
     model_id: str = settings.opencode_model,
+    password: str = "test-server-password",
 ) -> OpenCodeServerBackend:
     """A backend whose discovery is stubbed; detection runs through the recorder."""
-    backend = OpenCodeServerBackend(password="test-server-password")
+    backend = OpenCodeServerBackend(password=password)
 
     async def _discover() -> DiscoveryResult:
         return DiscoveryResult(
@@ -362,15 +363,52 @@ async def test_a_v2_generate_transport_failure_is_retried_after_a_good_session(
     assert result.attempts == 2
 
 
-# --- AUTH: empty password fails fast; 401 is `unauthenticated` (D-136/D-137) ----
+# --- AUTH: auth is opt-in; 401 is `unauthenticated` (D-136/D-137) --------------
 
 
-async def test_an_empty_password_fails_fast_with_no_request(
+async def test_an_empty_password_reaches_an_unsecured_server_with_no_auth_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An unsecured (default) server works with no configured password (D-136).
+
+    Auth is opt-in upstream: with no password the client sends no `Authorization`
+    header and the server serves `/api/*` unauthenticated. The repro class is
+    "empty password + a healthy server"; the completion must succeed, not fail
+    fast, and the client must be built with `auth=None`.
+    """
     recorder = Recorder()
-    backend = OpenCodeServerBackend(password="")
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+    backend = _v2_backend(monkeypatch, recorder, password="")
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.ok is True
+    assert result.status == "ok"
+    assert result.attempts == 1
+    # A request was actually issued, and no client carried an auth header.
+    assert [(method, url) for method, url, _ in recorder.requests] == [
+        ("POST", V2_SESSION_PATH),
+        ("POST", GENERATE_PATH.format(session_id=V2_SESSION_ID)),
+    ]
+    assert recorder.client_kwargs and all(
+        kwargs["auth"] is None for kwargs in recorder.client_kwargs
+    )
+
+
+async def test_an_empty_password_against_a_secured_server_is_unauthenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A password-protected server reached with no password is `unauthenticated`.
+
+    The distinct cause survives the opt-in model: the client sends no header, the
+    secured server answers `401`, and that is classified `unauthenticated` rather
+    than a bare `http_401`.
+    """
+    recorder = Recorder(
+        session=(401, {"_tag": "UnauthorizedError", "message": "Authentication required"})
+    )
+    backend = _v2_backend(monkeypatch, recorder, password="")
 
     result = await backend.complete_structured(
         schema=ProbeResult, system="s", parts=["p"]
@@ -379,10 +417,6 @@ async def test_an_empty_password_fails_fast_with_no_request(
     assert result.ok is False
     assert result.status == "error"
     assert result.error_kind == "unauthenticated"
-    assert result.attempts == 0
-    # Not even the detection probe is issued.
-    assert recorder.requests == []
-    assert recorder.paths == []
 
 
 async def test_a_session_401_is_unauthenticated_not_a_generic_http_error(

@@ -214,10 +214,9 @@ def _backend(
     without passing `model=` — moving the shipped default then leaves every
     default-lane resolution site green by construction.
 
-    `detect_surface` is stubbed to the V1 surface and the backend carries a
-    non-empty password, so the retained V1 arm is exercised: D-136 now fails an
-    empty password fast, and the fake `/api/info` body would otherwise route the
-    call to the V2 arm.
+    `detect_surface` is stubbed to the V1 surface so the retained V1 arm is
+    exercised regardless of the fake `/api/info` body; the non-empty password
+    keeps the configured-auth path covered.
     """
     backend = OpenCodeServerBackend(password="test-server-password")
 

@@ -102,7 +102,8 @@ ERROR_KIND_MODEL_NOT_FOUND = "model_not_found"
 ERROR_KIND_INVALID_SESSION = "invalid_session"
 #: D-137: a missing (or rejected) `OPENCODE_SERVER_PASSWORD`. Distinct from a
 #: generic `http_401` so the operator sees "auth missing" rather than a bare badge
-#: (D-52). D-136: an empty password fails fast with no request issued.
+#: (D-52). D-136: an empty password sends no auth header and reaches an unsecured
+#: server; a `401` from a secured server is this cause.
 ERROR_KIND_UNAUTHENTICATED = "unauthenticated"
 #: Prefix for a non-200 response, e.g. `http_400`.
 HTTP_ERROR_KIND_PREFIX = "http_"
@@ -531,8 +532,9 @@ class OpenCodeServerBackend:
         A V1 server runs session → message → `info.structured`; a V2 server runs
         session → generate (schema loop), where the schema rides in the prompt and
         validation is client-side. An `unknown` surface fails closed as
-        `unreachable`. An empty configured password fails fast with
-        `unauthenticated` and issues no request (D-136).
+        `unreachable`. An empty configured password sends NO auth header — an
+        unsecured (default) server works over that same path (D-136); a `401` from
+        a secured server is classified `unauthenticated`.
 
         **Retry layers, deliberately different:**
 
@@ -564,18 +566,6 @@ class OpenCodeServerBackend:
         """
         started = time.perf_counter()
         try:
-            # D-136: an unauthenticated server requires a configured password. We
-            # fail fast — no client is built and no request is issued — rather than
-            # issue an auth-less call that can only 401 (or hit the SPA fallback).
-            if not self._password:
-                return _failure(
-                    status="error",
-                    error_kind=ERROR_KIND_UNAUTHENTICATED,
-                    error="no opencode server password configured",
-                    attempts=0,
-                    started=started,
-                )
-
             resolved = await self._resolve_model(model)
             if isinstance(resolved, StructuredCallResult):
                 return resolved
