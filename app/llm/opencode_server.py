@@ -652,7 +652,7 @@ class OpenCodeServerBackend:
                 # surface (the SPA fallback serves HTML); `unknown` fails closed.
                 probe = await detect_surface(base_url=self._base_url, client=client)
                 if probe.surface == "v2":
-                    return await self._complete_v2(
+                    result = await self._complete_v2(
                         client,
                         schema=schema,
                         system=system,
@@ -663,6 +663,25 @@ class OpenCodeServerBackend:
                         started=started,
                         transport_budget=budget,
                     )
+                    # FIX 2 (observability): the V2 arm logs nothing on failure and
+                    # `llm_calls` has no `error_kind` column, so otherwise a failed
+                    # V2 call is unattributable. Exactly ONE bounded warning names
+                    # the cause. Never the prompt, CV/listing text or the password
+                    # (the port carries no purpose — that lives on the caller's
+                    # audit row, not this transport). `error_kind` is `http_<code>`
+                    # for an HTTP failure, so the status is already in the line.
+                    if result.status != "ok":
+                        log.warning(
+                            "llm.v2_completion_failed",
+                            backend="opencode_server",
+                            status=result.status,
+                            error_kind=result.error_kind,
+                            attempts=result.attempts,
+                            provider=provider_id,
+                            model=model_id,
+                            server_version=probe.version,
+                        )
+                    return result
                 if probe.surface == "unknown":
                     return _failure(
                         status="error",

@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 import pytest
+import structlog
 
 from app.config import settings
 from app.domain.schemas.probe import ProbeResult
@@ -469,6 +470,75 @@ async def test_a_v2_result_records_the_configured_model_and_no_served_identity(
     assert result.agent is None
     assert result.provider_tokens is None
     assert isinstance(result.server_version, str) and result.server_version
+
+
+# --- FIX 2: a failed V2 completion emits exactly one structured warning --------
+
+
+def _v2_failure_warnings(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [event for event in events if event.get("event") == "llm.v2_completion_failed"]
+
+
+async def test_a_failed_v2_completion_emits_one_structured_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cause must survive without the `llm_calls` `error_kind` column.
+
+    The recorded live failure was undiagnosable because the V2 arm logged nothing
+    and only `status` persisted. One bounded warning now carries the discriminator.
+    """
+    recorder = Recorder(generate=(200, {"data": {"text": INVALID_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    with structlog.testing.capture_logs() as events:
+        result = await backend.complete_structured(
+            schema=ProbeResult, system="s", parts=["p"]
+        )
+
+    assert result.ok is False
+    warnings = _v2_failure_warnings(events)
+    assert len(warnings) == 1, "exactly one warning per failed call"
+    assert warnings[0]["backend"] == "opencode_server"
+    assert warnings[0]["status"] == "invalid"
+    assert warnings[0]["error_kind"] == "invalid"
+    assert warnings[0]["attempts"] == result.attempts
+    assert warnings[0]["provider"] == "opencode-go"
+    assert warnings[0]["model"] == settings.opencode_model
+    assert warnings[0]["server_version"] == V2_SERVER_VERSION
+
+
+async def test_the_warning_carries_the_http_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An HTTP failure is attributed by `error_kind` (`http_<code>`)."""
+    recorder = Recorder(session=(500, {"error": "boom"}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    with structlog.testing.capture_logs() as events:
+        result = await backend.complete_structured(
+            schema=ProbeResult, system="s", parts=["p"]
+        )
+
+    assert result.ok is False
+    warnings = _v2_failure_warnings(events)
+    assert len(warnings) == 1
+    assert warnings[0]["status"] == "error"
+    assert warnings[0]["error_kind"] == "http_500"
+
+
+async def test_a_successful_v2_completion_emits_no_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = Recorder()
+    backend = _v2_backend(monkeypatch, recorder)
+
+    with structlog.testing.capture_logs() as events:
+        result = await backend.complete_structured(
+            schema=ProbeResult, system="s", parts=["p"]
+        )
+
+    assert result.ok is True
+    assert _v2_failure_warnings(events) == []
 
 
 if __name__ == "__main__":  # pragma: no cover
