@@ -45,6 +45,7 @@ OPENCODE_SETTINGS_FIELDS = (
     "opencode_max_retries",
     "opencode_structured_retry_count",
     "opencode_discovery_retry_delay_seconds",
+    "opencode_discovery_timeout_seconds",
 )
 
 

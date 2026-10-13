@@ -58,10 +58,12 @@ class Settings(BaseSettings):
     #: `status=ok`. See `docs/runbook-opencode-contract.md`.
     opencode_model: str = "minimax-m3"
     opencode_server_password: str = ""
-    #: Bounded timeout for the health/discovery calls (T-01-32): a hung request
-    #: must not pin the single worker. Configuration, not a constant (PLAT-04).
-    #: Stays scoped to health/discovery — a completion is a different order of
-    #: magnitude (Pitfall P4), so it gets its own ceiling below.
+    #: Bounded timeout for the health/detection/session calls (T-01-32): a hung
+    #: request must not pin the single worker. Configuration, not a constant
+    #: (PLAT-04). Deliberately SHORT: this is the `/health` liveness ceiling, so a
+    #: backend that is down must not make a liveness check hang. Discovery walks
+    #: the server's model registry, a different order of magnitude, so it gets its
+    #: own ceiling below — do not widen this one to cover it.
     opencode_timeout_seconds: float = 5.0
     #: Bounded timeout for ONE structured completion (PLAT-04). A real call takes
     #: whole seconds to tens of seconds, so reusing the 5-second health timeout
@@ -89,6 +91,15 @@ class Settings(BaseSettings):
     #: a registry that is about to appear, short enough that no request is ever
     #: pinned for the full warm window. Configuration, not a literal (PLAT-04).
     opencode_discovery_retry_delay_seconds: float = 2.0
+    #: Bounded timeout for the discovery/registry requests (T-01-32). A cold or
+    #: large server answers `GET /api/model` + `GET /api/provider` far more slowly
+    #: than it answers the liveness probe — measured live: discovery raised
+    #: `ReadTimeout` under the 5-second `opencode_timeout_seconds` while the same
+    #: endpoints answered in ~19 ms via curl. Configuration, not a constant
+    #: (PLAT-04). Deliberately SEPARATE from `opencode_timeout_seconds`, which
+    #: stays the SHORT `/health` liveness ceiling: widening that one would make a
+    #: health check hang for the discovery budget when the backend is down.
+    opencode_discovery_timeout_seconds: float = 30.0
 
     # --- Ingest sanitise policy (C2) -----------------------------------------
     description_max_chars: int = 20000

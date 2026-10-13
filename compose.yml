@@ -40,6 +40,7 @@ services:
       - OPENCODE_MAX_RETRIES=${OPENCODE_MAX_RETRIES:-2}
       - OPENCODE_STRUCTURED_RETRY_COUNT=${OPENCODE_STRUCTURED_RETRY_COUNT:-2}
       - OPENCODE_DISCOVERY_RETRY_DELAY_SECONDS=${OPENCODE_DISCOVERY_RETRY_DELAY_SECONDS:-2}
+      - OPENCODE_DISCOVERY_TIMEOUT_SECONDS=${OPENCODE_DISCOVERY_TIMEOUT_SECONDS:-30}
       # Phase-4 LaTeX engine, forwarded for the same reason as the knobs above.
       # Every default matches app/config.py exactly. TECTONIC_CACHE_DIR MUST equal
       # the image ENV value (Dockerfile), or a runtime compile looks in a cache the

@@ -302,6 +302,7 @@ class OpenCodeServerBackend:
         password: str | None = None,
         timeout: float | None = None,
         completion_timeout: float | None = None,
+        discovery_timeout: float | None = None,
     ) -> None:
         self._base_url = base_url if base_url is not None else settings.opencode_base_url
         self._password = (
@@ -317,6 +318,15 @@ class OpenCodeServerBackend:
             completion_timeout
             if completion_timeout is not None
             else settings.opencode_completion_timeout_seconds
+        )
+        # The registry walk is also a different order of magnitude: a cold/large
+        # server answers `/api/model` far slower than the liveness probe, so
+        # discovery gets its own generous ceiling — while `_timeout` stays the
+        # SHORT `/health` one (measured live: ReadTimeout at 5s, ~19 ms via curl).
+        self._discovery_timeout = (
+            discovery_timeout
+            if discovery_timeout is not None
+            else settings.opencode_discovery_timeout_seconds
         )
 
     def _auth(self) -> httpx.BasicAuth | None:
@@ -342,6 +352,19 @@ class OpenCodeServerBackend:
         return httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._completion_timeout,
+            auth=self._auth(),
+        )
+
+    def _discovery_client(self) -> httpx.AsyncClient:
+        """A client bounded by the DISCOVERY ceiling, not the 5s health one.
+
+        Discovery spends its time walking the model registry, so it must not be
+        aborted by the short liveness ceiling; the `/health` probe keeps `_client`
+        (and so the short `_timeout`) unchanged.
+        """
+        return httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=self._discovery_timeout,
             auth=self._auth(),
         )
 
@@ -395,7 +418,7 @@ class OpenCodeServerBackend:
         leave this block (D-09/D-11).
         """
         try:
-            async with self._client() as client:
+            async with self._discovery_client() as client:
                 probe = await detect_surface(base_url=self._base_url, client=client)
                 retried = False
                 warming = False

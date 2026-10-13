@@ -461,6 +461,19 @@ def test_the_discovery_retry_delay_is_environment_tunable(
     assert Settings().opencode_discovery_retry_delay_seconds == 0.5
 
 
+def test_the_discovery_timeout_is_environment_tunable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discovery's own budget is configuration, not a literal (PLAT-04)."""
+    assert (
+        Settings.model_fields["opencode_discovery_timeout_seconds"].default == 30.0
+    )
+
+    monkeypatch.setenv("OPENCODE_DISCOVERY_TIMEOUT_SECONDS", "45.5")
+
+    assert Settings().opencode_discovery_timeout_seconds == 45.5
+
+
 def test_the_phase_four_ceilings_are_environment_tunable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

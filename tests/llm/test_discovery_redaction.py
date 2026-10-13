@@ -846,5 +846,67 @@ async def test_a_valid_v1_surface_is_not_vetoed_by_a_401_elsewhere(
     assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH, CONFIG_PROVIDERS_PATH]
 
 
+# --- 9. the discovery budget is separate from the health ceiling --------------
+#
+# Live defect: discovery against a real 2.0.26 server raised ReadTimeout under the
+# 5-second general timeout while the same endpoints answered in ~19 ms via curl.
+# Discovery gets its own generous budget; the `/health` liveness probe must keep
+# the short one, or a backend that is down would hang a health check for the full
+# discovery budget instead of failing fast.
+
+
+async def test_discovery_uses_its_own_generous_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _v2_recorder()
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    await OpenCodeServerBackend().discover_models()
+
+    assert recorder.client_kwargs, "discovery built no client — assertion is vacuous"
+    assert all(
+        kwargs["timeout"] == settings.opencode_discovery_timeout_seconds
+        for kwargs in recorder.client_kwargs
+    )
+    # The split is real, not two equal values: discovery's ceiling exceeds the
+    # health one, so a regression that collapses them fails here.
+    assert (
+        settings.opencode_discovery_timeout_seconds
+        > settings.opencode_timeout_seconds
+    )
+
+
+async def test_the_discovery_timeout_argument_overrides_the_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit ceiling is honoured, so the setting is not the only source."""
+    recorder = _v2_recorder()
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    await OpenCodeServerBackend(discovery_timeout=12.5).discover_models()
+
+    assert recorder.client_kwargs[0]["timeout"] == 12.5
+
+
+async def test_health_keeps_the_short_liveness_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The liveness probe must NOT get the discovery budget: no 30 s hang on down."""
+    recorder = Recorder(body={"version": "1.2.3"})
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    await OpenCodeServerBackend().health()
+
+    assert recorder.client_kwargs, "health built no client — assertion is vacuous"
+    assert all(
+        kwargs["timeout"] == settings.opencode_timeout_seconds
+        for kwargs in recorder.client_kwargs
+    )
+    assert (
+        recorder.client_kwargs[0]["timeout"]
+        < settings.opencode_discovery_timeout_seconds
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
