@@ -365,13 +365,29 @@ Plans:
 
 ### Phase 07.1: Migrate the LLM backend to the opencode V2 HTTP API (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** The app's LLM backend speaks the opencode V2 HTTP API, so ranking, tailoring, screening-answer drafting and CV fact extraction work again — while the retained V1 surface keeps working (dual-support with runtime detection). Trigger: the pinned V1 contract is dead on opencode 2.0.26 (legacy root routes serve SPA HTML, `POST /session` is a hard 405, every LLM call fails with `JSONDecodeError`).
+**Requirements**: D-135, D-136, D-137, D-138, D-139, D-140, D-141, D-142, D-143, D-144, D-145, D-146, D-147, D-148, D-149, D-150 (CONTEXT decisions; ROADMAP lists no REQ ids for this inserted phase)
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 6 plans
+**Out of scope:** any new user-facing capability (the Settings model picker is a separate phase).
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 07.1 to break down)
+**Wave 1**
+
+- [ ] 07.1-01-PLAN.md — Tracer: one V2 schema-constrained completion end-to-end — the V2 contract group, V2 builders, surface detection, the generate arm, the client-side schema-retry loop, and the auth fail-fast (D-136/D-139/D-140/D-141/D-142/D-147/D-148)
+- [ ] 07.1-02-PLAN.md — The health/auth surface: `auth_configured` on `/health` and the queue's "auth missing" status line (D-136/D-137/D-138)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07.1-03-PLAN.md — The contract fixture rebuilt as the V2 slice, the V2 snapshot assertions, and the raw-text negative control (D-147/D-148/D-149/D-150)
+- [ ] 07.1-04-PLAN.md — Discovery retargeted to `GET /api/model` + `GET /api/provider` with redaction preserved, plus the cold-start retry (D-143/D-144/D-146)
+
+**Wave 3** *(blocked on Waves 1–2 completion)*
+
+- [ ] 07.1-05-PLAN.md — The operator live lanes retargeted to `/openapi.json` + `/api/info` and the real positive/negative `generate` check, plus the selftest's contract-agnostic success signal (D-135/D-144/D-145/D-150)
+- [ ] 07.1-06-PLAN.md — The operator documentation: the V2 runbook, `.env.example`, README, and the `AGENTS.md` security note recording the accepted residual prompt-injection risk (D-135/D-138/D-150)
+
+**Notes:** `POST /api/session/{id}/generate` is chosen for the completion call because it has no tool-execution surface (unlike `/api/session/{id}/prompt`). The V2 spec's declared `security: []` is not honoured by the running server — every `/api/*` call is authenticated. `TOLERATED_SCHEMA_ERRORS` and `_salvage` stay byte-identical (D-142). The residual prompt-injection risk from V2's missing `system` field is accepted and documented, to be revisited in a later phase.
 
 ### Phase 8: Operations + Polish
 
