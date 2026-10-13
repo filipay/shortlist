@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "07.1"
 current_phase_name: Migrate the LLM backend to the opencode V2 HTTP API
 status: executing
-stopped_at: Completed 07.1-01-PLAN.md
-last_updated: "2026-10-13T14:16:33.525Z"
+stopped_at: Completed 07.1-02-PLAN.md
+last_updated: "2026-10-13T14:27:32.651Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 07.1 execution started
-state_head: 47ebb1f2b9aa0ab7fc8dae3cacfe7323def7ee71
+state_head: d49546c866d3796a324af5ce0ff842e26b30345b
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 76
-  completed_plans: 71
+  completed_plans: 72
   percent: 0
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 ## Current Position
 
 Phase: 07.1 (Migrate the LLM backend to the opencode V2 HTTP API) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 07.1 execution started
 
@@ -105,6 +105,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P13 | ~10min | 3 tasks | 4 files |
 | Phase 07 P14 | 9 min | 3 tasks | 4 files |
 | Phase 07.1 P01 | 24 min | 3 tasks | 13 files |
+| Phase 07.1 P02 | 11 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -228,6 +229,9 @@ Recent decisions affecting current work:
 - [Phase 07]: IN-01 (07-14): TailoringPatch.ops/.gaps/.suggestions route through coerce_mapping_list, so every list-typed field on the salvage path shares one key-restricted unwrap; extra="forbid" and TOLERATED_SCHEMA_ERRORS are unchanged
 - [Phase 07.1]: 07.1-01: classify_surface checks `healthy` (V1) before `version` (V2) — a V1 /global/health body carries both markers, so version-first would misdetect every V1 server as V2
 - [Phase 07.1]: 07.1-01: the detected API surface is cached per base_url for the process and an `unknown` verdict is never cached, so a late-starting server is still detectable (D-147/D-148)
+- [Phase 07.1]: app.llm.auth_configured() is the ONE definition of 'is opencode auth configured'; /health and the queue strip both import it so they cannot disagree (D-138).
+- [Phase 07.1]: The auth_configured key on the /health opencode report is inert — it never gates or changes 'status' (D-08), and only the boolean is exposed, never the password.
+- [Phase 07.1]: The auth-missing queue-strip line reuses the existing llm-unreachable class to avoid an out-of-scope edit to assets/tailwind/input.css.
 
 ### Pending Todos
 
@@ -269,6 +273,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T14:16:33.415Z
-Stopped at: Completed 07.1-01-PLAN.md
+Last session: 2026-10-13T14:27:32.535Z
+Stopped at: Completed 07.1-02-PLAN.md
 Resume file: None
