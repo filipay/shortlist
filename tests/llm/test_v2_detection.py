@@ -178,6 +178,65 @@ async def test_detect_surface_falls_back_to_v1_when_api_info_is_html() -> None:
     assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH]
 
 
+async def test_detect_surface_marks_a_401_probe_as_unauthorized() -> None:
+    """IN-02: a 401 must be distinguishable from "nothing there".
+
+    `/api/info` → 401, `/global/health` → 200 text/html. The surface stays
+    `unknown` (a 401 body is not a surface), but `unauthorized` records the auth
+    failure so the caller reports `unauthenticated`, not a generic outage.
+    """
+    recorder = ProbeRecorder(
+        responses={
+            INFO_PATH: (401, {"error": "Unauthorized"}, "application/json"),
+        },
+        default=(200, "<html>SPA</html>", "text/html"),
+    )
+
+    probe = await detect_surface(base_url=BASE_URL, client=recorder.client())
+
+    assert probe.surface == "unknown"
+    assert probe.unauthorized is True
+    assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH]
+
+
+async def test_a_valid_v1_body_wins_even_though_api_info_401s() -> None:
+    """A 401 on one path must not veto a genuine surface on the other."""
+    recorder = ProbeRecorder(
+        responses={
+            INFO_PATH: (401, {"error": "Unauthorized"}, "application/json"),
+            GLOBAL_HEALTH_PATH: (
+                200,
+                json.dumps({"healthy": True, "version": "1.18.31"}),
+                "application/json",
+            ),
+        }
+    )
+
+    probe = await detect_surface(base_url=BASE_URL, client=recorder.client())
+
+    assert probe.surface == "v1"
+    assert probe.version == "1.18.31"
+    assert probe.unauthorized is True
+
+
+async def test_health_reports_unauthenticated_on_a_401_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The distinct cause reaches `/health` instead of a bare "HTTP 401"."""
+    recorder = ProbeRecorder(
+        responses={
+            INFO_PATH: (401, {"error": "Unauthorized"}, "application/json"),
+        },
+        default=(200, "<html>SPA</html>", "text/html"),
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    outcome = await OpenCodeServerBackend().health()
+
+    assert outcome.reachable is False
+    assert outcome.error == "unauthenticated"
+
+
 async def test_detect_surface_returns_unknown_when_both_are_spa_html() -> None:
     recorder = ProbeRecorder(default=(200, "<html>SPA</html>", "text/html"))
 

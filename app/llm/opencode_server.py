@@ -363,7 +363,14 @@ class OpenCodeServerBackend:
         return ProbeOutcome(
             reachable=probe.surface != "unknown",
             version=probe.version,
-            error=probe.error,
+            # IN-02: surface a 401 as the distinct auth cause — but only when the
+            # probe could not identify a surface at all; a 401 on one path with a
+            # valid surface on the other is not an outage.
+            error=(
+                "unauthenticated"
+                if probe.unauthorized and probe.surface == "unknown"
+                else probe.error
+            ),
         )
 
     async def discover_models(self) -> DiscoveryResult:
@@ -376,6 +383,11 @@ class OpenCodeServerBackend:
         registry that is STILL empty is returned as `reachable=True` with
         `error_kind="models_warming"` — an honest distinct cause, not a silent empty
         success. V1 (retained, D-148): `GET /config/providers` via `parse_providers`.
+
+        An `unknown` surface FAILS CLOSED, exactly as completion does: it is never
+        routed down the V1 path, because on a 2.0.26 server that path serves the SPA
+        HTML and `response.json()` raised a meaningless `JSONDecodeError` (IN-02). A
+        401 seen while probing is reported as the distinct `unauthenticated` cause.
 
         The body carries a plaintext provider credential. It is consumed as an
         argument to the parse and never assigned to an attribute, never logged,
@@ -390,9 +402,11 @@ class OpenCodeServerBackend:
                 if probe.surface == "v2":
                     model_response = await client.get(V2_MODEL_PATH)
                     if model_response.status_code != 200:
+                        code = model_response.status_code
                         return DiscoveryResult(
                             reachable=False,
-                            error=f"discovery returned HTTP {model_response.status_code}",
+                            error=f"discovery returned HTTP {code}",
+                            error_kind=_http_kind(code),
                         )
                     # WR-02: `/api/provider` is NOT the authoritative pair source
                     # (`parse_v2_models` never reads its values, and a cold server can
@@ -425,16 +439,35 @@ class OpenCodeServerBackend:
                                 retry_response.json(), provider_payload
                             )
                     warming = not providers
-                else:
-                    # V1 arm (retained, D-148). An `unknown` surface falls here — the
-                    # original single discovery path, so a V1 server is unchanged.
+                elif probe.surface == "v1":
+                    # V1 arm (retained, D-148). Reached ONLY on a genuine V1 verdict.
                     response = await client.get(CONFIG_PROVIDERS_PATH)
                     if response.status_code != 200:
+                        code = response.status_code
                         return DiscoveryResult(
                             reachable=False,
-                            error=f"discovery returned HTTP {response.status_code}",
+                            error=f"discovery returned HTTP {code}",
+                            error_kind=_http_kind(code),
                         )
                     providers = parse_providers(response.json())
+                else:
+                    # IN-02: fail closed on an `unknown` surface, exactly as
+                    # completion does — never fall through to the V1 path. A 401 is
+                    # the distinct auth cause; anything else is unreachable.
+                    return DiscoveryResult(
+                        reachable=False,
+                        error=(
+                            "server returned HTTP 401 (authentication required)"
+                            if probe.unauthorized
+                            else probe.error
+                            or "could not determine the opencode API surface"
+                        ),
+                        error_kind=(
+                            ERROR_KIND_UNAUTHENTICATED
+                            if probe.unauthorized
+                            else ERROR_KIND_UNREACHABLE
+                        ),
+                    )
         except Exception as exc:  # noqa: BLE001 — discovery is total
             return DiscoveryResult(reachable=False, error=type(exc).__name__)
 
@@ -481,7 +514,7 @@ class OpenCodeServerBackend:
                 ok=False,
                 status="error",
                 error=discovery.error or "model discovery failed",
-                error_kind=ERROR_KIND_UNREACHABLE,
+                error_kind=discovery.error_kind or ERROR_KIND_UNREACHABLE,
             )
         if discovery.error_kind == ERROR_KIND_MODELS_WARMING:
             # Reachable but advertising nothing: a cold server's registry warms up
@@ -1027,6 +1060,13 @@ def _failure(
         part_types=part_types,
         info_keys=info_keys,
     )
+
+
+def _http_kind(status_code: int) -> str:
+    """The operator kind for a non-200 response: 401 is the distinct auth cause."""
+    if status_code == 401:
+        return ERROR_KIND_UNAUTHENTICATED
+    return f"{HTTP_ERROR_KIND_PREFIX}{status_code}"
 
 
 def _bounded_excerpt(response: object) -> str:

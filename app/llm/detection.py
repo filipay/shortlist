@@ -36,11 +36,18 @@ Surface = Literal["v1", "v2", "unknown"]
 
 @dataclass(frozen=True)
 class SurfaceProbe:
-    """The outcome of a surface probe — a value, never an exception."""
+    """The outcome of a surface probe — a value, never an exception.
+
+    `unauthorized` records that at least one probe was answered with HTTP 401. The
+    surface is still `unknown` (a 401 body is not a recognisable surface), but the
+    auth failure is now distinguishable from "nothing there" so the caller can
+    report `unauthenticated` instead of a meaningless parse error (IN-02).
+    """
 
     surface: Surface
     version: str | None
     error: str | None
+    unauthorized: bool = False
 
 
 #: Process-local verdict cache keyed by `base_url`. The backend is built per
@@ -126,6 +133,7 @@ async def detect_surface(
 async def _probe_surface(*, client: httpx.AsyncClient) -> SurfaceProbe:
     """Run the two liveness probes and classify the first recognisable surface."""
     last_error: str | None = None
+    unauthorized = False
     for path in (INFO_PATH, GLOBAL_HEALTH_PATH):
         try:
             response = await client.get(path)
@@ -134,6 +142,8 @@ async def _probe_surface(*, client: httpx.AsyncClient) -> SurfaceProbe:
             continue
         status = getattr(response, "status_code", None)
         if status != 200:
+            if status == 401:
+                unauthorized = True
             last_error = f"HTTP {status}"
             continue
         try:
@@ -144,8 +154,15 @@ async def _probe_surface(*, client: httpx.AsyncClient) -> SurfaceProbe:
             status_code=status, content_type=_content_type(response), body=body
         )
         if surface != "unknown":
-            return SurfaceProbe(surface=surface, version=_version(body), error=None)
-    return SurfaceProbe(surface="unknown", version=None, error=last_error)
+            return SurfaceProbe(
+                surface=surface,
+                version=_version(body),
+                error=None,
+                unauthorized=unauthorized,
+            )
+    return SurfaceProbe(
+        surface="unknown", version=None, error=last_error, unauthorized=unauthorized
+    )
 
 
 __all__ = [

@@ -741,6 +741,110 @@ async def test_the_retained_v1_discovery_resolves_from_config_providers(
     assert await backend._resolve_model() == ("legacy", settings.opencode_model)
 
 
+# --- 8. IN-02: a 401 fails closed; an unknown surface never takes the V1 path --
+
+
+def _v1_html_recorder(*, info_status: int) -> Recorder:
+    """The literal live repro: `/api/info` is `info_status`, `/global/health` serves
+    the SPA HTML (HTTP 200). The retained V1 path would answer the same SPA HTML."""
+    return Recorder(
+        bodies={
+            GLOBAL_HEALTH_PATH: "<html>SPA</html>",
+            CONFIG_PROVIDERS_PATH: "<html>SPA</html>",
+        },
+        statuses={INFO_PATH: info_status},
+    )
+
+
+async def test_a_401_probe_fails_closed_as_unauthenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """IN-02 repro: a missing/stale password must NOT surface as a JSONDecodeError.
+
+    Live: `GET /api/info` → 401, `GET /global/health` → 200 text/html. The old code
+    detected `unknown`, fell through to the V1 `/config/providers` path (SPA HTML),
+    and `response.json()` raised `JSONDecodeError` — reporting the most likely
+    operator mistake (a bad password) as a meaningless parse error. Now discovery
+    fails closed with the distinct `unauthenticated` cause and never requests the V1
+    path.
+    """
+    recorder = _v1_html_recorder(info_status=401)
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await OpenCodeServerBackend().discover_models()
+
+    assert result.reachable is False
+    assert result.providers == []
+    assert result.error_kind == "unauthenticated"
+    assert "401" in (result.error or "")
+    assert CONFIG_PROVIDERS_PATH not in recorder.paths, (
+        "discovery took the V1 path on an unknown surface — the JSONDecodeError bug"
+    )
+
+
+async def test_a_401_makes_resolve_model_report_unauthenticated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The IN-02 cause reaches the completion path, not just discovery."""
+    recorder = _v1_html_recorder(info_status=401)
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    resolved = await OpenCodeServerBackend()._resolve_model()
+
+    assert isinstance(resolved, StructuredCallResult)
+    assert resolved.ok is False
+    assert resolved.error_kind == "unauthenticated"
+
+
+async def test_an_unknown_surface_without_a_401_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An `unknown` surface fails closed as `unreachable` — never the V1 path."""
+    recorder = _v1_html_recorder(info_status=200)
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    result = await OpenCodeServerBackend().discover_models()
+
+    assert result.reachable is False
+    assert result.error_kind == "unreachable"
+    assert CONFIG_PROVIDERS_PATH not in recorder.paths
+
+
+async def test_a_valid_v1_surface_is_not_vetoed_by_a_401_elsewhere(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verification pressure is symmetric: a genuine V1 server still resolves.
+
+    A 401 on `/api/info` must not stop the router from recognising a real V1
+    `/global/health`, so the auth signal never degrades a working server.
+    """
+    v1_payload = {
+        "providers": [
+            {
+                "id": "legacy",
+                "api_key": SENTINEL,
+                "models": {settings.opencode_model: {"name": "Legacy model"}},
+            }
+        ]
+    }
+    recorder = Recorder(
+        bodies={
+            GLOBAL_HEALTH_PATH: {"healthy": True},
+            CONFIG_PROVIDERS_PATH: v1_payload,
+        },
+        statuses={INFO_PATH: 401},
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+    backend = OpenCodeServerBackend()
+
+    discovery = await backend.discover_models()
+
+    assert discovery.reachable is True
+    assert discovery.providers == [
+        ProviderModel(provider_id="legacy", model_id=settings.opencode_model)
+    ]
+    assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH, CONFIG_PROVIDERS_PATH]
+
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
