@@ -42,7 +42,7 @@ from app.db.repositories.run_repo import RunSummary
 from app.db.repositories.source_repo import SourceHealth, get_source_health
 from app.db.session import get_session
 from app.domain.models import User
-from app.llm import get_llm_backend
+from app.llm import auth_configured, get_llm_backend
 from app.llm.base import LLMBackend
 from app.pipeline.rank import CV_FILENAME, RANK_SKIP_LABELS, ranking_in_progress
 from app.web.template_env import make_templates
@@ -73,8 +73,12 @@ _DISMISS_CONTEXT: Mapping[str, str] = MappingProxyType({"surface": "queue_dismis
 
 async def _health_strip(
     session: AsyncSession, backend: LLMBackend
-) -> tuple[list[SourceHealth], bool, str | None, str | None]:
-    """`(rows, reachable, version, error)` — never raises, never probes a board."""
+) -> tuple[list[SourceHealth], bool, str | None, str | None, bool]:
+    """`(rows, reachable, version, error, auth_configured)` — never raises.
+
+    The `auth_configured` boolean comes from the SAME `app.llm.auth_configured`
+    helper `/health` reads, so the report and the strip cannot disagree (D-138).
+    """
     try:
         rows = await get_source_health(session)
     except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the page
@@ -85,9 +89,9 @@ async def _health_strip(
         outcome = await backend.health()
     except Exception as exc:  # noqa: BLE001 — ditto
         log.warning("queue.llm_health_failed", error=type(exc).__name__)
-        return rows, False, None, type(exc).__name__
+        return rows, False, None, type(exc).__name__, auth_configured()
 
-    return rows, bool(outcome.reachable), outcome.version, outcome.error
+    return rows, bool(outcome.reachable), outcome.version, outcome.error, auth_configured()
 
 
 def _cv_status() -> dict[str, Any]:
@@ -366,7 +370,9 @@ async def queue(
 
     last_run, last_run_fragment = await _last_run_strip(request, session)
     ranking_strip = await _ranking_strip(session, last_run)
-    source_health, reachable, version, error = await _health_strip(session, backend)
+    source_health, reachable, version, error, auth_configured_ = await _health_strip(
+        session, backend
+    )
 
     return templates.TemplateResponse(
         request,
@@ -382,6 +388,7 @@ async def queue(
             "opencode_reachable": reachable,
             "opencode_version": version,
             "opencode_error": error,
+            "opencode_auth_configured": auth_configured_,
         },
     )
 

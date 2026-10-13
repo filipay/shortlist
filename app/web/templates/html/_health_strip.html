@@ -8,6 +8,13 @@
   <h2>Source health</h2>
 
   {% if not opencode_reachable %}
+  {% if not opencode_auth_configured %}
+  <p class="llm-status llm-unreachable" id="llm-backend-auth-missing">
+    No opencode server password is configured — the backend cannot be
+    authenticated. See <code>docs/runbook-opencode-contract.md</code> for how to
+    set <code>OPENCODE_SERVER_PASSWORD</code>.
+  </p>
+  {% endif %}
   <p class="llm-status llm-unreachable" id="llm-backend-unreachable">
     LLM backend unreachable{% if opencode_error %} ({{ opencode_error }}){% endif %}
     — ranking and CV tailoring are unavailable until it is back.

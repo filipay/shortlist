@@ -573,6 +573,28 @@ async def test_the_strip_reports_a_reachable_backend(
     assert "version 9.9.9" in response.text
 
 
+async def test_the_strip_names_missing_auth_when_the_backend_is_unreachable(
+    health_env: HealthEnv,
+) -> None:
+    # Default lane: no password configured and the stub backend is unreachable.
+    response = await health_env.client.get("/")
+
+    assert 'id="llm-backend-auth-missing"' in response.text
+    assert "OPENCODE_SERVER_PASSWORD" in response.text
+
+
+async def test_the_strip_omits_the_auth_hint_once_a_password_is_configured(
+    health_env: HealthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "opencode_server_password", "a-real-password")
+
+    response = await health_env.client.get("/")
+
+    # An auth-configured-but-unreachable backend is a different situation.
+    assert 'id="llm-backend-auth-missing"' not in response.text
+    assert 'id="llm-backend-unreachable"' in response.text
+
+
 async def test_the_strip_renders_last_success_returned_and_fill_rate(
     health_env: HealthEnv,
 ) -> None:
