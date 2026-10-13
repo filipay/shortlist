@@ -244,6 +244,7 @@ async def test_health_returns_200_and_reports_opencode_unreachable(
     assert body["db"] == "ok"
     assert body["opencode"]["reachable"] is False
     assert body["opencode"]["error"] == "ConnectError"
+    assert body["opencode"]["auth_configured"] is False
 
 
 async def test_health_reports_the_opencode_version_when_reachable(
@@ -258,7 +259,30 @@ async def test_health_reports_the_opencode_version_when_reachable(
         "reachable": True,
         "version": "1.2.3",
         "error": None,
+        "auth_configured": False,
     }
+
+
+async def test_health_reports_auth_configured_when_a_password_is_set(
+    health_env: HealthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "opencode_server_password", "a-real-password")
+
+    body = (await health_env.client.get("/health")).json()
+
+    assert body["opencode"]["auth_configured"] is True
+
+
+async def test_health_never_leaks_the_server_password(
+    health_env: HealthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinel = "do-not-leak-this-password"
+    monkeypatch.setattr(settings, "opencode_server_password", sentinel)
+
+    response = await health_env.client.get("/health")
+
+    assert response.json()["opencode"]["auth_configured"] is True
+    assert sentinel not in response.text
 
 
 async def test_health_reports_database_reachability(health_env: HealthEnv) -> None:

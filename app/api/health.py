@@ -29,7 +29,7 @@ from app.db.session import get_session, get_session_factory
 from app.domain.models import User
 from app.latex import get_latex_engine
 from app.latex.base import LatexEngine
-from app.llm import get_llm_backend
+from app.llm import auth_configured, get_llm_backend
 from app.llm.base import LLMBackend
 from app.pipeline.rank import CV_FILENAME
 from app.probe.probe import probe_all
@@ -44,15 +44,27 @@ def _iso(moment: datetime | None) -> str | None:
 
 
 async def _opencode_report(backend: LLMBackend) -> dict[str, Any]:
-    """`{reachable, version, error}`. A backend bug must not break `/health`."""
+    """`{reachable, version, error, auth_configured}`.
+
+    A backend bug must not break `/health`. `auth_configured` is an inert report
+    field (a boolean only, from `app.llm.auth_configured`) — it never gates or
+    changes `status` (D-08), and the password value is never placed here.
+    """
+    configured = auth_configured()
     try:
         outcome = await backend.health()
     except Exception as exc:  # noqa: BLE001 — health is a total function
-        return {"reachable": False, "version": None, "error": type(exc).__name__}
+        return {
+            "reachable": False,
+            "version": None,
+            "error": type(exc).__name__,
+            "auth_configured": configured,
+        }
     return {
         "reachable": bool(outcome.reachable),
         "version": outcome.version,
         "error": outcome.error,
+        "auth_configured": configured,
     }
 
 
