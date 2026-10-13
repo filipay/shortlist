@@ -3,16 +3,16 @@ gsd_state_version: "1.0"
 current_phase: "07.1"
 current_phase_name: Migrate the LLM backend to the opencode V2 HTTP API
 status: executing
-stopped_at: Phase 07.1 context gathered
-last_updated: "2026-10-13T13:31:21.569Z"
-last_activity: 2026-10-12
-last_activity_desc: Phase 07 complete, transitioned to Phase 6
-state_head: 9c6f704da48eb1a61b2847ef039d3ccf840e0638
+stopped_at: Completed 07.1-01-PLAN.md
+last_updated: "2026-10-13T14:16:33.525Z"
+last_activity: 2026-10-13
+last_activity_desc: Phase 07.1 execution started
+state_head: 47ebb1f2b9aa0ab7fc8dae3cacfe7323def7ee71
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 0
   total_plans: 76
-  completed_plans: 70
+  completed_plans: 71
   percent: 0
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-24)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 07 — Assisted Apply + Tracker
+**Current focus:** Phase 07.1 — Migrate the LLM backend to the opencode V2 HTTP API
 
 ## Current Position
 
-Phase: 07.1 (Migrate the LLM backend to the opencode V2 HTTP API) — READY TO EXECUTE
-Plan: Not started
+Phase: 07.1 (Migrate the LLM backend to the opencode V2 HTTP API) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-10-12 — Phase 07 complete, transitioned to Phase 6
+Last activity: 2026-10-13 — Phase 07.1 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -104,6 +104,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P07-12 | 15min | 3 tasks | 8 files |
 | Phase 07 P13 | ~10min | 3 tasks | 4 files |
 | Phase 07 P14 | 9 min | 3 tasks | 4 files |
+| Phase 07.1 P01 | 24 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -225,6 +226,8 @@ Recent decisions affecting current work:
 - [Phase 07]: WR-01 (07-14): the wrapper unwrap is restricted to the literal provider key "item" (WRAPPER_KEY, named once) — a single-key mapping with any other key is returned untouched and fails loudly at pydantic, so the module docstring's claim is delivered rather than aspirational
 - [Phase 07]: WR-01 (07-14): the unwrap loop breaks when the inner value IS the outer Mapping, so the exported helper terminates on a caller-constructed self-reference (IN-02); the failure-class tests pass a LIST under an unknown key, replacing the two scalar false-name tests (CONVENTIONS rule 4)
 - [Phase 07]: IN-01 (07-14): TailoringPatch.ops/.gaps/.suggestions route through coerce_mapping_list, so every list-typed field on the salvage path shares one key-restricted unwrap; extra="forbid" and TOLERATED_SCHEMA_ERRORS are unchanged
+- [Phase 07.1]: 07.1-01: classify_surface checks `healthy` (V1) before `version` (V2) — a V1 /global/health body carries both markers, so version-first would misdetect every V1 server as V2
+- [Phase 07.1]: 07.1-01: the detected API surface is cached per base_url for the process and an `unknown` verdict is never cached, so a late-starting server is still detectable (D-147/D-148)
 
 ### Pending Todos
 
@@ -266,6 +269,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T12:12:57.623Z
-Stopped at: Phase 07.1 context gathered
-Resume file: /workspace/job-search/.planning/phases/07.1-migrate-the-llm-backend-to-the-opencode-v2-http-api/07.1-CONTEXT.md
+Last session: 2026-10-13T14:16:33.415Z
+Stopped at: Completed 07.1-01-PLAN.md
+Resume file: None
