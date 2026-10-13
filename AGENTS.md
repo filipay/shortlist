@@ -342,7 +342,21 @@ can act on. Every other feature is downstream of that.
 
 # then validate: RankedListing.model_validate(info["structured_output"])
 
-### Prompt-injection boundary (a concrete, non-theoretical risk here)
+### Prompt-injection boundary (accepted residual risk under the opencode V2 API)
+
+Under the opencode **V2** API there is **no `system` field** on `generate` or
+`prompt`, so the app's frozen instructions and the untrusted listing text share
+one prompt (frozen instructions first, then the schema block, a hard delimiter, an
+explicit untrusted-data directive, and the existing per-part labels). Domain
+grounding still blocks fabrication of employers, titles, dates, bullets and
+skills — a successful injection cannot invent a fact — but a malicious listing
+could drive **schema-valid-but-dishonest** output (e.g. a wrong-but-grounded
+rationale). This residual risk is **accepted for now**, on the condition that it
+is documented: see `docs/runbook-opencode-contract.md` ("Residual
+prompt-injection risk (accepted)") and the `README`. Revisit candidates are the
+experimental per-session instructions endpoint (placement unconfirmed) or a plugin
+`context` hook (`ctx.session.hook("context")`, which needs plugin files outside
+the repo). Do not mistake this for an oversight.
 
 ### Model and agent selection
 
