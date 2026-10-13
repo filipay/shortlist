@@ -380,7 +380,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 07.1-03-PLAN.md — The contract fixture rebuilt as the V2 slice, the V2 snapshot assertions, and the raw-text negative control (D-147/D-148/D-149/D-150)
-- [ ] 07.1-04-PLAN.md — Discovery retargeted to `GET /api/model` + `GET /api/provider` with redaction preserved, plus the cold-start retry (D-143/D-144/D-146)
+- [ ] 07.1-04-PLAN.md — Discovery retargeted to `GET /api/model` + `GET /api/provider` with redaction preserved, plus the cold-start retry (D-146)
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
