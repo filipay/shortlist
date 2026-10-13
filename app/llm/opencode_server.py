@@ -77,6 +77,8 @@ from app.llm.contract import (
     STRUCTURED_ERROR_RETRIES_PATH,
     STRUCTURED_OUTPUT_TOOL_NAME,
     STRUCTURED_RESPONSE_PATH,
+    V2_MODEL_PATH,
+    V2_PROVIDER_PATH,
     V2_SESSION_PATH,
     V2_SESSION_RESPONSE_PATH,
 )
@@ -240,6 +242,48 @@ def parse_providers(payload: object) -> list[ProviderModel]:
     return sorted(found, key=lambda entry: (entry.provider_id, entry.model_id))
 
 
+def parse_v2_models(model_payload: object, provider_payload: object) -> list[ProviderModel]:
+    """Extract `(provider_id, model_id)` pairs from the V2 discovery payloads.
+
+    V2 splits discovery across `GET /api/model` (the AUTHORITATIVE pair source:
+    each `data[]` entry carries `modelID` + `providerID`) and `GET /api/provider`
+    (provider-level entries carrying `id`). Only the two identifiers are copied.
+
+    `provider_payload` is accepted so both endpoints of the contract are exercised,
+    and its provider-level values (`key`, `name`, `options`, …) are deliberately
+    NEVER read into a result — a provider entry is the realistic place a future
+    secret hides (D-09/D-11). The model payload is authoritative for the pair, so no
+    model is filtered by the provider list (a cold server can legitimately return an
+    empty `/api/provider`).
+
+    Tolerant by design, exactly like `parse_providers`: a non-mapping payload, a
+    missing/non-list `data`, and a malformed entry each contribute nothing — the
+    parse fails to an empty list, never raises.
+    """
+    if not isinstance(model_payload, dict):
+        return []
+
+    entries = model_payload.get("data")
+    if not isinstance(entries, list):
+        return []
+
+    found: list[ProviderModel] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        provider_id = entry.get("providerID")
+        model_id = entry.get("modelID")
+        if not isinstance(provider_id, str) or not provider_id:
+            continue
+        if not isinstance(model_id, str) or not model_id:
+            continue
+        # Only the two identifiers are copied; `name`, `compatibility`, `variants`
+        # and every other key are read past and never assigned (D-11).
+        found.append(ProviderModel(provider_id=provider_id, model_id=model_id))
+
+    return sorted(found, key=lambda entry: (entry.provider_id, entry.model_id))
+
+
 class OpenCodeServerBackend:
     """Reachability, discovery and one structured completion over HTTP."""
 
@@ -315,20 +359,58 @@ class OpenCodeServerBackend:
         )
 
     async def discover_models(self) -> DiscoveryResult:
-        """`GET /config/providers`, parsed straight into identifiers (D-09/D-11)."""
+        """Discover identifiers, dispatched on the detected surface (D-146).
+
+        V2: `GET /api/model` + `GET /api/provider`, parsed by `parse_v2_models`.
+        A cold server can return `data: []` on the first `/api/model` call while
+        the registry warms up (Pitfall P3), so an empty model list triggers exactly
+        ONE bounded re-probe (never a loop) before the honest empty result is
+        returned. V1 (retained, D-148): `GET /config/providers` via `parse_providers`.
+
+        The body carries a plaintext provider credential. It is consumed as an
+        argument to the parse and never assigned to an attribute, never logged,
+        never cached to disk and never returned; only the extracted identifiers
+        leave this block (D-09/D-11).
+        """
         try:
             async with self._client() as client:
-                response = await client.get(CONFIG_PROVIDERS_PATH)
-                if response.status_code != 200:
-                    return DiscoveryResult(
-                        reachable=False,
-                        error=f"discovery returned HTTP {response.status_code}",
-                    )
-                # The body carries a plaintext provider credential. It is consumed
-                # as an argument to the parse and never assigned to an attribute,
-                # never logged, never cached to disk and never returned; only the
-                # identifiers extracted by `parse_providers` leave this block.
-                providers = parse_providers(response.json())
+                probe = await detect_surface(base_url=self._base_url, client=client)
+                retried = False
+                if probe.surface == "v2":
+                    model_response = await client.get(V2_MODEL_PATH)
+                    if model_response.status_code != 200:
+                        return DiscoveryResult(
+                            reachable=False,
+                            error=f"discovery returned HTTP {model_response.status_code}",
+                        )
+                    provider_response = await client.get(V2_PROVIDER_PATH)
+                    if provider_response.status_code != 200:
+                        return DiscoveryResult(
+                            reachable=False,
+                            error=f"discovery returned HTTP {provider_response.status_code}",
+                        )
+                    provider_payload = provider_response.json()
+                    providers = parse_v2_models(model_response.json(), provider_payload)
+                    if not providers:
+                        # Cold start (Pitfall P3): the registry loads lazily right
+                        # after server start. ONE extra probe, never a loop; an
+                        # honestly-empty registry still fails loud downstream.
+                        retried = True
+                        retry_response = await client.get(V2_MODEL_PATH)
+                        if retry_response.status_code == 200:
+                            providers = parse_v2_models(
+                                retry_response.json(), provider_payload
+                            )
+                else:
+                    # V1 arm (retained, D-148). An `unknown` surface falls here — the
+                    # original single discovery path, so a V1 server is unchanged.
+                    response = await client.get(CONFIG_PROVIDERS_PATH)
+                    if response.status_code != 200:
+                        return DiscoveryResult(
+                            reachable=False,
+                            error=f"discovery returned HTTP {response.status_code}",
+                        )
+                    providers = parse_providers(response.json())
         except Exception as exc:  # noqa: BLE001 — discovery is total
             return DiscoveryResult(reachable=False, error=type(exc).__name__)
 
@@ -337,6 +419,7 @@ class OpenCodeServerBackend:
             backend="opencode_server",
             provider_count=len({entry.provider_id for entry in providers}),
             model_count=len(providers),
+            retried=retried,
         )
         return DiscoveryResult(providers=providers, reachable=True)
 
@@ -346,10 +429,11 @@ class OpenCodeServerBackend:
         """Resolve a bare model id to `(provider_id, model_id)` via discovery.
 
         `OPENCODE_MODEL` is a bare model id (e.g. ``deepseek-v4.1-flash``) while
-        the message body needs ``{providerID, modelID}``. The provider is
-        **derived from the server's own discovery response**, never hard-coded
-        (Assumptions Log A5's mitigation). Ambiguity — one model id offered under
-        two providers — resolves deterministically by sorted provider id.
+        the V2 session body's `Model.Ref` needs an OBJECT carrying `providerID`, so
+        the provider is **derived from the server's own discovery response**, never
+        hard-coded (Assumptions Log A5's mitigation). Ambiguity — one model id
+        offered under two providers — resolves deterministically by sorted provider
+        id.
 
         **Fail loud.** On a miss, or when discovery is unreachable, this returns an
         `ok=False` result naming the offending model id rather than silently
@@ -1315,5 +1399,6 @@ __all__ = [
     "TOLERATED_SCHEMA_ERRORS",
     "_extract_json",
     "parse_providers",
+    "parse_v2_models",
     "ruleset_allows_tool",
 ]

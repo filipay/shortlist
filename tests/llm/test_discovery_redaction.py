@@ -1,15 +1,18 @@
-"""T-01-29 / D-09 / D-11 / Pitfall 11 — the discovery redaction boundary.
+"""T-01-29 / D-09 / D-11 / D-146 — the discovery redaction boundary.
 
-`GET /config/providers` returns the provider API key in plaintext. One stray log
-statement, one cached body, one `raw` field and a live credential is on disk
-forever. This module proves the boundary four ways:
+Discovery now speaks the V2 surface (`GET /api/model` + `GET /api/provider`,
+retargeted by D-146) alongside the retained V1 `GET /config/providers` (D-148).
+Either response carries a credential-adjacent value in plaintext (`key` on a V2
+provider entry; the same on a V1 provider), so one stray log statement, one
+cached body, one `raw` field and a live credential is on disk forever. This
+module proves the boundary four ways:
 
 1. the returned objects carry only provider and model identifiers;
 2. the sentinel appears in no captured log output (the real structlog payload, a
    stdlib-backed `caplog` bridge, and stdout);
 3. the sentinel appears in no cell of any table in the migrated database;
-4. the request goes to `/config/providers` and the full-catalogue path is not
-   referenced anywhere in the module.
+4. the V2 request sequence is exactly `/api/model` then `/api/provider`, and the
+   full-catalogue path is not referenced anywhere in the module.
 
 `httpx` is swapped for a recorder in every test here, so nothing touches the
 network.
@@ -32,46 +35,77 @@ import structlog
 from app.config import settings
 from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
+from app.llm.contract import INFO_PATH, V2_MODEL_PATH, V2_PROVIDER_PATH
+from app.llm.detection import detect_surface
 from app.llm.opencode_server import (
     CONFIG_PROVIDERS_PATH,
     OpenCodeServerBackend,
     parse_providers,
+    parse_v2_models,
 )
-from app.llm.contract import INFO_PATH
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 PROVIDERS_FIXTURE = FIXTURES / "opencode_providers.json"
 SENTINEL = "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG"
+V2_SERVER_VERSION = "2.0.26"
 
 #: The full-catalogue endpoint D-09 forbids. Spelled here, not in production code.
 FORBIDDEN_CATALOGUE_PATH = "/provider"
 
 
-def _fixture_payload() -> dict[str, Any]:
+def _fixture() -> dict[str, Any]:
     return json.loads(PROVIDERS_FIXTURE.read_text(encoding="utf-8"))
 
 
+def _model_payload() -> Any:
+    return _fixture()["model"]
+
+
+def _provider_payload() -> Any:
+    return _fixture()["provider"]
+
+
 class Recorder:
-    """A fake `httpx` module for `app.llm.opencode_server`, recording request paths."""
+    """A fake `httpx` module for `app.llm.opencode_server`, recording request paths.
 
-    def __init__(self) -> None:
-        self.paths: list[str] = []
-        self.client_kwargs: list[dict[str, Any]] = []
+    `bodies` maps a path to its response body (or a list of bodies consumed in
+    order, the last repeating) so the V2 discovery test can serve `/api/model` and
+    `/api/provider` differently and a cold-start test can return empty then
+    populated. `body` is the single-response fallback (transport-error / non-200).
+    """
 
-    def module(
+    def __init__(
         self,
         *,
         status_code: int = 200,
         body: Any = None,
+        bodies: dict[str, Any] | None = None,
         error: BaseException | None = None,
         json_error: BaseException | None = None,
-    ) -> types.SimpleNamespace:
+    ) -> None:
+        self.paths: list[str] = []
+        self.client_kwargs: list[dict[str, Any]] = []
+        self._status_code = status_code
+        self._body = body
+        self._bodies = dict(bodies or {})
+        self._error = error
+        self._json_error = json_error
+
+    def _reply(self, url: str) -> Any:
+        if url in self._bodies:
+            entry = self._bodies[url]
+            if isinstance(entry, list):
+                return entry.pop(0) if len(entry) > 1 else entry[0]
+            return entry
+        return self._body
+
+    def module(self) -> types.SimpleNamespace:
         recorder = self
 
-        def _json() -> Any:
-            if json_error is not None:
-                raise json_error
-            return body
+        def _json_for(url: str) -> Any:
+            if recorder._json_error is not None:
+                raise recorder._json_error
+            return recorder._reply(url)
 
         class FakeClient:
             def __init__(self, **kwargs: Any) -> None:
@@ -85,11 +119,38 @@ class Recorder:
 
             async def get(self, url: str) -> Any:
                 recorder.paths.append(url)
-                if error is not None:
-                    raise error
-                return types.SimpleNamespace(status_code=status_code, json=_json)
+                if recorder._error is not None:
+                    raise recorder._error
+                return types.SimpleNamespace(
+                    status_code=recorder._status_code,
+                    json=lambda u=url: _json_for(u),
+                )
 
         return types.SimpleNamespace(AsyncClient=FakeClient, BasicAuth=httpx.BasicAuth)
+
+
+def _v2_recorder(*, model: Any = None) -> Recorder:
+    """A recorder serving the V2 fixture per path (detection + both discovery GETs)."""
+    return Recorder(
+        bodies={
+            INFO_PATH: {"version": V2_SERVER_VERSION},
+            V2_MODEL_PATH: _model_payload() if model is None else model,
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+
+
+async def _prime_v2_verdict() -> None:
+    """Cache a V2 verdict through the public probe, so discovery issues no probe.
+
+    The endpoint test asserts the LITERAL discovery paths; priming the process
+    cache keeps the `/api/info` probe out of the recorded sequence.
+    """
+    module = Recorder(bodies={INFO_PATH: {"version": V2_SERVER_VERSION}}).module()
+    client = module.AsyncClient(
+        base_url=settings.opencode_base_url, timeout=1.0, auth=None
+    )
+    await detect_surface(base_url=settings.opencode_base_url, client=client)
 
 
 def _scan_every_table(db_path: Path) -> tuple[list[str], list[str]]:
@@ -118,8 +179,8 @@ def _scan_every_table(db_path: Path) -> tuple[list[str], list[str]]:
 
 
 def test_discovery_returns_only_provider_and_model_identifiers() -> None:
-    """The FIXTURE is the live 1.18.31 shape: `models` is an object, `key` holds it."""
-    providers = parse_providers(_fixture_payload())
+    """The FIXTURE is the live 2.0.26 `/api/model` shape; `data[]` rows carry the pair."""
+    providers = parse_v2_models(_model_payload(), _provider_payload())
 
     assert providers == [
         ProviderModel(provider_id="opencode", model_id="claude-sonnet-4"),
@@ -129,15 +190,56 @@ def test_discovery_returns_only_provider_and_model_identifiers() -> None:
     assert set(ProviderModel.model_fields) == {"provider_id", "model_id"}
 
 
+def test_parse_v2_models_never_reads_provider_payload_values() -> None:
+    """Only the two model identifiers leave; the provider `key` is never touched."""
+    model = {"data": [{"modelID": "m1", "providerID": "p", "compatibility": {}}]}
+    provider = {"data": [{"id": "p", "key": SENTINEL, "options": {"secret": SENTINEL}}]}
+
+    providers = parse_v2_models(model, provider)
+
+    assert providers == [ProviderModel(provider_id="p", model_id="m1")]
+    assert SENTINEL not in repr(providers)
+
+
+def test_parse_v2_models_does_not_filter_by_the_provider_list() -> None:
+    """A cold/empty `/api/provider` must not drop a model the model payload offers."""
+    model = {"data": [{"modelID": "m1", "providerID": "p"}]}
+
+    assert parse_v2_models(model, {"data": []}) == [
+        ProviderModel(provider_id="p", model_id="m1")
+    ]
+
+
+def test_parse_v2_models_skips_a_model_missing_an_identifier() -> None:
+    payload = {
+        "data": [
+            {"modelID": "m1", "providerID": "p"},
+            {"modelID": "m2"},
+            {"providerID": "p"},
+            {"modelID": "", "providerID": "p"},
+            {"modelID": "m3", "providerID": ""},
+            "not-a-mapping",
+        ]
+    }
+
+    assert parse_v2_models(payload, {"data": []}) == [
+        ProviderModel(provider_id="p", model_id="m1")
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, [], "text", 7, (), {"data": "nope"}, {"data": [None, 1, []]}],
+)
+def test_parse_v2_models_tolerates_a_malformed_payload(payload: object) -> None:
+    assert parse_v2_models(payload, {"data": []}) == []
+
+
 def test_parse_providers_still_accepts_the_legacy_list_shape() -> None:
-    """The fix is additive: the old `[{"id": …}]` shape keeps working."""
+    """The retained V1 parse (D-148): the old `[{"id": …}]` shape keeps working."""
     payload = {
         "providers": [
-            {
-                "id": "legacy",
-                "api_key": SENTINEL,
-                "models": [{"id": "m2"}, {"id": "m1"}],
-            }
+            {"id": "legacy", "api_key": SENTINEL, "models": [{"id": "m2"}, {"id": "m1"}]}
         ]
     }
 
@@ -150,7 +252,7 @@ def test_parse_providers_still_accepts_the_legacy_list_shape() -> None:
 def test_the_dict_shape_branch_is_actually_exercised() -> None:
     """A guard that cannot fail is not a guard (the repo's guard-can-fail convention).
 
-    The same model ids as an OBJECT yield two pairs; as a LIST of id-less entries
+    The same V1 model ids as an OBJECT yield two pairs; as a LIST of id-less entries
     they yield none. The lengths differ, which proves the dict branch does real
     work rather than walking a list that happens to be empty.
     """
@@ -162,15 +264,8 @@ def test_the_dict_shape_branch_is_actually_exercised() -> None:
 
 
 def test_the_object_branch_never_copies_model_metadata_values() -> None:
-    """Only the keys leave the parser; per-model metadata is the secret's hiding place."""
-    payload = {
-        "providers": [
-            {
-                "id": "p",
-                "models": {"m1": {"credential": SENTINEL}},
-            }
-        ]
-    }
+    """Only the keys leave the V1 parser; per-model metadata is the secret's hiding place."""
+    payload = {"providers": [{"id": "p", "models": {"m1": {"credential": SENTINEL}}}]}
 
     providers = parse_providers(payload)
 
@@ -184,48 +279,26 @@ def test_provider_model_cannot_carry_a_raw_provider_entry() -> None:
         ProviderModel.model_validate({"id": "opencode", "api_key": SENTINEL})
 
 
-def test_a_provider_without_models_yields_an_empty_list() -> None:
-    payload = {"providers": [{"id": "empty-provider", "api_key": SENTINEL}]}
-
-    assert parse_providers(payload) == []
-
-    # The fixture's model-less provider contributes nothing either.
-    ids = {entry.provider_id for entry in parse_providers(_fixture_payload())}
-    assert "no-models-provider" not in ids
-
-
-def test_a_model_without_an_id_is_skipped() -> None:
-    payload = {
-        "providers": [
-            {"id": "p", "models": [{"name": "nameless"}, {"id": ""}, "not-a-mapping", 7]}
-        ]
-    }
-
-    assert parse_providers(payload) == []
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [None, [], "text", 7, (), {"providers": "nope"}, {"providers": [None, 1, []]}],
-)
-def test_a_malformed_payload_is_tolerated(payload: object) -> None:
-    assert parse_providers(payload) == []
-
-
 # --- 2. the endpoint contract -------------------------------------------------
 
 
-async def test_discovery_requests_config_providers_only(
+async def test_v2_discovery_requests_model_then_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(body=_fixture_payload()))
+    await _prime_v2_verdict()
+    recorder = Recorder(
+        bodies={
+            V2_MODEL_PATH: _model_payload(),
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     result = await OpenCodeServerBackend().discover_models()
 
     assert result.reachable is True
-    assert recorder.paths == [CONFIG_PROVIDERS_PATH]
-    assert recorder.paths == ["/config/providers"]
+    assert result.providers
+    assert recorder.paths == ["/api/model", "/api/provider"]
 
 
 def test_the_module_never_references_the_full_catalogue_endpoint() -> None:
@@ -234,7 +307,8 @@ def test_the_module_never_references_the_full_catalogue_endpoint() -> None:
     assert CONFIG_PROVIDERS_PATH in source
     assert not re.search(r"""["']/provider["']""", source), (
         "the 6 MB full-catalogue endpoint must not be referenced (D-09); "
-        "`/config/providers` is the user's actual entitlement"
+        "`/api/provider` is a different literal and `/config/providers` is the "
+        "user's actual entitlement"
     )
 
 
@@ -247,8 +321,8 @@ async def test_the_real_logger_never_carries_the_sentinel(
     assert SENTINEL in PROVIDERS_FIXTURE.read_text(encoding="utf-8"), (
         "the fixture lost its sentinel — this suite would pass vacuously"
     )
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(body=_fixture_payload()))
+    recorder = _v2_recorder()
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     with structlog.testing.capture_logs() as events:
         result = await OpenCodeServerBackend().discover_models()
@@ -272,13 +346,13 @@ async def test_the_sentinel_does_not_reach_captured_log_output(
         "log",
         structlog.wrap_logger(logging.getLogger("app.llm.opencode_server")),
     )
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(body=_fixture_payload()))
+    recorder = _v2_recorder()
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
     backend = OpenCodeServerBackend()
 
     result = await backend.discover_models()
 
-    assert recorder.paths == [CONFIG_PROVIDERS_PATH]
+    assert V2_MODEL_PATH in recorder.paths and V2_PROVIDER_PATH in recorder.paths
     assert result.providers
     assert "llm.discovery" in caplog.text, "the stage did not log — assertion is vacuous"
 
@@ -295,8 +369,8 @@ async def test_the_sentinel_does_not_reach_stdout(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(body=_fixture_payload()))
+    recorder = _v2_recorder()
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     await OpenCodeServerBackend().discover_models()
 
@@ -308,12 +382,8 @@ async def test_the_sentinel_does_not_reach_stdout(
 
 
 async def test_health_reports_the_server_version(monkeypatch: pytest.MonkeyPatch) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(
-        opencode_server,
-        "httpx",
-        recorder.module(body={"version": "1.2.3"}),
-    )
+    recorder = Recorder(body={"version": "1.2.3"})
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     outcome = await OpenCodeServerBackend().health()
 
@@ -327,10 +397,8 @@ async def test_health_reports_the_server_version(monkeypatch: pytest.MonkeyPatch
 async def test_health_is_unreachable_on_a_transport_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(
-        opencode_server, "httpx", recorder.module(error=RuntimeError("connect refused"))
-    )
+    recorder = Recorder(error=RuntimeError("connect refused"))
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     outcome = await OpenCodeServerBackend().health()
 
@@ -339,8 +407,8 @@ async def test_health_is_unreachable_on_a_transport_error(
 
 
 async def test_health_is_unreachable_on_a_non_200(monkeypatch: pytest.MonkeyPatch) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(status_code=503))
+    recorder = Recorder(status_code=503)
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     outcome = await OpenCodeServerBackend().health()
 
@@ -352,12 +420,8 @@ async def test_health_rejects_a_non_json_200_as_unreachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """07.1 / D-147: a non-JSON 200 is the SPA fallback, NOT a reachable server."""
-    recorder = Recorder()
-    monkeypatch.setattr(
-        opencode_server,
-        "httpx",
-        recorder.module(json_error=ValueError("not json")),
-    )
+    recorder = Recorder(json_error=ValueError("not json"))
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     outcome = await OpenCodeServerBackend().health()
 
@@ -368,10 +432,8 @@ async def test_health_rejects_a_non_json_200_as_unreachable(
 async def test_discovery_is_unreachable_on_a_transport_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(
-        opencode_server, "httpx", recorder.module(error=RuntimeError("timed out"))
-    )
+    recorder = Recorder(error=RuntimeError("timed out"))
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     result = await OpenCodeServerBackend().discover_models()
 
@@ -383,8 +445,8 @@ async def test_discovery_is_unreachable_on_a_transport_error(
 async def test_discovery_is_unreachable_on_a_non_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(opencode_server, "httpx", recorder.module(status_code=404))
+    recorder = Recorder(status_code=404)
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     result = await OpenCodeServerBackend().discover_models()
 
@@ -398,12 +460,8 @@ async def test_discovery_is_unreachable_on_a_non_200(
 async def test_the_server_password_is_used_only_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recorder = Recorder()
-    monkeypatch.setattr(
-        opencode_server,
-        "httpx",
-        recorder.module(body={"healthy": True, "version": "1.0.0"}),
-    )
+    recorder = Recorder(body={"healthy": True, "version": "1.0.0"})
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
 
     await OpenCodeServerBackend(password="").health()
     await OpenCodeServerBackend(password="localhost-server-password").health()

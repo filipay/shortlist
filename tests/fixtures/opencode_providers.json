@@ -1,41 +1,57 @@
 {
-  "_comment": "Shape transcribed from a live GET /config/providers on opencode 1.18.31 (2026-09-17): providers[].models is a JSON object keyed by model id, and the credential-adjacent field is `key`. This file is a contract artefact, not a guess, so it deliberately does NOT use the legacy list-of-id shape or its api-key field spelling.",
-  "providers": [
-    {
-      "id": "opencode-go",
-      "name": "opencode-go",
-      "source": "api",
-      "key": "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG",
-      "models": {
-        "deepseek-v4.1-flash": {
-          "name": "DeepSeek v4.1 Flash",
-          "cost": { "input": 0.14, "output": 0.28 }
-        },
-        "qwen3-coder": {
-          "name": "Qwen3 Coder",
-          "free": true
-        }
+  "_meta": {
+    "source": "GET /api/model + GET /api/provider on opencode 2.0.26 (authenticated)",
+    "spec_openapi": "3.1.0",
+    "note": "Hand-written V2 discovery fixture (D-146). `/api/model` is the authoritative pair source (`data[].modelID` + `data[].providerID`); `/api/provider` carries provider-level entries whose values — including the credential-adjacent `key` — are deliberately NEVER read into a result. The sentinel below must stay present so the redaction suite cannot pass vacuously."
+  },
+  "model": {
+    "location": { "directory": "/workspace/job-search" },
+    "data": [
+      {
+        "modelID": "deepseek-v4.1-flash",
+        "providerID": "opencode-go",
+        "name": "DeepSeek v4.1 Flash",
+        "compatibility": { "streaming": true }
+      },
+      {
+        "modelID": "qwen3-coder",
+        "providerID": "opencode-go",
+        "name": "Qwen3 Coder"
+      },
+      {
+        "modelID": "claude-sonnet-4",
+        "providerID": "opencode",
+        "name": "Claude Sonnet 4"
+      },
+      {
+        "modelID": "",
+        "providerID": "opencode",
+        "name": "blank model id"
+      },
+      {
+        "providerID": "opencode",
+        "name": "missing modelID"
+      },
+      {
+        "modelID": "orphan-model",
+        "name": "missing providerID"
+      },
+      "not-a-mapping"
+    ]
+  },
+  "provider": {
+    "location": { "directory": "/workspace/job-search" },
+    "data": [
+      {
+        "id": "opencode-go",
+        "name": "opencode-go",
+        "key": "SENTINEL-PROVIDER-CREDENTIAL-DO-NOT-LOG",
+        "options": {}
+      },
+      {
+        "id": "opencode",
+        "name": "opencode"
       }
-    },
-    {
-      "id": "opencode",
-      "name": "opencode",
-      "models": {
-        "claude-sonnet-4": {
-          "name": "Claude Sonnet 4"
-        }
-      }
-    },
-    {
-      "id": "no-models-provider",
-      "name": "No models configured"
-    },
-    {
-      "id": "missing-model-id",
-      "name": "Nameless models",
-      "models": {
-        "": { "name": "blank id" }
-      }
-    }
-  ]
+    ]
+  }
 }
