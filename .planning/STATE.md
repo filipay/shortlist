@@ -2,11 +2,11 @@
 gsd_state_version: "1.0"
 current_phase: "07.1"
 status: planning
-stopped_at: Phase 07 complete, ready to plan Phase 6
-last_updated: "2026-10-13T10:52:54.153Z"
+stopped_at: Phase 07.1 context gathered
+last_updated: "2026-10-13T12:13:06.135Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 07 complete, transitioned to Phase 6
-state_head: b85d3158055de3e92a5736a9a838d0e645c289b1
+state_head: 4e5a6a4ba1831c48c6bf6195e33c1262cbe04df8
 progress:
   total_phases: 9
   completed_phases: 6
@@ -265,6 +265,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T16:55:00.000Z
-Stopped at: Phase 07 complete (closed with documented known limitation G-07-7); next up — publish to GitHub
-Resume file: None
+Last session: 2026-10-13T12:12:57.623Z
+Stopped at: Phase 07.1 context gathered
+Resume file: /workspace/job-search/.planning/phases/07.1-migrate-the-llm-backend-to-the-opencode-v2-http-api/07.1-CONTEXT.md
