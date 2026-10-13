@@ -51,6 +51,7 @@ from app.llm.contract import (
     STRUCTURED_OUTPUT_TOOL_NAME,
 )
 from app.llm.opencode_server import OpenCodeServerBackend, parse_providers
+from app.llm.detection import SurfaceProbe
 
 LIVE_SESSION_ID = "ses_livetest123"
 
@@ -212,8 +213,13 @@ def _backend(
     `complete_structured` callers resolve the model the port actually looks for
     without passing `model=` — moving the shipped default then leaves every
     default-lane resolution site green by construction.
+
+    `detect_surface` is stubbed to the V1 surface and the backend carries a
+    non-empty password, so the retained V1 arm is exercised: D-136 now fails an
+    empty password fast, and the fake `/api/info` body would otherwise route the
+    call to the V2 arm.
     """
-    backend = OpenCodeServerBackend()
+    backend = OpenCodeServerBackend(password="test-server-password")
 
     async def _discover() -> DiscoveryResult:
         return DiscoveryResult(
@@ -224,8 +230,12 @@ def _backend(
     async def _health() -> ProbeOutcome:
         return ProbeOutcome(reachable=True, version="1.18.31")
 
+    async def _detect(*, base_url: str, client: object) -> SurfaceProbe:
+        return SurfaceProbe(surface="v1", version="1.18.31", error=None)
+
     monkeypatch.setattr(backend, "discover_models", _discover)
     monkeypatch.setattr(backend, "health", _health)
+    monkeypatch.setattr(opencode_server, "detect_surface", _detect)
     monkeypatch.setattr(opencode_server, "httpx", recorder.module())
     return backend
 

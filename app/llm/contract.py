@@ -18,9 +18,21 @@ and cannot drag an I/O dependency into `app/domain`.
 
 from __future__ import annotations
 
+# =============================================================================
+# V1 contract (retained) — D-148
+#
+# Kept verbatim so a V1 server still works (D-147). Do NOT add V2 twins of the
+# V1-only `FORMAT_*` / `STRUCTURED_*` / `PERMISSION_*` names: V2 has no
+# server-side structured output, so those names have no V2 meaning.
+# =============================================================================
+
 # --- servers / endpoints ------------------------------------------------------
 DOC_PATH = "/doc"
 SESSION_PATH = "/session"
+#: V1 liveness probe. Lives here (not in `opencode_server`) because this module is
+#: the single home of every wire name (D-54) — and `detection.py` needs it without
+#: importing `opencode_server` (which would be an import cycle).
+GLOBAL_HEALTH_PATH = "/global/health"
 #: The wire spelling WE build the message URL with.
 MESSAGE_PATH = "/session/{session_id}/message"
 #: The OpenAPI path-template spelling the installed spec serves — its path
@@ -109,6 +121,47 @@ PART_TYPE_TOOL = "tool"
 #: empty map is not a deny).
 MESSAGE_TOOLS_FIELD = "tools"
 
+# =============================================================================
+# V2 contract (opencode 2.0.x) — D-147/D-148
+#
+# Added alongside the retained V1 group so neither spelling can silently absorb
+# the other. V2 has NO server-side structured output: the schema travels in the
+# generate prompt and validation is client-side (`opencode_server`). There are
+# therefore deliberately no V2 `FORMAT_*`/`STRUCTURED_*`/`PERMISSION_*` twins.
+# =============================================================================
+
+# --- servers / endpoints ------------------------------------------------------
+#: The V2 OpenAPI document (auth required) — the operator lane's spec source.
+OPENAPI_PATH = "/openapi.json"
+#: V2 liveness/identity probe. Probed V2-FIRST: its JSON carries `version`. The
+#: SPA fallback serves HTML on every legacy path, so a bare HTTP 200 is never
+#: enough (Pitfall P4).
+INFO_PATH = "/api/info"
+V2_MODEL_PATH = "/api/model"
+V2_PROVIDER_PATH = "/api/provider"
+V2_SESSION_PATH = "/api/session"
+#: The wire spelling WE build the generate URL with.
+GENERATE_PATH = "/api/session/{session_id}/generate"
+#: The OpenAPI path-template spelling the installed spec serves — its path
+#: parameter is literally `sessionID`. Used ONLY to index the committed V2 slice
+#: and the live spec; mirrors `MESSAGE_DOC_PATH` (do not "fix" one into the other).
+GENERATE_DOC_PATH = "/api/session/{sessionID}/generate"
+#: `POST /api/session/{id}/generate`'s one body property (`required: ["prompt"]`).
+GENERATE_PROMPT_FIELD = "prompt"
+#: The generated text lives at `{"data": {"text": "…"}}`.
+GENERATE_RESPONSE_PATH = ("data", "text")
+#: V2 wraps the session in `{"data": {…}}`, so the id is NOT at the top level
+#: (Pitfall P2); kept beside V1's `SESSION_ID_FIELD`.
+V2_SESSION_RESPONSE_PATH = ("data", "id")
+#: `Model.Ref` = `{id, providerID, variant?}` — an OBJECT with
+#: `additionalProperties: false`, never a bare string (a bare string is a 400;
+#: Pitfall P1).
+MODEL_REF_FIELDS = ("id", "providerID")
+#: The server-version field on `GET /api/info` (D-150).
+SERVER_INFO_VERSION_FIELD = "version"
+#: The reachability marker on the V1 `/global/health` body.
+HEALTH_HEALTHY_FIELD = "healthy"
+
 __all__ = [
     "DOC_PATH",
     "FORMAT_FIELD",
@@ -118,11 +171,20 @@ __all__ = [
     "FORMAT_RETRY_FIELD",
     "FORMAT_SCHEMA_FIELD",
     "FORMAT_TYPE_FIELD",
+    "GENERATE_DOC_PATH",
+    "GENERATE_PATH",
+    "GENERATE_PROMPT_FIELD",
+    "GENERATE_RESPONSE_PATH",
+    "GLOBAL_HEALTH_PATH",
+    "HEALTH_HEALTHY_FIELD",
+    "INFO_PATH",
     "MESSAGE_DOC_PATH",
     "MESSAGE_MODEL_FIELDS",
     "MESSAGE_PATH",
     "MESSAGE_REQUIRED_FIELDS",
     "MESSAGE_TOOLS_FIELD",
+    "MODEL_REF_FIELDS",
+    "OPENAPI_PATH",
     "PART_TYPE_FIELD",
     "PART_TYPE_TOOL",
     "PERMISSION_ALLOW_ACTION",
@@ -130,6 +192,7 @@ __all__ = [
     "PERMISSION_FIELD",
     "PERMISSION_RULE_FIELDS",
     "PERMISSION_WILDCARD",
+    "SERVER_INFO_VERSION_FIELD",
     "SESSION_ID_FIELD",
     "SESSION_ID_PREFIX",
     "SESSION_MODEL_FIELDS",
@@ -141,4 +204,8 @@ __all__ = [
     "STRUCTURED_RESPONSE_PATH",
     "TEXT_PART_FIELDS",
     "TEXT_PART_TYPE",
+    "V2_MODEL_PATH",
+    "V2_PROVIDER_PATH",
+    "V2_SESSION_PATH",
+    "V2_SESSION_RESPONSE_PATH",
 ]

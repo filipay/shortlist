@@ -34,10 +34,10 @@ from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
 from app.llm.opencode_server import (
     CONFIG_PROVIDERS_PATH,
-    GLOBAL_HEALTH_PATH,
     OpenCodeServerBackend,
     parse_providers,
 )
+from app.llm.contract import INFO_PATH
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 PROVIDERS_FIXTURE = FIXTURES / "opencode_providers.json"
@@ -312,14 +312,16 @@ async def test_health_reports_the_server_version(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         opencode_server,
         "httpx",
-        recorder.module(body={"healthy": True, "version": "1.2.3"}),
+        recorder.module(body={"version": "1.2.3"}),
     )
 
     outcome = await OpenCodeServerBackend().health()
 
     assert outcome.reachable is True
     assert outcome.version == "1.2.3"
-    assert recorder.paths == [GLOBAL_HEALTH_PATH]
+    # 07.1: health probes the V2 liveness path first (D-147); the V1 leg is reached
+    # only when /api/info is not a JSON body carrying `version`.
+    assert recorder.paths == [INFO_PATH]
 
 
 async def test_health_is_unreachable_on_a_transport_error(
@@ -346,7 +348,10 @@ async def test_health_is_unreachable_on_a_non_200(monkeypatch: pytest.MonkeyPatc
     assert "503" in (outcome.error or "")
 
 
-async def test_health_tolerates_a_non_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_health_rejects_a_non_json_200_as_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """07.1 / D-147: a non-JSON 200 is the SPA fallback, NOT a reachable server."""
     recorder = Recorder()
     monkeypatch.setattr(
         opencode_server,
@@ -356,7 +361,7 @@ async def test_health_tolerates_a_non_json_body(monkeypatch: pytest.MonkeyPatch)
 
     outcome = await OpenCodeServerBackend().health()
 
-    assert outcome.reachable is True
+    assert outcome.reachable is False
     assert outcome.version is None
 
 

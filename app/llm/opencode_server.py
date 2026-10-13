@@ -1,18 +1,24 @@
 """The opencode HTTP backend — health (D-08), discovery (D-09), structured calls.
 
-Three endpoints, all narrow:
+**Dual-surface (D-147/D-148).** The backend detects which API surface the server
+exposes (`app.llm.detection`) and speaks the matching contract: the retained V1
+(`/global/health`, `POST /session` → `POST /session/{id}/message`) or V2
+(`/api/info`, `POST /api/session` → `POST /api/session/{id}/generate`). A V1
+server keeps working; a V2 server works for the first time.
 
-* ``GET /global/health`` — reachability, and the version when the server reports
-  one. A failure is `reachable=False`, never an exception: `docker compose up`
-  must not depend on an LLM backend being up (D-08).
+* reachability — `detect_surface` probes `GET /api/info` then
+  `GET /global/health`, requiring a JSON body (never a bare 200: the V2 SPA
+  fallback serves HTML). A failure is `reachable=False`, never an exception:
+  `docker compose up` must not depend on an LLM backend being up (D-08).
 * ``GET /config/providers`` — the subscription-scoped provider/model set the user
   actually configured. The full vendor catalogue endpoint (``/provider``, ~6 MB,
   217 providers) is deliberately **not** referenced anywhere in this module (D-09);
   `tests/llm/test_discovery_redaction.py` asserts both the behaviour and the
   absence of that path.
-* ``POST /session`` then ``POST /session/{id}/message`` — one schema-constrained
-  completion. The request vocabulary lives in `app.llm.contract` (D-54) and the
-  bodies are built by the pure `app.llm.builders`.
+* one schema-constrained completion, dispatched on the detected surface. The
+  request vocabulary lives in `app.llm.contract` (D-54) and the bodies are built
+  by the pure `app.llm.builders`. Under V2 there is no server-side schema: the
+  schema rides in the `generate` prompt and validation/salvage is client-side.
 
 The discovery response carries the provider API key in plaintext, so it is parsed
 straight into identifiers and never logged, never stored on an attribute, never
@@ -43,8 +49,18 @@ from app.llm.base import (
     StructuredCallResult,
     T,
 )
-from app.llm.builders import to_message_body, to_session_body
+from app.llm.builders import (
+    to_generate_body,
+    to_generate_prompt,
+    to_message_body,
+    to_session_body,
+    to_v2_session_body,
+)
 from app.llm.contract import (
+    GENERATE_PATH,
+    GENERATE_RESPONSE_PATH,
+    GLOBAL_HEALTH_PATH,
+    INFO_PATH,
     MESSAGE_MODEL_FIELDS,
     MESSAGE_PATH,
     PART_TYPE_FIELD,
@@ -61,11 +77,15 @@ from app.llm.contract import (
     STRUCTURED_ERROR_RETRIES_PATH,
     STRUCTURED_OUTPUT_TOOL_NAME,
     STRUCTURED_RESPONSE_PATH,
+    V2_SESSION_PATH,
+    V2_SESSION_RESPONSE_PATH,
 )
+from app.llm.detection import detect_surface
 
 log = structlog.get_logger(__name__)
 
-GLOBAL_HEALTH_PATH = "/global/health"
+#: `GLOBAL_HEALTH_PATH` (the V1 liveness path) is imported from `app.llm.contract`
+#: — the single home of every wire name (D-54).
 CONFIG_PROVIDERS_PATH = "/config/providers"
 
 # --- D-52 operator-facing causes ---------------------------------------------
@@ -79,6 +99,10 @@ ERROR_KIND_TIMEOUT = "timeout"
 ERROR_KIND_INVALID = "invalid"
 ERROR_KIND_MODEL_NOT_FOUND = "model_not_found"
 ERROR_KIND_INVALID_SESSION = "invalid_session"
+#: D-137: a missing (or rejected) `OPENCODE_SERVER_PASSWORD`. Distinct from a
+#: generic `http_401` so the operator sees "auth missing" rather than a bare badge
+#: (D-52). D-136: an empty password fails fast with no request issued.
+ERROR_KIND_UNAUTHENTICATED = "unauthenticated"
 #: Prefix for a non-200 response, e.g. `http_400`.
 HTTP_ERROR_KIND_PREFIX = "http_"
 #: A non-200 body excerpt is a diagnostic, not a copy: enough to recognise the
@@ -270,25 +294,24 @@ class OpenCodeServerBackend:
         )
 
     async def health(self) -> ProbeOutcome:
-        """`GET /global/health`. `reachable=False` on any failure (D-08)."""
+        """Detect the API surface; `reachable=False` on any failure (D-08).
+
+        Retargeted from a bare `GET /global/health`: opencode 2.0.26 serves the
+        SPA HTML (HTTP 200) on that path, so a status-code probe falsely reported
+        `reachable=True` with no version (Pitfall P4). `detect_surface` probes
+        `/api/info` (V2) then `/global/health` (V1); only a JSON body carrying the
+        surface's marker key counts. An `unknown` verdict is `reachable=False`.
+        """
         try:
             async with self._client() as client:
-                response = await client.get(GLOBAL_HEALTH_PATH)
+                probe = await detect_surface(base_url=self._base_url, client=client)
         except Exception as exc:  # noqa: BLE001 — boot tolerance
             return ProbeOutcome(reachable=False, error=type(exc).__name__)
 
-        if response.status_code != 200:
-            return ProbeOutcome(reachable=False, error=f"HTTP {response.status_code}")
-
-        try:
-            body = response.json()
-        except Exception:  # noqa: BLE001 — a non-JSON 200 still means reachable
-            return ProbeOutcome(reachable=True)
-
-        version = body.get("version") if isinstance(body, dict) else None
         return ProbeOutcome(
-            reachable=True,
-            version=version if isinstance(version, str) else None,
+            reachable=probe.surface != "unknown",
+            version=probe.version,
+            error=probe.error,
         )
 
     async def discover_models(self) -> DiscoveryResult:
@@ -407,26 +430,35 @@ class OpenCodeServerBackend:
         tools: Sequence[str] = (),
         retries: int | None = None,
     ) -> StructuredCallResult:
-        """One schema-constrained completion: session → message → validated result.
+        """One schema-constrained completion, dispatched on the detected surface.
 
         A total function (failure-as-value, D-08's discipline): the caller always
         receives a classified, counted `StructuredCallResult` and this method
         never raises. `status` is always one of the four legal `llm_calls.status`
         values; the specific cause is in `error_kind` (D-52).
 
-        **Two retry layers, deliberately different:**
+        A V1 server runs session → message → `info.structured`; a V2 server runs
+        session → generate (schema loop), where the schema rides in the prompt and
+        validation is client-side. An `unknown` surface fails closed as
+        `unreachable`. An empty configured password fails fast with
+        `unauthenticated` and issues no request (D-136).
 
-        * the SERVER re-asks the model on a schema failure, bounded by
+        **Retry layers, deliberately different:**
+
+        * V1's SERVER re-asks the model on a schema failure, bounded by
           `format.retryCount` (`settings.opencode_structured_retry_count`);
-        * the CLIENT resends on a transport failure or timeout, bounded by the
-          `retries` argument, whose default is `None` — the adapter then applies
+        * V2's CLIENT re-issues `generate` on a pydantic validation failure, up to
+          `1 + settings.opencode_structured_retry_count` requests total, feeding
+          the first error back (D-139/D-140);
+        * both surfaces resend on a transport failure or timeout, bounded by the
+          `retries` argument whose default is `None` — the adapter then applies
           `settings.opencode_max_retries`, so the ceiling is configuration and an
           omitting caller is never bound by a literal (PLAT-04).
 
-        A schema failure is never retried client-side — the server already did its
-        retries, and double-retrying would inflate the attempt count the operator
-        reads. `attempts` is the server's own `info.error.data.retries` when the
-        server supplies one, and the client's issued-request count otherwise.
+        On V1 a schema failure is never retried client-side — the server already
+        did its retries. `attempts` is the server's own `info.error.data.retries`
+        when it supplies one, else the client's issued-request count; on V2
+        `attempts` is always the total `generate` requests issued.
 
         `parts` is the only channel for untrusted content; `system` is passed
         through untouched. `tools` is a port-level `Sequence[str]` of tool NAMES
@@ -439,27 +471,67 @@ class OpenCodeServerBackend:
         """
         started = time.perf_counter()
         try:
+            # D-136: an unauthenticated server requires a configured password. We
+            # fail fast — no client is built and no request is issued — rather than
+            # issue an auth-less call that can only 401 (or hit the SPA fallback).
+            if not self._password:
+                return _failure(
+                    status="error",
+                    error_kind=ERROR_KIND_UNAUTHENTICATED,
+                    error="no opencode server password configured",
+                    attempts=0,
+                    started=started,
+                )
+
             resolved = await self._resolve_model(model)
             if isinstance(resolved, StructuredCallResult):
                 return resolved
             provider_id, model_id = resolved
 
-            # D-12 telemetry: the server version only lives on /global/health
-            # (Pitfall P12). A health failure must not fail the call.
-            try:
-                server_version: str | None = (await self.health()).version
-            except Exception:  # noqa: BLE001 — version is telemetry, not the call
-                server_version = None
-
-            # The caller's ceiling governs the loop; `Settings` supplies only the
-            # DEFAULT, so a future caller passing a different bound is honoured
-            # (PLAT-04: no literal ceiling).
+            # The caller's ceiling governs the V1 transport loop; `Settings`
+            # supplies only the DEFAULT, so a future caller passing a different
+            # bound is honoured (PLAT-04: no literal ceiling).
             budget = retries if retries is not None else settings.opencode_max_retries
             budget = max(1, int(budget))
-            issued = 0
-            last_failure: StructuredCallResult | None = None
 
             async with self._completion_client() as client:
+                # D-147: dispatch on the DETECTED surface. A bare 200 is never a
+                # surface (the SPA fallback serves HTML); `unknown` fails closed.
+                probe = await detect_surface(base_url=self._base_url, client=client)
+                if probe.surface == "v2":
+                    return await self._complete_v2(
+                        client,
+                        schema=schema,
+                        system=system,
+                        parts=parts,
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        server_version=probe.version,
+                        started=started,
+                    )
+                if probe.surface == "unknown":
+                    return _failure(
+                        status="error",
+                        error_kind=ERROR_KIND_UNREACHABLE,
+                        error="could not determine the opencode API surface",
+                        attempts=0,
+                        started=started,
+                        provider=provider_id,
+                        model=model_id,
+                        agent=agent,
+                    )
+
+                # ---- V1 arm (retained, D-148) ----
+                # D-12 telemetry: the server version only lives on the V1 health
+                # probe (Pitfall P12). A health failure must not fail the call.
+                try:
+                    server_version: str | None = (await self.health()).version
+                except Exception:  # noqa: BLE001 — version is telemetry, not the call
+                    server_version = None
+
+                issued = 0
+                last_failure: StructuredCallResult | None = None
+
                 session_id = await self._create_session(
                     client, provider_id=provider_id, model_id=model_id
                 )
@@ -544,19 +616,19 @@ class OpenCodeServerBackend:
                         started=started,
                     )
 
-            if last_failure is not None:
-                return last_failure
-            return _failure(
-                status="error",
-                error_kind=ERROR_KIND_UNREACHABLE,
-                error="no attempt was issued",
-                attempts=issued,
-                started=started,
-                provider=provider_id,
-                model=model_id,
-                agent=agent,
-                server_version=server_version,
-            )
+                if last_failure is not None:
+                    return last_failure
+                return _failure(
+                    status="error",
+                    error_kind=ERROR_KIND_UNREACHABLE,
+                    error="no attempt was issued",
+                    attempts=issued,
+                    started=started,
+                    provider=provider_id,
+                    model=model_id,
+                    agent=agent,
+                    server_version=server_version,
+                )
         except httpx.TimeoutException as exc:  # noqa: BLE001 — a completion never raises
             return _failure(
                 status="error" if isinstance(exc, httpx.ConnectTimeout) else "timeout",
@@ -585,6 +657,188 @@ class OpenCodeServerBackend:
                 attempts=0,
                 started=started,
             )
+
+    async def _complete_v2(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        schema: type[T],
+        system: str,
+        parts: Sequence[str],
+        provider_id: str,
+        model_id: str,
+        server_version: str | None,
+        started: float,
+    ) -> StructuredCallResult:
+        """One V2 completion: session → generate (schema loop) → typed result.
+
+        V2 has no server-side structured output (D-139/D-141): the schema rides in
+        the prompt, the model's text is extracted (`_extract_json`) then salvaged,
+        and a pydantic `ValidationError` re-issues `generate` with the first error
+        fed back, bounded to `1 + settings.opencode_structured_retry_count`
+        requests total (the initial attempt plus the configured schema retries).
+        `attempts` is the total number of `generate` requests issued (Pitfall P6).
+
+        Telemetry (D-143/D-144): `model` records the REQUESTED model, and
+        `provider`/`agent`/`provider_tokens` stay None because the V2 `generate`
+        response carries no served-model or token identity.
+
+        Failure is a value; the transport taxonomy is handled by the caller's
+        outer envelope.
+        """
+        session_response = await client.post(
+            V2_SESSION_PATH,
+            json=to_v2_session_body(provider_id=provider_id, model_id=model_id),
+        )
+        classified = self._v2_http_failure(
+            session_response,
+            what="session create",
+            attempts=0,
+            started=started,
+            model_id=model_id,
+            server_version=server_version,
+        )
+        if classified is not None:
+            return classified
+        session_id = _dig(
+            session_response.json(), V2_SESSION_RESPONSE_PATH
+        )
+        if not isinstance(session_id, str) or not session_id.startswith(
+            SESSION_ID_PREFIX
+        ):
+            return _failure(
+                status="error",
+                error_kind=ERROR_KIND_INVALID_SESSION,
+                error="session create returned no usable id",
+                attempts=0,
+                started=started,
+                model=model_id,
+                server_version=server_version,
+            )
+
+        budget = 1 + int(settings.opencode_structured_retry_count)
+        prompt = to_generate_prompt(schema=schema, system=system, parts=parts)
+        url = GENERATE_PATH.format(session_id=session_id)
+        issued = 0
+        last_error: str | None = None
+        for _attempt in range(budget):
+            response = await client.post(url, json=to_generate_body(prompt))
+            issued += 1
+            classified = self._v2_http_failure(
+                response,
+                what="generate",
+                attempts=issued,
+                started=started,
+                model_id=model_id,
+                server_version=server_version,
+            )
+            if classified is not None:
+                return classified
+            text = _dig(response.json(), GENERATE_RESPONSE_PATH)
+            if not isinstance(text, str):
+                return _failure(
+                    status="invalid",
+                    error_kind=ERROR_KIND_INVALID,
+                    error="generate response carried no text",
+                    attempts=issued,
+                    started=started,
+                    model=model_id,
+                    server_version=server_version,
+                )
+            try:
+                data = _salvage(schema, _extract_json(text))
+            except ValidationError as exc:
+                errors = exc.errors()
+                first = errors[0] if errors else None
+                last_error = first.get("msg") if isinstance(first, dict) else None
+                # D-140: feed the first pydantic error back into the re-issued
+                # prompt. The loop re-runs to the client-side schema budget.
+                prompt = to_generate_prompt(
+                    schema=schema,
+                    system=system,
+                    parts=parts,
+                    correction=last_error,
+                )
+                continue
+            except ValueError as exc:
+                return _failure(
+                    status="invalid",
+                    error_kind=ERROR_KIND_INVALID,
+                    error=(
+                        "generated text was not valid JSON: "
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                    attempts=issued,
+                    started=started,
+                    model=model_id,
+                    server_version=server_version,
+                )
+            return StructuredCallResult(
+                ok=True,
+                data=data,
+                status="ok",
+                attempts=issued,
+                provider_tokens=None,
+                latency_ms=_elapsed_ms(started),
+                provider=None,
+                model=model_id,
+                agent=None,
+                server_version=server_version,
+            )
+
+        return _failure(
+            status="invalid",
+            error_kind=ERROR_KIND_INVALID,
+            error=(
+                f"validation failed: {last_error}"
+                if last_error
+                else "validation failed"
+            ),
+            attempts=issued,
+            started=started,
+            model=model_id,
+            server_version=server_version,
+        )
+
+    @staticmethod
+    def _v2_http_failure(
+        response: object,
+        *,
+        what: str,
+        attempts: int,
+        started: float,
+        model_id: str,
+        server_version: str | None,
+    ) -> StructuredCallResult | None:
+        """Classify a non-200 V2 response, or None when it was a 200.
+
+        `401` is the distinct `unauthenticated` cause (D-137); every other non-200
+        is `http_<code>` with a bounded body excerpt (P9) — never the whole body.
+        """
+        status_code = getattr(response, "status_code", None)
+        if status_code == 200:
+            return None
+        if status_code == 401:
+            return _failure(
+                status="error",
+                error_kind=ERROR_KIND_UNAUTHENTICATED,
+                error=f"{what} returned HTTP 401 (authentication required)",
+                attempts=attempts,
+                started=started,
+                model=model_id,
+                server_version=server_version,
+            )
+        excerpt = _bounded_excerpt(response)
+        detail = f": {excerpt}" if excerpt else ""
+        return _failure(
+            status="error",
+            error_kind=f"{HTTP_ERROR_KIND_PREFIX}{status_code}",
+            error=f"{what} returned HTTP {status_code}{detail}",
+            attempts=attempts,
+            started=started,
+            model=model_id,
+            server_version=server_version,
+        )
 
 
 def _failure(
@@ -633,6 +887,56 @@ def _bounded_excerpt(response: object) -> str:
     if not isinstance(text, str):
         return ""
     return text[:NON_200_BODY_EXCERPT_CHARS]
+
+
+def _dig(payload: object, path: tuple[str, ...]) -> object:
+    """Walk a tuple of keys into nested dicts; None on any missing/mistyped hop.
+
+    Used for the V2 response wrappers (`("data","id")`, `("data","text")`) so the
+    two paths have one reader. Total: a non-dict node ends the walk with None.
+    """
+    node: object = payload
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node
+
+
+def _extract_json(text: str) -> str:
+    """The outermost `{…}` block of `text`, tolerating fences and leading prose.
+
+    V2 `generate` returns plain model prose, so the JSON object may be wrapped in
+    a ```json fence or preceded by a sentence. This returns the substring from the
+    first `{` to its matching outermost `}` (brace depth tracked, quotes and
+    backslash escapes respected so a brace inside a string value cannot close the
+    block early). When no brace block is found the input is returned UNCHANGED, so
+    a genuinely non-JSON body still fails loudly downstream in `_salvage` (D-141).
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return text
 
 
 def _part_types(payload: object) -> list[str] | None:
@@ -1002,12 +1306,14 @@ __all__ = [
     "ERROR_KIND_INVALID_SESSION",
     "ERROR_KIND_MODEL_NOT_FOUND",
     "ERROR_KIND_TIMEOUT",
+    "ERROR_KIND_UNAUTHENTICATED",
     "ERROR_KIND_UNREACHABLE",
     "GLOBAL_HEALTH_PATH",
     "HTTP_ERROR_KIND_PREFIX",
     "NON_200_BODY_EXCERPT_CHARS",
     "OpenCodeServerBackend",
     "TOLERATED_SCHEMA_ERRORS",
+    "_extract_json",
     "parse_providers",
     "ruleset_allows_tool",
 ]
