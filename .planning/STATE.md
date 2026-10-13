@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: "07.1"
 current_phase_name: Migrate the LLM backend to the opencode V2 HTTP API
-status: executing
-stopped_at: Completed 07.1-05-PLAN.md
-last_updated: "2026-10-13T15:11:10.354Z"
+status: verifying
+stopped_at: Completed 07.1-06-PLAN.md
+last_updated: "2026-10-13T15:29:14.915Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 07.1 execution started
-state_head: cfbe3bb88639105ab6dc3352fa89fcc4778bd069
+state_head: 91041572db029ab1e10562ff3df14b4a5160c6ef
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 76
-  completed_plans: 75
+  completed_plans: 76
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 Phase: 07.1 (Migrate the LLM backend to the opencode V2 HTTP API) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-13 — Phase 07.1 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -109,6 +109,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07.1 P03 | 9 min | 2 tasks | 2 files |
 | Phase 07.1 P04 | 4 min | 2 tasks | 3 files |
 | Phase 07.1 P05 | 10 min | 2 tasks | 4 files |
+| Phase 07.1 P06 | 8 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -242,6 +243,9 @@ Recent decisions affecting current work:
 - [Phase 07.1]: 07.1-04: a non-V2 (or unknown) detected surface falls through to the retained V1 discovery path, so a V1 server's discovery behaviour is byte-identical to before the migration
 - [Phase 07.1]: 07.1-04: parse_v2_models copies only (providerID, modelID) from /api/model data[]; provider-level values are structurally never read, and a cold-start empty /api/model is re-probed exactly once then reported honestly (Pitfall P3, D-145)
 - [Phase 07.1]: 07.1-05: the operator contract lane applies a committed-subset diff, not strict equality — the hand-written V2 slice omits two members the live 2.0.26 spec carries (id in session request_body_properties, variant in Model.Ref.properties), so equality would fail on first run for non-drift reasons while a rename/removal still fires the pointer (D-150).
+- [Phase 07.1]: 07.1-06: the runbook documents the D-135 pairing flow (POST /api/pair -> GET /auth/connect/{code}) as the password source and states the password is effectively required under V2; the app only consumes the token (D-138)
+- [Phase 07.1]: 07.1-06: the V2 live lane pins the committed _meta.server_version to 2.0.26 and fails on a version-only change (D-150)
+- [Phase 07.1]: 07.1-06: the accepted residual prompt-injection risk (V2 has no system field; domain grounding blocks fabricated facts but schema-valid-but-dishonest output is possible) is recorded in the runbook, README and AGENTS.md; a future AGENTS.md regeneration must re-apply it from .planning/research/STACK.md
 
 ### Pending Todos
 
@@ -283,6 +287,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T15:11:05.612Z
-Stopped at: Completed 07.1-05-PLAN.md
+Last session: 2026-10-13T15:29:09.025Z
+Stopped at: Completed 07.1-06-PLAN.md
 Resume file: None

@@ -368,7 +368,7 @@ Plans:
 **Goal:** The app's LLM backend speaks the opencode V2 HTTP API, so ranking, tailoring, screening-answer drafting and CV fact extraction work again — while the retained V1 surface keeps working (dual-support with runtime detection). Trigger: the pinned V1 contract is dead on opencode 2.0.26 (legacy root routes serve SPA HTML, `POST /session` is a hard 405, every LLM call fails with `JSONDecodeError`).
 **Requirements**: D-135, D-136, D-137, D-138, D-139, D-140, D-141, D-142, D-143, D-144, D-145, D-146, D-147, D-148, D-149, D-150 (CONTEXT decisions; ROADMAP lists no REQ ids for this inserted phase)
 **Depends on:** Phase 7
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans executed
 **Out of scope:** any new user-facing capability (the Settings model picker is a separate phase).
 
 Plans:
@@ -388,7 +388,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 07.1-06-PLAN.md — The operator documentation: the V2 runbook, `.env.example`, README, and the `AGENTS.md` security note recording the accepted residual prompt-injection risk (D-135/D-138/D-150)
+- [x] 07.1-06-PLAN.md — The operator documentation: the V2 runbook, `.env.example`, README, and the `AGENTS.md` security note recording the accepted residual prompt-injection risk (D-135/D-138/D-150)
 
 **Notes:** `POST /api/session/{id}/generate` is chosen for the completion call because it has no tool-execution surface (unlike `/api/session/{id}/prompt`). The V2 spec's declared `security: []` is not honoured by the running server — every `/api/*` call is authenticated. `TOLERATED_SCHEMA_ERRORS` and `_salvage` stay byte-identical (D-142). The residual prompt-injection risk from V2's missing `system` field is accepted and documented, to be revisited in a later phase.
 

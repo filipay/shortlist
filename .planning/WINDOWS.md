@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 1
 fixed_count: 2
-total_count: 12
-last_updated: 2026-10-13T15:09:53.609Z
+total_count: 13
+last_updated: 2026-10-13T15:29:15.232Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,7 @@ last_updated: 2026-10-13T15:09:53.609Z
 | 10 | 07 | deviation | app/domain/schemas/_coerce.py |  | 07-14 Rule 3: Task 2's declared verify command includes the IN-01 TailoringPatch tests that only Task 3's wiring makes green; Task 2's gate was run with -k 'not tailoring_patch' and the full combined gate passed at Task 3 | fixed |  | 2026-10-12T14:13:08.268Z | 2026-10-12T14:13:30.027Z |
 | 11 | 07.1 | unrun-verify | tests/llm/test_contract_live.py |  | Operator-run live V2 contract lane (D-150) is deselected by addopts and cannot run in the executor sandbox. The projection logic was validated during execution against the recorded 2.0.26 /openapi.json capture: 6 facts, 0 divergent pointers; version assertion targets GET /api/info == _meta.server_version 2.0.26. The pytest -m live lane itself remains for the operator per docs/runbook-opencode-contract.md. | open |  | 2026-10-13T15:09:53.380Z |  |
 | 12 | 07.1 | unrun-verify | tests/llm/test_live_structured_call.py |  | Operator-run live V2 generate lane (D-145) is deselected and cannot run without a running, authenticated opencode server. Its V2 wiring is asserted statically; the D-145 negative model check is PROVISIONAL and must be reconciled with the observed error shape on the first operator run. | open |  | 2026-10-13T15:09:53.609Z |  |
+| 13 | 07.1 | unrun-verify | tests/llm/test_contract_live.py |  | Operator live lane requires a running authenticated opencode server; unrun in this environment (carried from 07.1-05). Documented by 07.1-06's runbook. | open |  | 2026-10-13T15:29:15.232Z |  |
 
 ````json
 [
@@ -172,6 +173,18 @@ last_updated: 2026-10-13T15:09:53.609Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-13T15:09:53.609Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "07.1",
+    "file": "tests/llm/test_contract_live.py",
+    "line": null,
+    "description": "Operator live lane requires a running authenticated opencode server; unrun in this environment (carried from 07.1-05). Documented by 07.1-06's runbook.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-13T15:29:15.232Z",
     "resolved_at": null
   }
 ]
