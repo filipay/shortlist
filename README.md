@@ -37,12 +37,13 @@ mkdir -p cv artifacts data    # the host dirs must exist before compose mounts t
 docker compose up --build     # http://localhost:8000
 ```
 
-Under the opencode V2 API auth is **opt-in**: set `OPENCODE_SERVER_PASSWORD` only
-if you started `opencode serve` with a password. With no password the server
-serves `/api/*` unauthenticated and the app sends no auth header; a `401` from a
-secured server is reported as `unauthenticated`. For a secured server, get the
-token from the pairing flow (`POST /api/pair` then `GET /auth/connect/{code}`)
-and set it in `.env`; see `docs/runbook-opencode-contract.md`.
+Under the opencode V2 API the server **password is required in practice**:
+`opencode serve` (2.0.26) always auto-generates and prints a password at startup
+(`server password <43 chars>`), every `/api/*` call is authenticated, and an empty
+`OPENCODE_SERVER_PASSWORD` simply yields a 401 reported as `unauthenticated`.
+Copy the printed password into `.env` (or get one from the pairing flow —
+`POST /api/pair` then `GET /auth/connect/{code}`); see
+`docs/runbook-opencode-contract.md`.
 
 Your CV and everything derived from it are personal data: `cv/`, `artifacts/`, `data/` and
 `.env` are gitignored and must never be committed.

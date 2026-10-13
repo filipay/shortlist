@@ -41,35 +41,41 @@ and in `tests/llm/test_live_structured_call.py`.
   `opencode serve --hostname 0.0.0.0`.) A bare "connection refused" here usually
   means the server bound to `127.0.0.1` and you are testing from somewhere that
   is not the host — it is **not** evidence that the contract drifted.
-- **V2 auth is opt-in.** `opencode serve` requires HTTP basic auth on `/api/*`
-  only when it was started with a password
-  (`required = Option.isSome(password) && password !== ""`); with no password it
-  serves `/api/*` unauthenticated and prints a "server is unsecured" warning. The
-  spec's `security: []` is therefore accurate. When a password IS configured, the
-  server returns **401 unauthenticated** if it is missing or wrong; the live lane
-  and the app's `_auth()` both send `httpx.BasicAuth("opencode", <password>)` in
-  that case, and an empty password means "send no header" (D-136).
+- **V2 requires HTTP basic auth on `/api/*` — always send auth.** The V2 spec
+  declares `security: []` and `securitySchemes: {}`, but the running 2.0.26 server
+  returns **401 unauthenticated** on `/api/info` and `/openapi.json` (Pitfall P8,
+  verified live). There is **no unsecured mode**: `opencode serve` always
+  auto-generates and prints a `server password …` line at startup, and `serve
+  --help` has no `--password` flag. Never rely on the spec's security declaration —
+  always send auth. The live lane sends `httpx.BasicAuth("opencode", <password>)`
+  exactly as the app's `_auth()` does, and an empty app-side password means "send no
+  header", which the secured server answers with **401** → classified
+  `unauthenticated` (D-136).
 
 ## The server password (V2, D-135)
 
-Under V2 the password is **optional**: configure it only when the server was
-started WITH a password. An empty `OPENCODE_SERVER_PASSWORD` sends no auth header
-and reaches an unsecured server normally; a `401` from a secured server is
-classified `unauthenticated` (D-136). To obtain a password for a secured server,
-use the **documented pairing flow**:
+Under V2 the password is **required in practice**. `opencode serve` on 2.0.26 has
+no unsecured mode: it always auto-generates and prints a password at startup
+(`server password <43 chars>`, right after `server listening on …`), and every
+`/api/*` call returns **401 unauthenticated** without it. Setting the app-side
+`OPENCODE_SERVER_PASSWORD` to an explicitly empty value does **not** disable the
+server-side password — it merely produces a 401.
+
+**The operator path is to copy the password the server prints at startup** into
+`OPENCODE_SERVER_PASSWORD`. The app sends
+`httpx.BasicAuth("opencode", <password>)` when one is configured; with none
+configured the call is still **attempted** (there is no fail-fast) and a 401 is
+classified `unauthenticated`, with `auth_configured=false` on `/health` driving the
+operator hint (D-136/D-137/D-138). An alternative is the documented V2 pairing flow:
 
 1. `POST /api/pair` → `{"code": "…", "expires_in": <int>}` (a single-use code).
 2. `GET /auth/connect/{code}` → `{"token": "…"}` (a session token).
 
-Use that token as `OPENCODE_SERVER_PASSWORD`. There is an undocumented alternative
-— the auto-generated `server password …` line that `opencode serve` prints at
-startup — but it is not a stable interface, so the pairing flow is the documented
-path (D-135).
-
 The app only ever **consumes** `OPENCODE_SERVER_PASSWORD`; it never generates or
-stores it (D-138). The token's lifetime and its behaviour across a server restart
-are not documented by opencode and are a known operational caveat: re-pair and
-update `.env` if calls begin failing as `unauthenticated`.
+stores it (D-138). Re-copy the value after a server restart: the token's lifetime
+across a restart is not documented by opencode and is a known operational caveat —
+if calls begin failing as `unauthenticated`, update `.env` from the freshly printed
+line.
 
 ## Procedure
 

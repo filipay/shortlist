@@ -102,8 +102,10 @@ ERROR_KIND_MODEL_NOT_FOUND = "model_not_found"
 ERROR_KIND_INVALID_SESSION = "invalid_session"
 #: D-137: a missing (or rejected) `OPENCODE_SERVER_PASSWORD`. Distinct from a
 #: generic `http_401` so the operator sees "auth missing" rather than a bare badge
-#: (D-52). D-136: an empty password sends no auth header and reaches an unsecured
-#: server; a `401` from a secured server is this cause.
+#: (D-52). D-136 (amended): the pinned 2.0.26 `serve` ALWAYS generates a password,
+#: so every `/api/*` call is authenticated and a configured password is required in
+#: practice. With none configured the call is still ATTEMPTED (no fail-fast) and
+#: the resulting `401` is this cause.
 ERROR_KIND_UNAUTHENTICATED = "unauthenticated"
 #: Prefix for a non-200 response, e.g. `http_400`.
 HTTP_ERROR_KIND_PREFIX = "http_"
