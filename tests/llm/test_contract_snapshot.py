@@ -42,6 +42,17 @@ WRONG_NAMES = ("outputFormat", "structured_output", "structuredOutput")
 #: token living in this test's own source.
 _V1_JSON_SCHEMA_TYPE = "json" + "_schema"
 
+#: The five V1 server-side structured-output tokens D-149 requires to be ABSENT
+#: from the committed V2 slice. The first is assembled for the same reason as
+#: `_V1_JSON_SCHEMA_TYPE` (a bare literal here would mask a real fixture hit).
+_V1_STRUCTURED_TOKENS = (
+    _V1_JSON_SCHEMA_TYPE,
+    "structured",
+    "outputFormat",
+    "retryCount",
+    "tool_choice",
+)
+
 
 def _load_fixture() -> dict[str, Any]:
     """The committed slice, or a loud assertion naming the refresh runbook.
@@ -94,6 +105,15 @@ def _missing_generate_pointers(
     if response_key not in response["required"]:
         missing.append("components.schemas.SessionGenerateResponse.required")
     return missing
+
+
+def _structured_output_hits(text: str) -> list[str]:
+    """The V1 structured-output tokens present in `text` — `[]` when it carries none.
+
+    One reusable helper so the guard-can-fail companion exercises the SAME code
+    path the real assertion uses (a guard that cannot fail is not a guard).
+    """
+    return [token for token in _V1_STRUCTURED_TOKENS if token in text]
 
 
 # --- the fixture's own index ---------------------------------------------------
@@ -215,7 +235,7 @@ def test_the_v2_builder_emits_only_snapshot_request_properties() -> None:
     assert tuple(body["model"]) == contract.MODEL_REF_FIELDS
 
 
-# --- the negative control (D-54) -----------------------------------------------
+# --- the negative controls (D-54 / D-149) --------------------------------------
 
 
 def test_the_documented_alternative_spellings_are_absent_from_the_snapshot() -> None:
@@ -231,6 +251,24 @@ def test_the_documented_alternative_spellings_are_absent_from_the_snapshot() -> 
     # The pinned names themselves are not alternatives.
     assert contract.FORMAT_FIELD not in WRONG_NAMES
     assert contract.STRUCTURED_RESPONSE_PATH[-1] not in WRONG_NAMES
+
+
+def test_the_negative_control_finds_no_v1_vocabulary_in_the_snapshot() -> None:
+    """Over the RAW fixture text, so no pointer walk can miss a stray token.
+
+    V2 has no server-side schema enforcement; the schema travels in the prompt and
+    validation is client-side, so none of the V1 structured-output vocabulary may
+    reappear in the slice (D-149).
+    """
+    raw = FIXTURE_PATH.read_text(encoding="utf-8")
+
+    hits = _structured_output_hits(raw)
+    assert hits == [], (
+        f"{hits!r} appear in the V2 slice — V2 has no server-side schema "
+        "enforcement and no forced tool choice; output JSON validation is "
+        "client-side (D-149). Refresh the slice deliberately via "
+        "docs/runbook-opencode-contract.md"
+    )
 
 
 # --- a guard that cannot fail is not a guard -----------------------------------
@@ -253,6 +291,18 @@ def test_the_v2_pointer_check_can_actually_fail() -> None:
         response_key="definitely_not_data",
     )
     assert wrong, "the V2 pointer check passed deliberately wrong names — no teeth"
+
+
+def test_the_negative_control_can_actually_fail() -> None:
+    """The raw-text absence check must report a hit when fed one token."""
+    raw = FIXTURE_PATH.read_text(encoding="utf-8")
+
+    assert _structured_output_hits(raw) == []
+    contaminated = raw + "\n" + _V1_STRUCTURED_TOKENS[0] + "\n"
+    assert _structured_output_hits(contaminated), (
+        "the negative control passed a deliberately contaminated string — it has "
+        "no teeth"
+    )
 
 
 # --- the default lane structurally cannot run the live lane --------------------
