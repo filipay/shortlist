@@ -363,6 +363,16 @@ Plans:
 - [x] 07-13-PLAN.md — CR-01: backfill the 33 template component rules into `assets/tailwind/input.css`, regenerate and commit `static/vendor/app.css` with the pinned Tailwind 4.3.3 CLI, and guard the build (source coverage + byte-identity), so the Docker image stops shipping an unstyled tracker/apply/detail/settings UI
 - [x] 07-14-PLAN.md — WR-01: restrict the wire wrapper unwrap to the literal `"item"` key, bound the loop, and replace the two scalar-value tests with unknown-key-with-a-list-value cases, so code, docstrings and tests agree and the failure class — not an instance — is pinned (also closes IN-01/IN-02)
 
+### Phase 07.1: Migrate the LLM backend to the opencode V2 HTTP API (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 07.1 to break down)
+
 ### Phase 8: Operations + Polish
 
 **Goal**: A scheduled, self-reporting, responsive tool — once the pipeline is trustworthy enough that a cron job will not simply hide failures.
