@@ -1,117 +1,66 @@
 {
   "_meta": {
-    "server_version": "1.18.31",
-    "captured_at": "2026-09-17",
-    "source": "GET http://127.0.0.1:4096/doc (unauthenticated, JSON, 478968 bytes)",
+    "server_version": "2.0.26",
+    "captured_at": "2026-10-13",
+    "source": "GET http://127.0.0.1:4096/openapi.json (HTTP basic auth required; JSON, openapi 3.1.0, 118 paths)",
     "spec_openapi": "3.1.0",
-    "note": "Hand-projected slice (D-55): only structured-output-relevant pointers are kept, so unrelated OpenAPI churn cannot fail the contract test. /doc's info.version is a static spec version (1.0.0), NOT the running server version; the server version comes from GET /global/health (P12). Refresh only via docs/runbook-opencode-contract.md, against an observed server. The slice ALSO pins the session deny-rule field names (permission, pattern, action) and the deny action: a deliberate, user-approved widening of D-55, because the session permission ruleset is the ENFORCED tool control, so a server rename must fail loudly rather than silently un-deny tools."
+    "note": "Hand-written V2 slice (D-149) of the running opencode 2.0.26 /openapi.json: only the generate-contract facts are kept, as a fixed set of list-valued keys, so unrelated OpenAPI churn cannot fail the contract test. V2 carries no server-side schema enforcement and no forced tool choice — output JSON validation is client-side, so this slice deliberately contains none of the V1 wire vocabulary. Refresh only via docs/runbook-opencode-contract.md, against an observed server; the pinned server_version is a deliberate drift tripwire (D-150)."
   },
   "paths": {
-    "/session": {
+    "/openapi.json": {
+      "get": {
+        "auth": "HTTP basic auth required; the live 2.0.26 server returns 401 unauthenticated"
+      }
+    },
+    "/api/info": {
+      "get": {
+        "response_200_ref": "#/components/schemas/ServerInfo",
+        "response_200_properties": [
+          "capabilities",
+          "paths",
+          "pid",
+          "urls",
+          "version"
+        ]
+      }
+    },
+    "/api/session": {
       "post": {
         "request_body_properties": [
           "agent",
+          "location",
           "metadata",
           "model",
           "parentID",
-          "permission",
-          "title",
-          "workspaceID"
+          "permissions",
+          "title"
         ],
         "response_200_ref": "#/components/schemas/Session"
       }
     },
-    "/session/{sessionID}/message": {
+    "/api/session/{sessionID}/generate": {
       "post": {
-        "operation_id": "session.prompt",
-        "request_body_properties": [
-          "agent",
-          "format",
-          "messageID",
-          "model",
-          "noReply",
-          "parts",
-          "system",
-          "tools",
-          "variant"
-        ],
-        "request_body_required": ["parts"],
-        "response_200_refs": {
-          "info": "#/components/schemas/AssistantMessage",
-          "parts": "array"
-        },
-        "response_200_required": ["info", "parts"]
+        "request_body_properties": ["prompt"],
+        "request_body_required": ["prompt"],
+        "response_200_ref": "#/components/schemas/SessionGenerateResponse"
       }
     }
   },
   "components": {
     "schemas": {
-      "OutputFormatJsonSchema": {
-        "properties": ["type", "schema", "retryCount"],
-        "required": ["type", "schema"],
-        "type_enum": ["json_schema"],
-        "schema_ref": "#/components/schemas/JSONSchema"
-      },
-      "PermissionRule": {
-        "properties": ["permission", "pattern", "action"],
-        "required": ["permission", "pattern", "action"],
-        "action_enum": ["allow", "ask", "deny"]
-      },
-      "AssistantMessage": {
-        "properties": [
-          "agent",
-          "cost",
-          "error",
-          "finish",
-          "id",
-          "mode",
-          "modelID",
-          "parentID",
-          "path",
-          "providerID",
-          "role",
-          "sessionID",
-          "structured",
-          "summary",
-          "time",
-          "tokens",
-          "variant"
-        ],
-        "required": [
-          "agent",
-          "cost",
-          "id",
-          "mode",
-          "modelID",
-          "parentID",
-          "path",
-          "providerID",
-          "role",
-          "sessionID",
-          "time",
-          "tokens"
-        ],
+      "Model.Ref": {
+        "properties": ["id", "providerID"],
+        "required": ["id", "providerID"],
         "additionalProperties": false
       },
-      "StructuredOutputError": {
-        "properties": ["name", "data"],
-        "required": ["name", "data"],
-        "name_enum": ["StructuredOutputError"],
-        "data_properties": ["message", "retries"],
-        "data_required": ["message", "retries"]
+      "SessionGenerateResponse": {
+        "required": ["data"],
+        "additionalProperties": false,
+        "data_properties": ["text"]
       },
-      "TextPartInput": {
-        "properties": [
-          "id",
-          "ignored",
-          "metadata",
-          "synthetic",
-          "text",
-          "time",
-          "type"
-        ],
-        "required": ["type", "text"],
-        "type_enum": ["text"]
+      "ServerInfo": {
+        "properties": ["capabilities", "paths", "pid", "urls", "version"],
+        "required": ["pid", "version"]
       }
     }
   }
