@@ -3,24 +3,24 @@ status: testing
 phase: 06-tailoring-verification
 source: [06-05-SUMMARY.md, 06-06-SUMMARY.md, 06-07-SUMMARY.md, 06-VERIFICATION.md, 06-REVIEW.md]
 started: 2026-09-24T23:28:14Z
-updated: 2026-09-30T12:02:22Z
+updated: 2026-10-13T08:05:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Real-engine tailored compile
+number: 2
+name: Fail-vs-warn legibility
 expected: |
-  With the real LaTeX engine available (Tectonic), generate and compile a tailored CV
-  for a scored listing. A real PDF is produced and the persisted cv_artifacts row carries
-  a merged, passing verification_json written by the real engine extractor.
+  On the tailoring surface, a failing verification check is visually distinct from a
+  warning, and the blocked state reads as a reviewable outcome with a clear recovery path
+  rather than an opaque dead end.
 awaiting: user response
 
 ## Tests
 
 ### 1. Real-engine tailored compile
 expected: Generate + compile a tailored CV for a scored listing in an environment with Tectonic available (`.venv/bin/python -m pytest -m latex`, or `docker compose run --rm app pytest -m latex`, or the running app). A real PDF is produced and the persisted artifact carries a merged verification_json that passes. Layer-2 pypdf extraction is stubbed in the hermetic suite, so this is the only leg that exercises the real engine.
-result: [pending]
+result: pass (2026-10-13) — `docker compose build` succeeded (477.5s; Tectonic 0.17.0 SHA256 verified, JobSpy pinned at `fda080a373e8226f3fd60635323f5da9af9892b1`, migrations 0001→0007 applied), then `docker compose run --rm app pytest -m latex -q` → **10 passed, 1714 deselected in 11.01s**. The real pinned Tectonic engine compiles and the real-engine verification path passes.
 
 ### 2. Fail-vs-warn legibility
 expected: On the tailoring surface, a failing verification check is visually distinct from a warning, and the blocked state reads as a reviewable outcome with a clear recovery path rather than an opaque dead end.
@@ -29,9 +29,9 @@ result: [pending]
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
