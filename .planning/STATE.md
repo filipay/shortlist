@@ -1,19 +1,18 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 6
-current_phase_name: Tailoring + Verification
+current_phase: "07.1"
 status: planning
 stopped_at: Phase 07 complete, ready to plan Phase 6
-last_updated: "2026-10-12T15:39:42.199Z"
+last_updated: "2026-10-13T10:52:54.153Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 07 complete, transitioned to Phase 6
-state_head: a2d4857b56e2d849b4eb84a67ad405423c95e999
+state_head: b85d3158055de3e92a5736a9a838d0e645c289b1
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 6
   total_plans: 70
   completed_plans: 70
-  percent: 75
+  percent: 67
 ---
 
 # Project State
@@ -27,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-09-24)
 
 ## Current Position
 
-Phase: 6 — Tailoring + Verification
+Phase: 07.1
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-10-12 — Phase 07 complete, transitioned to Phase 6
 
-Progress: [████████░░] 75%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -250,6 +249,10 @@ None yet.
 | 260929-m1j | Fix the skills section: widen the model-assisted CV extraction schema so each skill carries a group, update the extraction prompt to ask for it, and group the rendered skills by group in the LaTeX template so the section renders as labelled lines instead of one row per skill | 2026-09-29 | 3dbaecd | [260929-m1j-fix-the-skills-section-widen-the-model-a](./quick/260929-m1j-fix-the-skills-section-widen-the-model-a/) |
 | 260929-pan | Make the tailored CV actively fit the page budget: drop the lowest-value whole bullets until it fits, the candidates are exhausted, or the pass bound is hit, recording each drop as a reasoned change in the patch and the compile response | 2026-09-29 | 59ed706 | [260929-pan-make-the-tailored-cv-actively-fit-the-pa](./quick/260929-pan-make-the-tailored-cv-actively-fit-the-pa/) |
 | 260930-lay | Add three committed CV layouts (Classic default / Modern / Compact) with one remembered global preference stored as a one-token layout file beside cv.yaml, applied to the next tailored CV, failing closed to Classic, and a settings picker | 2026-09-30 | 0b8911e | [260930-lay-cv-layout-variants](./quick/260930-lay-cv-layout-variants/) |
+
+### Roadmap Evolution
+
+- Phase 07.1 inserted after Phase 7: Migrate the LLM backend to the opencode V2 HTTP API (URGENT)
 
 ## Deferred Items
 
