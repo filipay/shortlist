@@ -35,7 +35,12 @@ import structlog
 from app.config import settings
 from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
-from app.llm.contract import INFO_PATH, V2_MODEL_PATH, V2_PROVIDER_PATH
+from app.llm.contract import (
+    GLOBAL_HEALTH_PATH,
+    INFO_PATH,
+    V2_MODEL_PATH,
+    V2_PROVIDER_PATH,
+)
 from app.llm.detection import detect_surface
 from app.llm.opencode_server import (
     CONFIG_PROVIDERS_PATH,
@@ -549,6 +554,93 @@ async def test_resolve_model_is_deterministic_under_ambiguity(
     monkeypatch.setattr(backend, "discover_models", _fake_discovery)
 
     assert await backend._resolve_model() == ("a-provider", settings.opencode_model)
+
+
+# --- 7. cold-start tolerance + the retained V1 branch -------------------------
+
+
+async def test_a_cold_start_empty_api_model_is_retried_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pitfall P3: the registry warms up lazily; ONE re-probe, never a loop."""
+    recorder = Recorder(
+        bodies={
+            INFO_PATH: {"version": V2_SERVER_VERSION},
+            V2_MODEL_PATH: [{"data": []}, _model_payload()],
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+
+    with structlog.testing.capture_logs() as events:
+        result = await OpenCodeServerBackend().discover_models()
+
+    assert result.reachable is True
+    assert result.providers == [
+        ProviderModel(provider_id="opencode", model_id="claude-sonnet-4"),
+        ProviderModel(provider_id="opencode-go", model_id="deepseek-v4.1-flash"),
+        ProviderModel(provider_id="opencode-go", model_id="qwen3-coder"),
+    ]
+    assert recorder.paths.count(V2_MODEL_PATH) == 2
+    assert any(event.get("retried") is True for event in events)
+
+
+async def test_a_permanently_empty_api_model_fails_loud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No hard-coded provider papering over a genuinely empty registry (D-145)."""
+    recorder = Recorder(
+        bodies={
+            INFO_PATH: {"version": V2_SERVER_VERSION},
+            V2_MODEL_PATH: {"data": []},
+            V2_PROVIDER_PATH: _provider_payload(),
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+    backend = OpenCodeServerBackend()
+
+    resolved = await backend._resolve_model()
+
+    assert isinstance(resolved, StructuredCallResult)
+    assert resolved.ok is False
+    assert resolved.status == "error"
+    assert resolved.error_kind == "model_not_found"
+    assert settings.opencode_model in (resolved.error or "")
+    # One bounded retry per discovery; `_resolve_model` issued no completion.
+    assert recorder.paths.count(V2_MODEL_PATH) == 2
+
+
+async def test_the_retained_v1_discovery_resolves_from_config_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-148: a V1 server still resolves `(provider_id, model_id)` from `/config/providers`."""
+    v1_payload = {
+        "providers": [
+            {
+                "id": "legacy",
+                "api_key": SENTINEL,
+                "models": {settings.opencode_model: {"name": "Legacy model"}},
+            }
+        ]
+    }
+    recorder = Recorder(
+        bodies={
+            INFO_PATH: None,  # non-V2: the SPA fallback / no version marker
+            GLOBAL_HEALTH_PATH: {"healthy": True},
+            CONFIG_PROVIDERS_PATH: v1_payload,
+        }
+    )
+    monkeypatch.setattr(opencode_server, "httpx", recorder.module())
+    backend = OpenCodeServerBackend()
+
+    discovery = await backend.discover_models()
+
+    assert discovery.reachable is True
+    assert discovery.providers == [
+        ProviderModel(provider_id="legacy", model_id=settings.opencode_model)
+    ]
+    assert recorder.paths == [INFO_PATH, GLOBAL_HEALTH_PATH, CONFIG_PROVIDERS_PATH]
+    assert await backend._resolve_model() == ("legacy", settings.opencode_model)
 
 
 if __name__ == "__main__":  # pragma: no cover
