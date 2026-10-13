@@ -368,7 +368,7 @@ Plans:
 **Goal:** The app's LLM backend speaks the opencode V2 HTTP API, so ranking, tailoring, screening-answer drafting and CV fact extraction work again — while the retained V1 surface keeps working (dual-support with runtime detection). Trigger: the pinned V1 contract is dead on opencode 2.0.26 (legacy root routes serve SPA HTML, `POST /session` is a hard 405, every LLM call fails with `JSONDecodeError`).
 **Requirements**: D-135, D-136, D-137, D-138, D-139, D-140, D-141, D-142, D-143, D-144, D-145, D-146, D-147, D-148, D-149, D-150 (CONTEXT decisions; ROADMAP lists no REQ ids for this inserted phase)
 **Depends on:** Phase 7
-**Plans:** 2/6 plans executed
+**Plans:** 4/6 plans executed
 **Out of scope:** any new user-facing capability (the Settings model picker is a separate phase).
 
 Plans:
@@ -379,8 +379,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07.1-03-PLAN.md — The contract fixture rebuilt as the V2 slice, the V2 snapshot assertions, and the raw-text negative control (D-147/D-148/D-149/D-150)
-- [ ] 07.1-04-PLAN.md — Discovery retargeted to `GET /api/model` + `GET /api/provider` with redaction preserved, plus the cold-start retry (D-146)
+- [x] 07.1-03-PLAN.md — The contract fixture rebuilt as the V2 slice, the V2 snapshot assertions, and the raw-text negative control (D-147/D-148/D-149/D-150)
+- [x] 07.1-04-PLAN.md — Discovery retargeted to `GET /api/model` + `GET /api/provider` with redaction preserved, plus the cold-start retry (D-146)
 
 **Wave 3** *(blocked on Waves 1–2 completion)*
 
