@@ -25,11 +25,13 @@ every row it touches with the run's own clock.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +45,8 @@ from app.probe.survival import (
     classify_block_vs_parse,
 )
 from app.sources import registry
+
+log = structlog.get_logger(__name__)
 
 #: Mirrors `ck_sources_health` on the `sources` table.
 VALID_HEALTH: frozenset[str] = frozenset({"ok", "degraded", "unreachable"})
@@ -59,8 +63,16 @@ CLASSIFICATION_HEALTH: dict[str, str] = {"pass": "ok", "warn": "degraded"}
 #: (never a substring scan) because it is emitted by exactly one function.
 TRANSPORT_ERROR_PREFIX = "fetch-side: transport error"
 
-#: The prefix `classify_response` writes around a recorded stop signal.
-STOP_SIGNAL_PREFIX = "fetch-side: stop signal '"
+#: The prefix `classify_response` writes around a recorded stop signal. Anchored
+#: (never a substring scan) because it is emitted by exactly one function.
+STOP_SIGNAL_PREFIX = "fetch-side: stop signal "
+
+#: The value the quoted stop signal sits between. `repr()` emits SINGLE quotes
+#: unless the value itself contains one, in which case it switches to DOUBLE
+#: quotes (`repr("it's")` -> `'"it\'s"'`); the parse below accepts both.
+_STOP_SIGNAL_RE = re.compile(
+    r"""^fetch-side: stop signal (?P<quote>["'])(?P<signal>.*?)(?P=quote);"""
+)
 
 #: `(label, listings attribute, listing_sources attribute)` for the S2 fill-rate.
 #: `salary_min`/`salary_max` are reported but never *targeted*: JobSpy's
@@ -164,13 +176,22 @@ def _last_success_run(runs: Sequence[Run], name: str) -> Run | None:
 def _recorded_stop_signal(note: Any) -> str | None:
     """The stop signal `classify_response` wrote into a ledger row's note.
 
-    Anchored on the exact prefix that ONE function emits, so free text cannot
-    satisfy it by accident (CONVENTIONS rule 1). Anything else — including a
-    parse-side or clean note — is `None`.
+    Anchored structurally (CONVENTIONS rule 1): the prefix ONE function emits,
+    then a QUOTED value whose closing quote matches its opening one — so free
+    text cannot satisfy it by accident, and a signal containing a single quote
+    (which `repr` double-quotes) is not missed. A note that carries the prefix
+    but no parseable quoted value is surfaced as a `warn` and treated as a
+    recorded signal (`?`), never as an absent one: the previous parse returned
+    `None` there and silently dropped the stop signal from the badge, which
+    reports the source as healthy rather than degraded (CONVENTIONS rule 2).
     """
     if not isinstance(note, str) or not note.startswith(STOP_SIGNAL_PREFIX):
         return None
-    return note.removeprefix(STOP_SIGNAL_PREFIX).split("'", 1)[0] or None
+    match = _STOP_SIGNAL_RE.match(note)
+    if match is None:
+        log.warning("source_repo.unparsed_stop_signal_note")
+        return "?"
+    return match.group("signal") or "?"
 
 
 def _classify_ledger_row(row: SourceRequestLog) -> SignalResult:
@@ -207,10 +228,14 @@ def _derived_health(stored: str | None, classification: SignalResult | None) -> 
 async def enabled_source_names(session: AsyncSession) -> list[str]:
     """Names of the enabled `sources` rows, deterministically ordered."""
     rows = (
-        await session.execute(
-            select(Source.name).where(Source.enabled.is_(True)).order_by(Source.name)
+        (
+            await session.execute(
+                select(Source.name).where(Source.enabled.is_(True)).order_by(Source.name)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -238,9 +263,7 @@ async def ensure_registered_sources(session: AsyncSession) -> list[str]:
     nothing. Returns the names inserted this call. The caller owns the commit, like
     every other function in this module.
     """
-    existing = set(
-        (await session.execute(select(Source.name))).scalars().all()
-    )
+    existing = set((await session.execute(select(Source.name))).scalars().all())
     missing = [name for name in registry.all_adapters() if name not in existing]
     if not missing:
         return []
@@ -270,9 +293,7 @@ async def record_probe_result(
     `sources` row is not an error, and the probe must not fail over it.
     """
     if status not in VALID_HEALTH:
-        raise ValueError(
-            f"invalid probe status {status!r}; expected one of {sorted(VALID_HEALTH)}"
-        )
+        raise ValueError(f"invalid probe status {status!r}; expected one of {sorted(VALID_HEALTH)}")
 
     row = await session.scalar(select(Source).where(Source.name == source))
     if row is None:
@@ -286,16 +307,16 @@ async def record_probe_result(
 
 async def get_source_health(session: AsyncSession) -> list[SourceHealth]:
     """The per-source read model: liveness, last success, volume and fill-rate."""
-    sources = (
-        await session.execute(select(Source).order_by(Source.name))
-    ).scalars().all()
+    sources = (await session.execute(select(Source).order_by(Source.name))).scalars().all()
     runs = (
-        await session.execute(
-            select(Run)
-            .order_by(Run.started_at.desc(), Run.id.desc())
-            .limit(RECENT_RUN_LIMIT)
+        (
+            await session.execute(
+                select(Run).order_by(Run.started_at.desc(), Run.id.desc()).limit(RECENT_RUN_LIMIT)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     health: list[SourceHealth] = []
     for source in sources:
@@ -390,9 +411,7 @@ async def get_source_health_with_signals(
                 classification=(
                     str(classification.observed) if classification is not None else None
                 ),
-                stop_signal=(
-                    _recorded_stop_signal(newest.note) if newest is not None else None
-                ),
+                stop_signal=(_recorded_stop_signal(newest.note) if newest is not None else None),
             )
         )
     return details
@@ -495,9 +514,7 @@ async def board_evidence(session: AsyncSession, source_name: str) -> BoardEviden
             await session.execute(
                 select(SourceRequestLog)
                 .where(SourceRequestLog.source == source_name)
-                .order_by(
-                    SourceRequestLog.occurred_at.desc(), SourceRequestLog.id.desc()
-                )
+                .order_by(SourceRequestLog.occurred_at.desc(), SourceRequestLog.id.desc())
                 .limit(window)
             )
         )
