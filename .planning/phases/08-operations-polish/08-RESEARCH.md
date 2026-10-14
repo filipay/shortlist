@@ -696,28 +696,37 @@ Verified payloads from the 3.11.3 source: `EVENT_JOB_MISSED` is constructed as `
 | A6 | Recording a missed/in-flight skip as JSON on the operations row (not a `runs` row) satisfies D-154's "records why it skipped". | Pattern 3 / listener example | If a `runs` row is required, migration 0008 must also batch-recreate `runs` to add a fifth status — the exact hazard `test_upgrade_populated_0001_to_head` exists to catch. |
 | A7 | The `queue_state` in D-167 is a wording slip for the per-listing child tables. | Critical constraint C2 | If it is taken literally, the plan tries to delete a global singleton row per listing and either corrupts the watermark or no-ops. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All five were settled as binding decisions in the planning session that followed this
+research. Each is implemented by a plan; the resolution line names it. Nothing here is
+left open, so a downstream reader does not have to rediscover the answer.
 
 1. **C2 — does D-167's hard delete get a D-164 carve-out, or is it restricted to untouched listings?**
    - What we know: the trigger + FK make the delete impossible for any listing with an event row; the reset already ships a tested mechanism (`_suspend_append_only_trigger`) that suspends and re-arms it inside one transaction.
    - What's unclear: whether the user accepts an explicit "never pruned *except* when their parent listing is hard-deleted" amendment to D-164.
    - Recommendation: option (b) — reuse the reset's mechanism, record the amendment in the plan, and add the re-arm assertion the reset itself lacks. If the user prefers strict D-164, take option (a) and accept that the stale-listing category only ever matches never-touched listings.
+   - **RESOLVED (orchestrator decision 2, 2026-10-14): option (b).** The carve-out reuses `_suspend_append_only_trigger` / `_restore_append_only_trigger` inside one transaction, the D-164 amendment is recorded explicitly, and the re-arm assertion the reset itself lacks is added. Implemented by plan 08-05 Task 3.
 
 2. **C1 — which `/health` path wins?**
    - What we know: the JSON path is pinned in 25 assertions, the auth-seam route inventory, and `scripts/compose-smoke.sh`.
    - Recommendation: page at a distinct path + a `Health` nav entry (zero churn). Confirm with the user only if the literal path matters.
+   - **RESOLVED (orchestrator decision 1, 2026-10-14): the JSON endpoint keeps `/health`; the page takes `/status`** and the nav entry keeps the label `Health`. FastAPI matches routes in declaration order, so the page must not also declare `/health`. Implemented by plan 08-04 Task 1.
 
 3. **Should the `source_request_log` prune carry a run-floor guard?**
    - What we know: `survival.py:5` names `source_request_log` as a verdict input; D-165(1)'s floor covers `runs` but not the log.
    - Recommendation: yes — keep rows whose `run_id` is in the retained run floor (see the prune SQL). Otherwise an aggressive age threshold silently degrades the Adzuna verdict the same page is displaying.
+   - **RESOLVED (orchestrator decision 3, 2026-10-14): yes.** The source-request-log prune keeps every row whose run is inside the retained run floor. Implemented by plan 08-05 Task 2.
 
 4. **Stale `running` run rows after an unclean shutdown.**
    - What we know: `run_pipeline` catches `except Exception` only, and `AsyncIOExecutor.shutdown` cancels in-flight futures; a cancelled run keeps `status='running'` forever, which then blocks `POST /settings/reset` and every future scheduled run (Pattern 3).
    - Recommendation: a small boot-time reconciliation marking non-terminal runs from a previous process as `partial` with a recorded error. Not a requirement — but the failure it prevents is a permanently stuck feature.
+   - **RESOLVED (orchestrator decision 4, 2026-10-14): yes, and the terminal value is pinned to `partial` with a recorded error.** Implemented by plan 08-03 Task 2.
 
 5. **Does the prune need a `snapshot_database()` call first?**
    - What we know: `snapshot_database` exists and the reset uses it; D-166 asks only for a preview + confirm and says nothing about a snapshot.
    - Recommendation: a snapshot for the *listing* category (one-way delete, D-167) is cheap insurance; skip it for the reversible-by-regeneration categories. Decide explicitly rather than by omission.
+   - **RESOLVED (orchestrator decision 5, 2026-10-14): snapshot the stale-listing category only;** the regenerable categories are not snapshotted. Implemented by plan 08-05 Task 3.
 
 ## Environment Availability
 

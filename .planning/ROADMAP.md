@@ -411,17 +411,17 @@ Plans:
 **Wave 1**
 
 - [ ] 08-01-PLAN.md — One new dependency behind a human gate: `apscheduler==3.11.3` pinned in both manifests, the two schedule knobs as configuration, and a build-time timezone proof (RUN-05)
-- [ ] 08-02-PLAN.md — The phone is a first-class journey target: the phone-breakpoint reflow authored in the Tailwind input and rebuilt, journey-table labels, admin scroll regions, 44×44px touch targets, and the operator checklist (UI-06)
+- [ ] 08-02-PLAN.md — The phone is a first-class journey target: the phone-breakpoint reflow authored in the Tailwind input and rebuilt (including the unbroken-value wrap), journey-table labels, admin scroll regions, 44×44px touch targets, and the operator checklist (UI-06)
 
 **Wave 2** *(blocked on 08-01)*
 
-- [ ] 08-03-PLAN.md — Tracer: the tool runs itself once a day — the singleton schedule row (migration 0008), the in-process scheduler over a persistent job store, the settings schedule form, the scheduled target with its overlap guard and durable skip record, and the boot reconciliation (RUN-05, PLAT-06)
+- [ ] 08-03-PLAN.md — Tracer: the tool runs itself once a day — the singleton schedule row (migration 0008), the in-process scheduler over a persistent job store, the settings schedule form, the scheduled target with its overlap guard and durable skip record, and boot reconciliation of stale runs to `partial` (RUN-05, PLAT-06)
 
-**Wave 3** *(blocked on 08-03)*
+**Wave 3** *(blocked on 08-02 and 08-03)*
 
 - [ ] 08-04-PLAN.md — The tool tells the truth about itself: `/status` over one shared dependency builder, the run-derived source badge, the next-run/last-run/missed-run lines, and the read-only Adzuna verdict (RUN-06, RUN-07)
 
-**Wave 4** *(blocked on 08-03; also ordered after 08-04 by the shared seam-route guard)*
+**Wave 4** *(blocked on 08-03 and 08-04; 08-04 is declared because both plans append to the same seam-route guard)*
 
 - [ ] 08-05-PLAN.md — Payments on the retention debts: the per-category, per-threshold manual prune with its preview, confirm, audit line, four hard guards, and the snapshotted stale-listing hard delete (RUN-07)
 
