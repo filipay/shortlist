@@ -194,6 +194,23 @@ def test_the_page_declares_status_and_not_health() -> None:
     assert "probe_all" not in source, "a page view must never put a request on a board"
 
 
+async def test_the_health_page_is_surfaced_in_the_nav(page_env: PageEnv) -> None:
+    """RUN-07 says the health surface is reached *from the UI* — the nav is that link.
+
+    A route with no nav entry is only reachable by typing the URL, so a dropped
+    entry is a regression the route's own 200 cannot catch.
+    """
+    queue = await page_env.client.get("/")
+    assert queue.status_code == 200
+    assert re.search(r'<a class="nav-link[^"]*" href="/status"[^>]*>Health</a>', queue.text)
+
+    page = await page_env.client.get(HEALTH_PAGE_PATH)
+    assert re.search(
+        r'<a class="nav-link nav-current touch-target" href="/status" aria-current="page">Health</a>',
+        page.text,
+    ), "the Health nav entry must read as the current page on /status"
+
+
 async def test_the_page_and_the_json_cannot_disagree(
     page_env: PageEnv, monkeypatch: pytest.MonkeyPatch
 ) -> None:
