@@ -579,6 +579,14 @@
     color: var(--color-muted);
   }
 
+  /* The tracker's refused-transition row (`app/api/applications.py`). The refusal
+     message is already in the row, but without a danger treatment it reads as an
+     untargeted no-op; reuses the danger tokens, mirroring `.health-unreachable`. */
+  .listing-error {
+    color: var(--color-danger);
+    background-color: var(--color-danger-bg);
+  }
+
   .listing-title {
     font-weight: 600;
     color: var(--color-ink);

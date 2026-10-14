@@ -124,9 +124,7 @@ def _stylesheet_has_class(css: str, klass: str) -> bool:
     ``.badge-new``. A leading lookbehind is deliberately omitted so that a
     compound selector like ``.listing-hide-button.is-on`` counts for ``is-on``.
     """
-    return (
-        re.search(r"\." + re.escape(klass) + r"(?![\w-])", css) is not None
-    )
+    return re.search(r"\." + re.escape(klass) + r"(?![\w-])", css) is not None
 
 
 def test_templates_exist_and_the_scan_is_not_vacuous() -> None:
@@ -148,8 +146,7 @@ def test_every_template_class_has_a_stylesheet_rule() -> None:
                 missing.setdefault(klass, []).append(path.name)
 
     assert missing == {}, (
-        "these classes appear in a template but have no rule in "
-        f"static/vendor/app.css: {missing}"
+        f"these classes appear in a template but have no rule in static/vendor/app.css: {missing}"
     )
 
 
@@ -212,6 +209,26 @@ def test_the_source_guard_flags_an_unstyled_class() -> None:
     """A guard that cannot fail is not a guard."""
     assert _stylesheet_has_class(".answer-text{max-width:65ch}", "answer-text")
     assert not _stylesheet_has_class(".other-rule{color:red}", "answer-text")
+
+
+#: Classes emitted from Python rather than a template `class="..."` attribute, so
+#: the template scan above can never see them; each must still be defined in both
+#: the source and the built stylesheet.
+RUNTIME_CLASSES: tuple[str, ...] = (
+    # `app/api/applications.py:_row_error` — the refused tracker transition (UI-2).
+    "listing-error",
+)
+
+
+def test_runtime_emitted_classes_are_defined_in_both_stylesheets() -> None:
+    """UI-2: `.listing-error` was emitted by a route and defined by no rule."""
+    built = STYLESHEET.read_text(encoding="utf-8")
+    source = SOURCE_STYLESHEET.read_text(encoding="utf-8")
+
+    assert RUNTIME_CLASSES, "the runtime-class list is empty — the guard is vacuous"
+    for klass in RUNTIME_CLASSES:
+        assert _stylesheet_has_class(source, klass), f"{klass} is undefined in the source"
+        assert _stylesheet_has_class(built, klass), f"{klass} is undefined in the build"
 
 
 def test_the_jinja_tokeniser_keeps_literals_and_drops_dynamic_prefixes() -> None:

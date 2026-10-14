@@ -277,3 +277,21 @@ def test_every_nav_link_carries_the_tap_floor() -> None:
 )
 def test_the_compact_journey_controls_carry_the_tap_floor(template: str) -> None:
     assert "touch-target" in (TEMPLATES / template).read_text(encoding="utf-8")
+
+
+def test_the_prune_and_schedule_submits_carry_the_tap_floor() -> None:
+    """UI-1: 08-UI-SPEC §Spacing names the prune controls; they shipped at ~38px.
+
+    The one irreversible control (`Delete permanently`) must meet the 44x44px floor
+    on the phone layout this phase exists to make first-class.
+    """
+    text = (TEMPLATES / "settings.html").read_text(encoding="utf-8")
+
+    for anchor in (
+        'id="prune-preview-submit"',
+        'id="prune-confirm-submit"',
+        'id="schedule-submit"',
+    ):
+        line = next((line for line in text.splitlines() if anchor in line), None)
+        assert line is not None, f"{anchor} is missing from settings.html"
+        assert "touch-target" in line, f"{anchor} is under the 44px tap floor"
