@@ -54,6 +54,17 @@ DEFAULT_SCHEDULE = ScheduleConfig(
 )
 
 
+def _schedule_payload(schedule: ScheduleConfig) -> dict[str, Any]:
+    """The stored JSON document for a schedule. One builder, so a create and an
+    update cannot disagree about the shape."""
+    return {
+        "enabled": bool(schedule.enabled),
+        "hour": int(schedule.hour),
+        "minute": int(schedule.minute),
+        "timezone": schedule.timezone,
+    }
+
+
 def _in_range(value: Any, low: int, high: int) -> int | None:
     """An integer in ``[low, high]``, or ``None`` for anything unusable."""
     if isinstance(value, bool):
@@ -122,12 +133,7 @@ async def write_schedule(
             f"expected one of {sorted(ALLOWED_TIMEZONES)}"
         )
 
-    payload = {
-        "enabled": bool(schedule.enabled),
-        "hour": int(schedule.hour),
-        "minute": int(schedule.minute),
-        "timezone": schedule.timezone,
-    }
+    payload = _schedule_payload(schedule)
     moment = now if now is not None else datetime.now(UTC)
     statement = (
         sqlite_insert(OperationsConfig)
@@ -151,6 +157,95 @@ async def write_schedule(
         minute=int(schedule.minute),
         timezone=schedule.timezone,
     )
+
+
+def _parse_retention(stored: Any) -> dict[str, int]:
+    """A total parse of the stored retention payload: only usable entries survive.
+
+    Per-entry rather than whole-document (unlike the schedule): a half-written
+    threshold is simply absent, and a category with no stored age still has a default
+    at the form, so no state is lost that a malformed document could hide.
+    """
+    if not isinstance(stored, Mapping):
+        return {}
+    parsed: dict[str, int] = {}
+    for key, value in stored.items():
+        if not isinstance(key, str) or isinstance(value, bool):
+            continue
+        try:
+            age = int(value)
+        except (TypeError, ValueError):
+            continue
+        if age > 0:
+            parsed[key] = age
+    return parsed
+
+
+async def read_retention(session: AsyncSession) -> dict[str, int]:
+    """The stored per-category retention thresholds (D-168), or `{}`. Total.
+
+    An absent row, a non-mapping payload or a non-positive value all degrade rather
+    than raising, so a fresh install has no stored thresholds and each category falls
+    back to the form's own default. Never commits.
+    """
+    row = await session.get(OperationsConfig, SINGLETON_ID)
+    stored = row.retention_json if row is not None else None
+    return _parse_retention(stored)
+
+
+async def write_retention(
+    session: AsyncSession,
+    category: str,
+    age_days: int,
+    *,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Merge one category's age threshold into the stored retention payload. Never commits.
+
+    Raises `ValueError` before any SQL for a non-string category or a non-positive
+    age — a zero/negative threshold would make every record eligible.
+
+    The singleton row has TWO NOT NULL payload columns and is created lazily, so a
+    create from this writer must supply ``schedule_json`` too: the *stored* schedule
+    document when the row exists, and the code-level default when it does not. Without
+    that, the first prune-threshold save on a database where nobody has saved a
+    schedule yet fails the NOT NULL constraint — a failure that appears only on a
+    fresh install. Symmetrically the ``set_`` clause carries ONLY ``retention_json``
+    and ``updated_at``, so a retention write can never clobber a stored schedule.
+    """
+    if not isinstance(category, str) or not category:
+        raise ValueError("category must be a non-empty string")
+    if isinstance(age_days, bool) or not isinstance(age_days, int) or age_days <= 0:
+        raise ValueError("age_days must be a positive integer")
+
+    row = await session.get(OperationsConfig, SINGLETON_ID)
+    stored_schedule = row.schedule_json if row is not None else None
+    schedule_on_create = (
+        dict(stored_schedule)
+        if isinstance(stored_schedule, Mapping)
+        else _schedule_payload(DEFAULT_SCHEDULE)
+    )
+    merged = dict(_parse_retention(row.retention_json if row is not None else None))
+    merged[category] = int(age_days)
+
+    moment = now if now is not None else datetime.now(UTC)
+    statement = (
+        sqlite_insert(OperationsConfig)
+        .values(
+            id=SINGLETON_ID,
+            schedule_json=schedule_on_create,
+            retention_json=merged,
+            updated_at=moment,
+        )
+        .on_conflict_do_update(
+            index_elements=["id"],
+            set_={"retention_json": merged, "updated_at": moment},
+        )
+    )
+    async with session.begin_nested():
+        await session.execute(statement)
+        await session.flush()
+    return merged
 
 
 async def read_skip_notice(session: AsyncSession) -> dict[str, Any] | None:
@@ -206,8 +301,10 @@ __all__ = [
     "DEFAULT_SCHEDULE",
     "SINGLETON_ID",
     "ScheduleConfig",
+    "read_retention",
     "read_schedule",
     "read_skip_notice",
+    "write_retention",
     "write_schedule",
     "write_skip_notice",
 ]

@@ -294,5 +294,70 @@
       <button type="submit" id="reset-submit">Reset queue data</button>
     </div>
   </form>
+
+  {# The retention prune (D-163..D-167). Manual only (D-166): a category and an age,
+     then a dry-run preview, then a SEPARATE confirm. Both steps are plain POSTs, so a
+     link or a prefetch can never delete anything, and there is no automatic prune.
+     Uses only shipped class tokens — no new CSS and no JavaScript. #}
+  <h3>Prune history</h3>
+  <p class="settings-note">
+    Removes old records permanently. Pick a category and an age, then preview exactly
+    what would be deleted before anything is removed.
+  </p>
+  <form method="post" action="/settings/prune/preview">
+    <div class="field">
+      <label class="field-label" for="prune-category">Category</label>
+      <select id="prune-category" name="category">
+        {% for key, label in prune_categories %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label" for="prune-age">Older than</label>
+      <input type="number"
+             id="prune-age"
+             name="age_days"
+             min="1"
+             step="1"
+             value="{{ prune_preview.age_days if prune_preview else 30 }}">
+      <p class="field-note">days</p>
+    </div>
+    <p class="settings-note" id="prune-stored-thresholds">
+      {% if retention %}Stored thresholds: {% for key, age in retention.items() %}{{ key }} {{ age }} days{% if not loop.last %}, {% endif %}{% endfor %}.{% else %}No retention thresholds stored yet.{% endif %}
+    </p>
+    <div class="form-actions">
+      <button type="submit" id="prune-preview-submit">Preview deletion</button>
+    </div>
+  </form>
+
+  {% if prune_preview %}
+  <div class="capability-warnings" id="prune-preview">
+    <ul class="settings-counts">
+      {% if prune_preview.count %}
+      <li id="prune-preview-summary">This will delete {{ prune_preview.count }} {{ prune_preview.noun }} · {{ prune_preview.size_display }}.</li>
+      {% if prune_preview.missing_files %}
+      <li id="prune-preview-missing">{{ prune_preview.missing_files }} stored path(s) were missing or outside the artifacts directory and were not measured.</li>
+      {% endif %}
+      {% else %}
+      <li id="prune-preview-empty">Nothing matches this threshold — nothing would be deleted.</li>
+      {% endif %}
+    </ul>
+    <p class="settings-note" id="prune-protected-line">
+      Kept regardless: the last {{ prune_run_floor }} runs, the LLM call ledger, CVs
+      attached to an application, and each listing's newest verified CV.
+    </p>
+    {% if prune_preview.count %}
+    <form method="post" action="/settings/prune">
+      <input type="hidden" name="category" value="{{ prune_preview.category }}">
+      <input type="hidden" name="age_days" value="{{ prune_preview.age_days }}">
+      <div class="form-actions">
+        <span class="field-note" id="prune-confirm-note">This cannot be undone.</span>
+        <button type="submit" id="prune-confirm-submit">Delete permanently</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
 </section>
 {% endblock %}

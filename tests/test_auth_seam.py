@@ -70,6 +70,11 @@ EXPECTED_SEAM_ROUTES = frozenset(
         # surface. `/health` stays JSON; this page renders the user's own system
         # and source state, so it goes through the identity seam too.
         "/status",
+        # Phase 8's retention prune (D-163..D-168, RUN-07): the preview and the
+        # confirm are separate POSTs, and the confirm destroys rows and files, so
+        # both carry the identity seam like every other settings route.
+        "/settings/prune/preview",
+        "/settings/prune",
     }
 )
 

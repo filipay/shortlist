@@ -12,8 +12,9 @@ required so a link or a prefetch can never trigger the reset.
 v1 has no authentication at all (D-21), so there is no ambient credential for a
 cross-site request to abuse and these routes are not CSRF-exploitable today. That
 changes the moment session authentication lands (the planned Authentik step): with
-a session cookie present, `/settings/reset` and `/settings/schedule` both become
-genuine CSRF holes unless a CSRF token is added.
+a session cookie present, `/settings/reset`, `/settings/schedule`,
+`/settings/prune/preview` and `/settings/prune` all become genuine CSRF holes
+unless a CSRF token is added.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ from app.db.repositories import (
     llm_call_repo,
     operations_config_repo,
     ranking_config_repo,
+    retention_repo,
     run_repo,
 )
 from app.db.session import get_session, get_session_factory
@@ -97,6 +99,29 @@ SCREENING_QUESTIONS_PATH = "/settings/screening-questions"
 #: timezone, never a cron string. A plain full-page POST like the weights card, and it
 #: makes ZERO model calls. Saving re-configures the live scheduler with no restart.
 SCHEDULE_PATH = "/settings/schedule"
+
+#: The retention prune (D-163..D-168, RUN-07). Two SEPARATE POSTs — a preview and a
+#: confirm (D-166) — so a link or a prefetch can never delete anything, and there is
+#: no automatic prune anywhere. The preview persists the chosen threshold for that
+#: category (D-168); the confirm re-derives the count rather than trusting the form.
+PRUNE_PREVIEW_PATH = "/settings/prune/preview"
+PRUNE_PATH = "/settings/prune"
+
+#: The D-163 categories and the label the prune select offers for each, in the
+#: select's order. Kept here (not in the template) so a test can assert the offered
+#: options cover `retention_repo.PRUNE_CATEGORIES` exactly — a new category cannot be
+#: silently unofferable.
+PRUNE_CATEGORY_LABELS: tuple[tuple[str, str], ...] = (
+    ("runs", "Run history and stage logs"),
+    ("artifacts", "Tailored CV artifacts (rows and their .tex/.pdf files)"),
+    ("source_request_log", "Source request log"),
+    ("listings", "Inactive or stale listings"),
+)
+
+#: The prune refusals. Plain sentences, rendered through the page's ONE banner region.
+PRUNE_INPUT_REFUSAL = "That category or age could not be understood. Nothing has been deleted."
+PRUNE_PREVIEW_FAILED = "The preview could not be computed. Nothing has been deleted."
+PRUNE_EMPTY = "Nothing matches this threshold — nothing would be deleted."
 
 #: The picker's grounded copy (DESIGN.md §4). Labels and notes are keyed by the
 #: renderer's own layout tokens; a token that lacks an entry still renders (its key),
@@ -218,6 +243,7 @@ async def _settings_context(
     probe_part_types: list[str] | None = None,
     probe_info_keys: list[str] | None = None,
     probe_structured: bool = False,
+    prune_preview: retention_repo.PrunePreview | None = None,
 ) -> dict[str, Any]:
     backend = session.get_bind()
     database_path = Path(str(backend.url.database or ""))
@@ -248,6 +274,14 @@ async def _settings_context(
         # the initial render and the re-render after a save, so the pre-filled time,
         # timezone and enable control cannot disagree with what the scheduler runs.
         "schedule": await operations_config_repo.read_schedule(session),
+        # The retention thresholds (D-168). One read backs both the initial render and
+        # the re-render after a preview, so the field's default and the stored value
+        # cannot disagree. `prune_preview` is the dry-run result when one is present
+        # (a preview submit), and `None` on a plain page load.
+        "retention": await operations_config_repo.read_retention(session),
+        "prune_preview": prune_preview,
+        "prune_categories": PRUNE_CATEGORY_LABELS,
+        "prune_run_floor": retention_repo.RUN_FLOOR,
         # The CV fact-store card. The same path string and the same total probe serve
         # the settings card, the queue status line and `/health`, so the three surfaces
         # cannot disagree about where the loader reads or whether it loaded.
@@ -744,8 +778,10 @@ async def _blocking_row(session: AsyncSession) -> str | None:
 
 
 #: The `BEFORE DELETE` trigger migration 0001 creates to keep `listing_events`
-#: append-only. The reset is the one operation allowed to empty that log.
-_APPEND_ONLY_TRIGGER = "listing_events_no_delete"
+#: append-only. The reset is the one operation allowed to empty that log; the
+#: retention prune (`retention_repo.TRIGGER_CARVE_OUT_CATEGORIES`) is the second, and
+#: both re-use this one name so they cannot drift.
+_APPEND_ONLY_TRIGGER = retention_repo.APPEND_ONLY_TRIGGER
 
 
 async def _suspend_append_only_trigger(session: AsyncSession) -> str | None:
@@ -905,6 +941,257 @@ async def reset_data(
             session,
             banner=f"Queue data deleted. Snapshot: {snapshot.name}.",
         ),
+    )
+
+
+def _prune_root() -> Path:
+    """The artifacts directory every unlink and every preview `stat()` must stay inside."""
+    return Path(settings.artifacts_dir).resolve()
+
+
+def _unlink_artifacts(paths: list[Path]) -> tuple[int, int, int]:
+    """Unlink the artifact files of rows that were committed. Never raises.
+
+    Returns ``(removed, skipped, missing)``. The unlink happens strictly AFTER the
+    commit because it is not transactional: a rolled-back commit must never leave live
+    rows pointing at missing files (T-08-30). Containment is enforced here as well as
+    in the preview (T-08-23): a stored path that does not resolve inside
+    ``artifacts_dir`` is skipped and reported, never followed, so a hand-edited or
+    legacy row cannot make this route delete an arbitrary file. A missing file is
+    counted, not fatal.
+    """
+    root = _prune_root()
+    removed = skipped = missing = 0
+    for path in paths:
+        try:
+            resolved = path.resolve()
+        except (OSError, ValueError):
+            skipped += 1
+            continue
+        if resolved != root and root not in resolved.parents:
+            skipped += 1
+            log.warning("prune.unlink_outside_artifacts_dir", path=str(path))
+            continue
+        try:
+            resolved.unlink()
+            removed += 1
+        except FileNotFoundError:
+            missing += 1
+        except OSError as exc:
+            missing += 1
+            log.warning("prune.unlink_failed", path=str(path), error=type(exc).__name__)
+    return removed, skipped, missing
+
+
+async def _prune_preview_or_error(
+    request: Request,
+    session: AsyncSession,
+    category: str,
+    age_days: str,
+) -> tuple[retention_repo.PrunePreview | None, HTMLResponse | None]:
+    """`(preview, error_response)` — the shared read for the preview and confirm steps.
+
+    A bad category or a non-positive age is a 400 with the banner copy and no side
+    effect; any other failure is a 500 that names "nothing has been deleted" rather
+    than surfacing a bare exception. Both steps re-derive through the same repository
+    call, so the count the preview showed and the count the confirm acts on come from
+    one predicate.
+    """
+    try:
+        preview = await retention_repo.preview(
+            session,
+            category=category,
+            age_days=age_days,
+            artifacts_root=_prune_root(),
+        )
+    except ValueError:
+        log.info("prune.rejected", category=category)
+        return None, templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(session, banner=PRUNE_INPUT_REFUSAL, error=True),
+            status_code=400,
+        )
+    except Exception as exc:  # noqa: BLE001 — a preview failure must delete nothing
+        # Roll back BEFORE re-rendering: `_settings_context` runs count queries, and a
+        # session left dirty by the failed statement would make those fail too.
+        await session.rollback()
+        log.warning("prune.preview_failed", error=type(exc).__name__, detail=str(exc))
+        return None, templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(session, banner=PRUNE_PREVIEW_FAILED, error=True),
+            status_code=500,
+        )
+    return preview, None
+
+
+@router.post(PRUNE_PREVIEW_PATH, response_class=HTMLResponse)
+async def preview_prune(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Show what one category at one age WOULD delete, and record the threshold (D-166).
+
+    A dry run: it deletes nothing. The only side effect is persisting the chosen
+    threshold for that category (D-168) so the control remembers it — and that write
+    cannot clobber a stored schedule (the upsert's `set_` carries only the retention
+    column).
+    """
+    form = await read_form(request)
+    preview, error = await _prune_preview_or_error(
+        request,
+        session,
+        str(form.get("category") or "").strip(),
+        str(form.get("age_days") or "").strip(),
+    )
+    if error is not None:
+        return error
+    assert preview is not None  # noqa: S101 — `error` is None only with a preview
+
+    await operations_config_repo.write_retention(
+        session, preview.category, preview.age_days, now=datetime.now(UTC)
+    )
+    await session.commit()
+    log.info(
+        "prune.previewed",
+        category=preview.category,
+        age_days=preview.age_days,
+        count=preview.count,
+    )
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(session, prune_preview=preview),
+    )
+
+
+@router.post(PRUNE_PATH, response_class=HTMLResponse)
+async def confirm_prune(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Delete one category at one age, after re-deriving what that means (D-166/D-167).
+
+    The count is **re-derived** here, never trusted from a hidden form field, so the
+    confirm cannot be made to delete a population the preview never showed. A zero
+    count refuses with the empty-preview copy and deletes nothing.
+
+    The stale-listing category is the one-way, hard-delete category (D-167): a
+    database snapshot is taken FIRST (its only recovery path), and the delete runs
+    inside one transaction that suspends the append-only `listing_events` trigger and
+    re-arms it before the commit (the D-164 carve-out). The row deletes commit first;
+    only then are the artifact files unlinked.
+    """
+    form = await read_form(request)
+    preview, error = await _prune_preview_or_error(
+        request,
+        session,
+        str(form.get("category") or "").strip(),
+        str(form.get("age_days") or "").strip(),
+    )
+    if error is not None:
+        return error
+    assert preview is not None  # noqa: S101 — `error` is None only with a preview
+
+    if preview.count == 0:
+        log.info("prune.nothing_to_delete", category=preview.category)
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(session, banner=PRUNE_EMPTY, prune_preview=preview),
+        )
+
+    carve_out = preview.category in retention_repo.TRIGGER_CARVE_OUT_CATEGORIES
+    snapshot_note = ""
+    if carve_out:
+        database_path = Path(str(session.get_bind().url.database or ""))
+        try:
+            snapshot = await asyncio.to_thread(
+                snapshot_database,
+                db_path=database_path,
+                backups_dir=database_path.parent / "prune-backups",
+                moment=datetime.now(UTC),
+            )
+        except (ResetRefused, sqlite3.Error, OSError) as exc:
+            log.warning("prune.snapshot_failed", error=str(exc))
+            return templates.TemplateResponse(
+                request,
+                SETTINGS_TEMPLATE,
+                await _settings_context(
+                    session,
+                    banner=f"Nothing was deleted: the snapshot failed ({exc}).",
+                    error=True,
+                ),
+                status_code=500,
+            )
+        snapshot_note = f" Snapshot: {snapshot.name}."
+
+    try:
+        if carve_out:
+            # `listing_events` is append-only via a BEFORE DELETE trigger, so the
+            # delete phase suspends it and re-arms it INSIDE this transaction (the
+            # engine makes DDL transactional). D-164 amendment: the audit logs are
+            # never pruned except by the deletion of their parent listing, which is
+            # itself a user-confirmed, previewed, snapshotted, one-way action.
+            trigger_ddl = await _suspend_append_only_trigger(session)
+            count, paths = await retention_repo.delete(
+                session, category=preview.category, age_days=preview.age_days
+            )
+            await _restore_append_only_trigger(session, trigger_ddl)
+        else:
+            count, paths = await retention_repo.delete(
+                session, category=preview.category, age_days=preview.age_days
+            )
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 — any failure must leave nothing deleted
+        await session.rollback()
+        log.warning(
+            "prune.delete_failed",
+            category=preview.category,
+            error=type(exc).__name__,
+            detail=str(exc),
+            exc_info=True,
+        )
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(
+                session,
+                banner=f"Nothing was deleted: the prune failed ({exc}).",
+                error=True,
+            ),
+            status_code=500,
+        )
+
+    removed, skipped, missing = _unlink_artifacts(paths)
+    log.info(
+        "prune.completed",
+        category=preview.category,
+        age_days=preview.age_days,
+        count=count,
+        files_removed=removed,
+        files_skipped=skipped,
+        files_missing=missing,
+    )
+    moment = datetime.now(UTC).strftime("%H:%M")
+    noun = preview.noun_singular if count == 1 else preview.noun_plural
+    audit = (
+        f"Deleted {count} {noun} ({preview.category}, older than "
+        f"{preview.age_days} days) at {moment}."
+    )
+    if skipped or missing:
+        audit += (
+            f" {skipped} path(s) outside the artifacts directory were skipped and "
+            f"{missing} file(s) were already gone."
+        )
+    audit += snapshot_note
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(session, banner=audit),
     )
 
 
