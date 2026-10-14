@@ -21,6 +21,33 @@
   </dl>
 </section>
 
+{# The schedule and last-run lines: assembly of what already exists (D-157). A
+   missing next fire time reads as an honest no-run state and never a made-up time. #}
+{% if schedule_line %}
+<p class="ranking-strip" id="health-schedule">
+  {%- if schedule_line.state == 'off' -%}
+  Scheduling off
+  {%- elif schedule_line.state == 'unscheduled' -%}
+  No run currently scheduled.
+  {%- else -%}
+  Next run at {{ schedule_line.at }} — in <span class="reason-value" id="health-next-run">{{ schedule_line.countdown }}</span>
+  {%- endif -%}
+</p>
+{% endif %}
+
+{# D-154: only a RECORDED skip produces this line. A gap in the run history is not
+   evidence of anything and must never be rendered as one. #}
+{% if skip_notice %}
+<p class="ranking-strip" id="health-skip">{{ skip_notice.sentence }}</p>
+{% endif %}
+
+{% if last_run %}
+<p class="ranking-strip" id="health-last-run">
+  Last run: {{ last_run.status }} — {{ last_run.sentence }}
+  <a href="/runs" id="health-run-history">Run history</a>
+</p>
+{% endif %}
+
 {# The per-source table is the queue's own partial, included verbatim, so the page
    and the strip render from one definition and cannot drift (D-155 / D-138). #}
 {% include "html/_health_strip.html" %}

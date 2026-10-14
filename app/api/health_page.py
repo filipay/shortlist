@@ -23,6 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -32,9 +33,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import current_user
 from app.api.health import dependency_report
 from app.config import settings
-from app.db.repositories.source_repo import get_source_health
+from app.db.repositories import operations_config_repo, run_repo
+from app.db.repositories.run_repo import RunSummary
+from app.db.repositories.source_repo import get_source_health_with_signals
 from app.db.session import get_session
 from app.domain.models import User
+from app.jobs import scheduler as scheduler_module
 from app.latex import get_latex_engine
 from app.latex.base import LatexEngine
 from app.llm import auth_configured, get_llm_backend
@@ -163,10 +167,14 @@ async def page_context(
         report = dependency_report_failed(type(exc).__name__)
 
     try:
-        source_health = await get_source_health(session)
+        source_health = await get_source_health_with_signals(session)
     except Exception as exc:  # noqa: BLE001 — a broken read degrades to an empty table
         log.warning("health_page.sources_failed", error=type(exc).__name__)
         source_health = []
+
+    schedule_line = await _schedule_line(session)
+    skip_notice = await _skip_notice(session)
+    last_run = await _last_run(session)
 
     opencode = report["opencode"]
     return {
@@ -174,12 +182,97 @@ async def page_context(
         "dependency_rows": _dependency_rows(report),
         "source_health": source_health,
         "cv": report["cv"],
+        "schedule_line": schedule_line,
+        "skip_notice": skip_notice,
+        "last_run": last_run,
         # The `_health_strip.html` context names, fed from the shared report.
         "opencode_reachable": opencode["reachable"],
         "opencode_version": opencode["version"],
         "opencode_error": opencode["error"],
         "opencode_auth_configured": opencode["auth_configured"],
     }
+
+
+def _countdown(next_run: datetime, *, now: datetime) -> str:
+    """Hours-and-minutes until `next_run`, never negative and never from `None`.
+
+    A past-due fire time floors at `0m` rather than counting backwards: the page
+    states the scheduled time beside it, so the countdown is the urgent part.
+    """
+    minutes = max(0, int((next_run - now).total_seconds())) // 60
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+
+async def _schedule_line(session: AsyncSession) -> dict[str, Any]:
+    """The next-run line. Total: any failure degrades to an honest state.
+
+    The STORED schedule is the authority on enabled/disabled (a scheduler that
+    failed to start must still render the user's configured state), and the live
+    job is only consulted for its next fire time. `None` is an honest state —
+    `Scheduling off`, or "no run scheduled" — and a countdown is never computed
+    from it (RESEARCH Pitfall 6).
+    """
+    try:
+        schedule = await operations_config_repo.read_schedule(session)
+    except Exception as exc:  # noqa: BLE001 — a decorative line must not 500 the page
+        log.warning("health_page.schedule_read_failed", error=type(exc).__name__)
+        return {"state": "unscheduled"}
+
+    if not schedule.enabled:
+        return {"state": "off"}
+
+    next_run = scheduler_module.next_run_at()
+    if next_run is None:
+        return {"state": "unscheduled"}
+
+    zone = ZoneInfo(schedule.timezone)
+    now = datetime.now(zone)
+    return {
+        "state": "scheduled",
+        "at": f"{next_run.astimezone(zone).strftime('%H:%M')} {schedule.timezone}",
+        "countdown": _countdown(next_run, now=now),
+    }
+
+
+async def _skip_notice(session: AsyncSession) -> dict[str, Any] | None:
+    """The D-154 notice from the durable skip record. Total.
+
+    It is produced ONLY by a recorded notice — never inferred from a gap in the
+    run history, which would be a fabricated statement about the user's machine.
+    """
+    try:
+        notice = await operations_config_repo.read_skip_notice(session)
+    except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the page
+        log.warning("health_page.skip_notice_failed", error=type(exc).__name__)
+        return None
+    if not notice:
+        return None
+    reason = notice.get("reason")
+    if reason == "missed":
+        return {
+            "kind": "missed",
+            "sentence": "Last scheduled run was missed. Missed runs are skipped, never caught up.",
+        }
+    if reason == "in_flight":
+        return {
+            "kind": "in_flight",
+            "sentence": (
+                "A scheduled run was skipped: a run was already in progress. "
+                "Runs are never overlapped."
+            ),
+        }
+    return None
+
+
+async def _last_run(session: AsyncSession) -> RunSummary | None:
+    """The newest run, or `None` when no run has happened. Total."""
+    try:
+        runs = await run_repo.list_runs(session, limit=1)
+    except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the page
+        log.warning("health_page.last_run_failed", error=type(exc).__name__)
+        return None
+    return runs[0] if runs else None
 
 
 @router.get(HEALTH_PAGE_PATH, response_class=HTMLResponse)

@@ -16,8 +16,10 @@ temp-file job store and no adapter is ever called.
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,7 +35,8 @@ from zoneinfo import ZoneInfo
 
 from app.api.health_page import HEALTH_PAGE_PATH
 from app.config import settings
-from app.db.models import Source
+from app.db.models import Run, Source
+from app.db.repositories import operations_config_repo, source_repo
 from app.db.session import get_session, get_session_factory
 from app.jobs import scheduler as scheduler_module
 from app.latex import get_latex_engine
@@ -44,6 +47,7 @@ from app.main import create_app
 from app.probe import probe as probe_module
 from app.probe.probe import clear_cache
 from app.sources import registry
+from app.sources._ledger import record_fetch_outcome
 from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
 from app.sources.linkedin import CAPABILITIES
 
@@ -278,7 +282,205 @@ async def test_the_page_answers_when_the_scheduler_raises(
     assert response.status_code == 200
 
 
-# --- the repository types these tests lean on ---------------------------------
+# --- the schedule line, the missed notice and the last run ---------------------
+
+
+async def _write_schedule(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    enabled: bool,
+    hour: int = 7,
+    minute: int = 0,
+) -> None:
+    async with session_factory() as session:
+        await operations_config_repo.write_schedule(
+            session,
+            operations_config_repo.ScheduleConfig(
+                enabled=enabled, hour=hour, minute=minute, timezone="Europe/Dublin"
+            ),
+        )
+        await session.commit()
+
+
+async def _write_skip_notice(
+    session_factory: async_sessionmaker[AsyncSession], *, reason: str
+) -> None:
+    async with session_factory() as session:
+        await operations_config_repo.write_skip_notice(session, reason=reason)
+        await session.commit()
+
+
+def _line(text: str, element_id: str) -> str:
+    """The single element's own markup, so an assertion cannot read another line's."""
+    match = re.search(
+        rf'<p class="ranking-strip" id="{element_id}">.*?</p>', text, re.DOTALL
+    )
+    assert match is not None, f"the page rendered no #{element_id}"
+    return match.group(0)
+
+
+async def test_the_next_run_line_renders_a_countdown_for_a_registered_job(
+    page_env: PageEnv,
+) -> None:
+    await _write_schedule(page_env.session_factory, enabled=True, hour=7, minute=0)
+    status = await scheduler_module.reconcile(
+        page_env.scheduler, page_env.session_factory
+    )
+    assert status == "registered"
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+    line = _line(text, "health-schedule")
+
+    assert "Next run at 07:00 Europe/Dublin — in" in line
+    assert re.search(r'id="health-next-run">\d+(h \d+)?m<', line), line
+
+
+async def test_a_disabled_schedule_reads_scheduling_off(page_env: PageEnv) -> None:
+    await _write_schedule(page_env.session_factory, enabled=False)
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    assert "Scheduling off" in _line(text, "health-schedule")
+
+
+async def test_an_enabled_schedule_with_no_job_never_fabricates_a_time(
+    page_env: PageEnv,
+) -> None:
+    """Enabled but unregistered: the honest no-run state, and no countdown chip."""
+    await _write_schedule(page_env.session_factory, enabled=True)
+    assert page_env.scheduler.get_jobs() == []
+
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "health-schedule")
+
+    assert "No run currently scheduled." in line
+    assert "reason-value" not in line, "a countdown was computed from a missing value"
+    assert not re.search(r"\d", line), line
+
+
+async def test_the_missed_run_notice_renders_from_a_recorded_skip(
+    page_env: PageEnv,
+) -> None:
+    async with page_env.session_factory() as session:
+        await operations_config_repo.write_skip_notice(
+            session, reason="missed", when=datetime.now(UTC)
+        )
+        await session.commit()
+
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "health-skip")
+
+    assert "Last scheduled run was missed." in line
+    assert "Missed runs are skipped, never caught up." in line
+
+
+async def test_the_in_flight_skip_renders_its_own_wording(page_env: PageEnv) -> None:
+    await _write_skip_notice(page_env.session_factory, reason="in_flight")
+
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "health-skip")
+
+    assert "already in progress" in line
+
+
+async def test_no_notice_renders_without_a_recorded_skip(page_env: PageEnv) -> None:
+    """A gap in the run history is not evidence of a missed run (D-154)."""
+    async with page_env.session_factory() as session:
+        session.add(
+            Run(
+                search_id=None,
+                trigger="schedule",
+                status="done",
+                started_at=datetime.now(UTC),
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    assert 'id="health-skip"' not in text
+
+
+async def test_the_last_run_line_names_the_status_and_reason(page_env: PageEnv) -> None:
+    async with page_env.session_factory() as session:
+        session.add(
+            Run(
+                search_id=None,
+                trigger="manual",
+                status="done",
+                started_at=datetime.now(UTC),
+                finished_at=datetime.now(UTC),
+                fetched_count=3,
+                reason="nothing_new",
+                reason_counts_json={"survivors": 3},
+            )
+        )
+        await session.commit()
+
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "health-last-run")
+
+    assert "Last run: done —" in line
+    assert "3 listings survived the rules but 0 are new" in line
+    assert 'href="/runs"' in line
+    assert "Run history" in line
+
+
+async def test_the_last_run_line_is_absent_with_no_runs(page_env: PageEnv) -> None:
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    assert 'id="health-last-run"' not in text
+
+
+# --- the stop-signal-aware per-source badge -----------------------------------
+
+
+@pytest.mark.usefixtures("registry_snapshot")
+async def test_a_recorded_stop_signal_classifies_the_badge_fetch_side(
+    page_env: PageEnv,
+) -> None:
+    registry.clear()
+    registry.register(SentinelIndeed)
+    async with page_env.session_factory() as session:
+        session.add(Source(name="indeed", display_name="Indeed"))
+        await session.commit()
+    async with page_env.session_factory() as session:
+        # Exactly what ingest writes: a stop signal recorded in the ledger note.
+        await record_fetch_outcome(
+            session,
+            source="indeed",
+            run_id=None,
+            result_status="blocked",
+            parsed_items=0,
+        )
+        await session.commit()
+
+    async with page_env.session_factory() as session:
+        rows = await source_repo.get_source_health_with_signals(session)
+    assert [row.classification for row in rows] == ["fetch-side"]
+    assert rows[0].stop_signal == "blocked"
+    assert rows[0].health == "degraded"
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    assert 'id="source-health-indeed"' in text
+    assert "health-badge health-degraded" in text
+    assert SENTINEL_CALLS == {}, "the stop-signal read put a request on a board"
+
+
+async def test_a_source_with_no_recorded_request_keeps_its_stored_value(
+    page_env: PageEnv,
+) -> None:
+    async with page_env.session_factory() as session:
+        session.add(Source(name="indeed", display_name="Indeed"))
+        await session.commit()
+
+    async with page_env.session_factory() as session:
+        rows = await source_repo.get_source_health_with_signals(session)
+
+    assert rows[0].classification is None
+    assert rows[0].health is None, "a never-fetched source must not read as a failure"
+
+
+def test_the_derived_badge_vocabulary_is_the_shared_one() -> None:
+    assert set(source_repo.CLASSIFICATION_HEALTH.values()) <= source_repo.VALID_HEALTH
 
 
 if __name__ == "__main__":  # pragma: no cover
