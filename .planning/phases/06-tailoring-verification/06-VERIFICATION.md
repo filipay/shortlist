@@ -70,7 +70,7 @@ covered_files:
   - tests/verify/test_numbers.py
   - tests/verify/test_plan_checks.py
   - tests/verify/test_text_checks.py
-covered_digest: "v1:sha256:058335ace762dfd435f7fd0a6a3543cd12d32b4178dc5677400726557d6c865d"
+covered_digest: "v1:sha256:16b74222614c1bc128b0fcc7036dcbbd061b2319b0d27f4fdba86e3218f04323"
 behavior_unverified: 0
 overrides_applied: 0
 requirements_verified:
