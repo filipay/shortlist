@@ -241,7 +241,12 @@ async def _schedule_line(session: AsyncSession) -> dict[str, Any]:
     if next_run is None:
         return {"state": "unscheduled"}
 
-    zone = ZoneInfo(schedule.timezone)
+    try:
+        zone = ZoneInfo(schedule.timezone)
+    except Exception as exc:  # noqa: BLE001 — a missing tz database is data, not a 500
+        log.warning("health_page.zone_missing", error=type(exc).__name__)
+        return {"state": "unscheduled"}
+
     now = datetime.now(zone)
     return {
         "state": "scheduled",
@@ -367,4 +372,12 @@ async def health_page(
     return templates.TemplateResponse(request, HEALTH_TEMPLATE, context)
 
 
-__all__ = ["HEALTH_PAGE_PATH", "HEALTH_TEMPLATE", "router"]
+__all__ = [
+    "HEALTH_PAGE_PATH",
+    "HEALTH_TEMPLATE",
+    "PROBE_VERDICT_DOCUMENT",
+    "PROMOTION_BOARDS",
+    "dependency_report_failed",
+    "page_context",
+    "router",
+]
