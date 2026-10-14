@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Run
 from app.db.repositories.exclusion_repo import excluded_counts_for_run
 from app.domain.run_reason import RunCounts, reason_sentence
+from app.pipeline.run import TERMINAL_STATUSES
 
 #: How many runs the history page renders, newest first. An explicit `limit` means a
 #: history that grows once per trigger cannot make the page slow; pruning is a Phase-8
@@ -302,6 +303,23 @@ def _summary(row: Run) -> RunSummary:
     )
 
 
+async def running_run_id(session: AsyncSession) -> int | None:
+    """The id of the first non-terminal run, or `None` — the ONE definition of "in flight".
+
+    Two consumers share it so they cannot disagree: the reset route's in-flight guard
+    and the scheduler's overlap guard. Two definitions would mean either a concurrent
+    pipeline or a blocked reset. The ordering is deterministic (`started_at DESC,
+    id DESC`) so the id it names is stable across reads, and no run row is ever
+    mutated here. Never commits.
+    """
+    return await session.scalar(
+        select(Run.id)
+        .where(Run.status.not_in(tuple(TERMINAL_STATUSES)))
+        .order_by(Run.started_at.desc(), Run.id.desc())
+        .limit(1)
+    )
+
+
 async def list_runs(
     session: AsyncSession, *, limit: int = RUN_HISTORY_LIMIT
 ) -> list[RunSummary]:
@@ -345,5 +363,6 @@ __all__ = [
     "get_run_detail",
     "list_runs",
     "run_counts_for",
+    "running_run_id",
     "sentence_for",
 ]

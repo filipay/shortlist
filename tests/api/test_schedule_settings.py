@@ -13,16 +13,18 @@ touched, so a scheduler failure leaves the save intact.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest_asyncio
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import settings as settings_module
+from app.db.models import Run
 from app.db.repositories import operations_config_repo
 from app.db.session import get_session, get_session_factory
 from app.jobs import scheduler as scheduler_module
@@ -55,6 +57,9 @@ async def schedule_env(
 
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_session_factory] = lambda: session_factory
+    # The scheduled target resolves the factory itself (APScheduler cannot pickle
+    # one), so point the module at the temp DB too.
+    monkeypatch.setattr(scheduler_module, "get_session_factory", lambda: session_factory)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
@@ -178,3 +183,31 @@ async def test_disabling_the_schedule_removes_the_job(
     assert instance.get_jobs() == []
     stored = await _stored_schedule(session_factory)
     assert stored.enabled is False
+
+
+async def test_the_scheduled_path_refuses_while_a_run_is_in_flight(
+    schedule_env, session_factory
+) -> None:
+    """The scheduled target refuses; the manual `POST /runs` route has no guard of
+    its own and this plan does not add one, so only the scheduled path is asserted."""
+    client, instance = schedule_env
+    async with session_factory() as session:
+        session.add(
+            Run(
+                search_id=None,
+                trigger="manual",
+                status="running",
+                started_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    result = await scheduler_module.run_scheduled_pipeline()
+
+    assert result is None
+    async with session_factory() as session:
+        count = int(await session.scalar(select(func.count()).select_from(Run)) or 0)
+        notice = await operations_config_repo.read_skip_notice(session)
+    assert count == 1, "the scheduled target created a second run row"
+    assert notice is not None
+    assert notice["reason"] == "in_flight"

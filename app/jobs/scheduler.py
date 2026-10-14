@@ -30,7 +30,7 @@ source (do not re-derive):
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -42,13 +42,14 @@ from apscheduler.events import (
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.db.repositories import operations_config_repo
+from app.db.models import Run
+from app.db.repositories import operations_config_repo, run_repo
 from app.db.session import apply_sqlite_pragmas, get_session_factory
-from app.pipeline.run import run_pipeline
+from app.pipeline.run import TERMINAL_STATUSES, run_pipeline
 
 log = structlog.get_logger(__name__)
 
@@ -59,6 +60,12 @@ SCHEDULED_JOB_ID = "shortlist-daily-run"
 #: The module singleton. Tests install their own instance here and `get_scheduler`
 #: returns it, so the settings route and the tests reach the same object.
 _scheduler: AsyncIOScheduler | None = None
+
+#: Strong references to in-flight skip-notice writes. They are fire-and-forget
+#: tasks dispatched from a synchronous listener, so without this set the event loop
+#: could garbage-collect one mid-flight (the `app/api/runs.py` `_BACKGROUND_TASKS`
+#: pattern).
+_SKIP_TASKS: set[asyncio.Task] = set()
 
 
 def _jobstore_engine():
@@ -73,21 +80,65 @@ def _jobstore_engine():
 
 
 def _on_scheduler_event(event) -> None:  # noqa: ANN001 — an APScheduler event
-    """Report a scheduler event. Never raises into APScheduler.
+    """Record the two D-154 skip reasons durably. Never raises into APScheduler.
 
-    The durable D-154 skip record for the missed and max-instances events is
-    written here in plan 08-03 Task 2.
+    APScheduler dispatches both events synchronously on the running event loop, so
+    the durable write is scheduled as a task (held in `_SKIP_TASKS`). A listener must
+    never propagate: an exception here would be logged by APScheduler and the skip
+    silently lost.
     """
     try:
-        if event.code == EVENT_JOB_ERROR:
+        if event.code == EVENT_JOB_MISSED:
+            # JobExecutionEvent carries `scheduled_run_time`.
+            _queue_skip_notice(
+                reason="missed", when=getattr(event, "scheduled_run_time", None)
+            )
+        elif event.code == EVENT_JOB_MAX_INSTANCES:
+            # JobSubmissionEvent carries `scheduled_run_times` (a list).
+            run_times = getattr(event, "scheduled_run_times", None) or []
+            _queue_skip_notice(
+                reason="in_flight", when=run_times[0] if run_times else None
+            )
+        else:  # EVENT_JOB_ERROR
             log.warning(
                 "scheduler.job_error",
                 error=type(getattr(event, "exception", None)).__name__,
             )
-        else:
-            log.info("scheduler.event", code=event.code, job=getattr(event, "job_id", None))
     except Exception as exc:  # noqa: BLE001 — a listener must never propagate
         log.warning("scheduler.listener_failed", error=type(exc).__name__)
+
+
+async def _record_skip(
+    *, reason: str, when: datetime | None = None, run_id: int | None = None
+) -> None:
+    """Write one D-154 skip notice on the operations row. Never a `runs` row.
+
+    The status vocabulary has no value for a skip and adding one would need a batch
+    recreation of `runs`; the reason, the fire time and an optional in-flight run id
+    live on the singleton operations row instead.
+    """
+    factory = get_session_factory()
+    async with factory() as session:
+        await operations_config_repo.write_skip_notice(
+            session, reason=reason, when=when, run_id=run_id
+        )
+        await session.commit()
+
+
+def _queue_skip_notice(
+    *, reason: str, when: datetime | None = None, run_id: int | None = None
+) -> None:
+    """Schedule the durable skip write on the running loop. Never raises."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop to write on (e.g. a listener invoked outside the app loop): drop
+        # the notice rather than raise into APScheduler.
+        log.warning("scheduler.skip_notice_dropped", reason=reason)
+        return
+    task = loop.create_task(_record_skip(reason=reason, when=when, run_id=run_id))
+    _SKIP_TASKS.add(task)
+    task.add_done_callback(_SKIP_TASKS.discard)
 
 
 def get_scheduler() -> AsyncIOScheduler:
@@ -114,10 +165,66 @@ async def run_scheduled_pipeline() -> int | None:
 
     APScheduler pickles a job's arguments and stores the callable as a
     module-qualified reference, so the target takes none and resolves the session
-    factory itself. The in-flight guard lands here in plan 08-03 Task 2.
+    factory itself. It never lets an exception escape into APScheduler.
+
+    The overlap guard is a DATABASE read, not ``max_instances``: ``max_instances=1``
+    counts only APScheduler's own submissions, so it cannot see a run started by the
+    manual ``POST /runs`` route. A trigger that fires while any run is in flight is
+    skipped and the skip is recorded with the in-flight run id (D-154) — never
+    overlapped. With no run in flight it hands straight to the one pipeline entry
+    point, which creates its own `runs` row (trigger `schedule`, null search id).
     """
-    factory = get_session_factory()
-    return await run_pipeline("schedule", None, factory)
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            in_flight = await run_repo.running_run_id(session)
+        if in_flight is not None:
+            await _record_skip(reason="in_flight", run_id=int(in_flight))
+            log.info("scheduler.skipped", reason="in_flight", run_id=int(in_flight))
+            return None
+        return await run_pipeline("schedule", None, factory)
+    except Exception as exc:  # noqa: BLE001 — a raise must not reach APScheduler
+        log.warning("scheduler.target_failed", error=type(exc).__name__)
+        return None
+
+
+async def reconcile_stale_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> int:
+    """Mark leftover non-terminal runs from a previous process as `partial`.
+
+    A run cancelled by container shutdown is caught by `except Exception` nowhere
+    (a `CancelledError` is a `BaseException`), so its row stays `running` forever —
+    which blocks both the reset guard and every future scheduled run. At boot the
+    process that owned any non-terminal row is gone by definition, so the honest
+    outcome is the terminal literal `partial` (not `done`, not `failed`: the result
+    is unknown) with the reason recorded in the row's existing error storage. Adds no
+    column and no status value.
+    """
+    async with session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(Run).where(Run.status.not_in(tuple(TERMINAL_STATUSES)))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for run in rows:
+            run.status = "partial"
+            run.finished_at = datetime.now(UTC)
+            run.errors_json = [
+                {
+                    "source": "*",
+                    "error": (
+                        "reconciled to partial at boot: the process that owned this "
+                        "run is gone"
+                    ),
+                }
+            ]
+        await session.commit()
+    return len(rows)
 
 
 async def reconcile(
@@ -176,6 +283,12 @@ async def start_scheduler() -> str:
     """
     try:
         scheduler = get_scheduler()
+        # Reconcile stale run rows BEFORE the scheduler starts processing, so no
+        # scheduled trigger can observe a non-terminal row left by a dead process
+        # and skip itself.
+        stale = await reconcile_stale_runs(get_session_factory())
+        if stale:
+            log.warning("scheduler.stale_runs_reconciled", count=stale)
         if not scheduler.running:
             scheduler.start()
         status = await reconcile(scheduler, get_session_factory())
@@ -219,6 +332,7 @@ __all__ = [
     "get_scheduler",
     "next_run_at",
     "reconcile",
+    "reconcile_stale_runs",
     "run_scheduled_pipeline",
     "start_scheduler",
     "stop_scheduler",

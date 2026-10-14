@@ -43,12 +43,13 @@ from app.cv.factstore import CvFactStoreError, fact_store_report, load_facts
 from app.cv.import_tex import parse_tex, write_draft
 from app.cv.layout import read_layout, write_layout
 from app.cv.llm_extract import ExtractionError, extract_facts
-from app.db.models import Base, Run
+from app.db.models import Base
 from app.db.repositories import (
     apply_config_repo,
     llm_call_repo,
     operations_config_repo,
     ranking_config_repo,
+    run_repo,
 )
 from app.db.session import get_session, get_session_factory
 from app.domain import rubric
@@ -59,7 +60,6 @@ from app.latex.render import LAYOUTS
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend, StructuredCallResult
 from app.pipeline.rank import CV_FILENAME
-from app.pipeline.run import TERMINAL_STATUSES
 from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
@@ -728,9 +728,10 @@ def snapshot_database(*, db_path: Path, backups_dir: Path, moment: datetime) -> 
 
 
 async def _running_run_id(session: AsyncSession) -> int | None:
-    return await session.scalar(
-        select(Run.id).where(Run.status.not_in(tuple(TERMINAL_STATUSES))).limit(1)
-    )
+    # ONE definition of "a run is in flight" lives in `run_repo.running_run_id`; both
+    # this reset guard and the scheduler consume it, so they cannot disagree. The
+    # private name is kept so the reset route's call sites are untouched.
+    return await run_repo.running_run_id(session)
 
 
 async def _blocking_row(session: AsyncSession) -> str | None:
