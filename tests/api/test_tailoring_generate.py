@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+import structlog
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -302,6 +303,61 @@ async def test_an_invalid_patch_persists_no_draft(
     assert 'data-error="invalid-patch"' in response.text
     assert await _artifact_rows(session_factory) == []
     assert await _draft_rows(session_factory) == [], "an invalid patch is never persisted"
+
+
+async def test_an_invalid_patch_emits_exactly_one_refusal_warning(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The refusal is observable: one warning carrying the class and the offending id.
+
+    ``InvalidPatchError`` means the id-grounding step PASSED and the schema was valid
+    — the model produced a self-conflicting op set, which this phase refuses rather
+    than repairs (D-118). Without this event the live failure is undiagnosable, so the
+    test pins the payload to the exception class AND the identifier from ``str(exc)``.
+    The literal repro is two mutating ops on the same real bullet id.
+    """
+    listing_id = await _seed_scored_listing(session_factory, title="Conflict Role")
+    bullet_id = "bul/northwind-labs-2021/1"
+    _BACKEND.patch = TailoringPatch(
+        listing_id=listing_id,
+        ops=[
+            BulletWeight(op="reweight_bullet", bullet_id=bullet_id, weight=1.0),
+            BulletWeight(op="reweight_bullet", bullet_id=bullet_id, weight=2.0),
+        ],
+    )
+
+    with structlog.testing.capture_logs() as events:
+        response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    # The user-facing refusal is byte-identical to the pre-fix response.
+    assert response.status_code == 502
+    assert response.text == (
+        '<div id="tailoring-review" class="tailoring-empty" '
+        'data-error="invalid-patch">'
+        "The model proposed an invalid change (InvalidPatchError).</div>"
+    )
+
+    warnings = [entry for entry in events if entry.get("event") == "tailoring.patch_refused"]
+    assert len(warnings) == 1, "exactly one refusal warning"
+    assert warnings[0]["log_level"] == "warning"
+    assert warnings[0]["error"] == "InvalidPatchError"
+    assert warnings[0]["listing_id"] == listing_id
+    assert bullet_id in warnings[0]["detail"], "the offending id survives to the log"
+
+
+async def test_a_successful_generate_emits_no_refusal_warning(
+    tailoring_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Negative control: the refusal warning fires only on the refused path."""
+    listing_id = await _seed_scored_listing(session_factory, title="Clean Role")
+
+    with structlog.testing.capture_logs() as events:
+        response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+
+    assert response.status_code == 200
+    assert [entry for entry in events if entry.get("event") == "tailoring.patch_refused"] == []
 
 
 async def test_generate_returns_a_typed_error_and_one_audit_row_when_the_backend_raises(

@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
@@ -79,6 +80,8 @@ from app.pipeline.tailor import (
 )
 from app.verify.grounding import band_for, evidence_text_for
 from app.web.template_env import make_templates
+
+log = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -511,6 +514,19 @@ async def generate_tailored_cv(
     try:
         plan = apply_patch(facts, patch)
     except (UnknownIdError, InvalidPatchError) as exc:
+        # The refusal is the expected outcome for a self-conflicting op set: the
+        # pipeline deliberately has no repair branch (D-118), so the user-facing
+        # fragment is unchanged. This warning IS the diagnosis — the only place the
+        # offending id/op detail survives. `detail` carries `str(exc)`, whose parts are
+        # ids, op names, weights and the model's own bounded `reason`/`rationale` audit
+        # text (app/domain/cv.py `_validate_patch`); it never embeds CV bullet text or
+        # listing text, and no secret is in scope here.
+        log.warning(
+            "tailoring.patch_refused",
+            error=type(exc).__name__,
+            detail=str(exc),
+            listing_id=listing_id,
+        )
         return _error_fragment(
             "invalid-patch",
             f"The model proposed an invalid change ({type(exc).__name__}).",
