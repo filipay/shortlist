@@ -20,7 +20,7 @@ from app.config import settings
 from app.db.models import CvArtifact, Listing, OperationsConfig
 from app.db.repositories import cv_artifact_repo, operations_config_repo, retention_repo
 
-NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+NOW = datetime.now(UTC).replace(microsecond=0)
 OLD = NOW - timedelta(days=400)
 
 
@@ -34,14 +34,17 @@ def _artifacts_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 async def _seed_listing(
-    session_factory: async_sessionmaker[AsyncSession], *, index: int = 1
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    index: int = 1,
+    last_seen_at: datetime = NOW,
 ) -> int:
     async with session_factory() as session:
         listing = Listing(
             canonical_url="https://example.com/jobs/" + str(index),
             title="Prune Role " + str(index),
             first_seen_at=NOW,
-            last_seen_at=NOW,
+            last_seen_at=last_seen_at,
             content_hash="prune-hash-" + str(index),
             created_at=NOW,
             updated_at=NOW,
@@ -50,6 +53,11 @@ async def _seed_listing(
         session.add(listing)
         await session.commit()
         return int(listing.id)
+
+
+async def _listing_ids(session_factory: async_sessionmaker[AsyncSession]) -> set[int]:
+    async with session_factory() as session:
+        return {int(row) for row in (await session.execute(select(Listing.id))).scalars().all()}
 
 
 async def _insert_artifact(
@@ -287,3 +295,66 @@ async def test_the_protected_line_names_the_run_floor_actually_enforced(
     protected = "Kept regardless: the last " + str(retention_repo.RUN_FLOOR) + " runs"
     assert protected in response.text
     assert "the LLM call ledger, CVs" in response.text
+
+
+# --- the listings category: the snapshot, the audit, the refusals -------------
+
+
+async def test_the_listing_category_previews_and_confirms_with_an_audit_line(
+    client: object, session_factory: async_sessionmaker[AsyncSession], _artifacts_dir: Path
+) -> None:
+    stale = await _seed_listing(session_factory, index=50, last_seen_at=OLD)
+    fresh = await _seed_listing(session_factory, index=51, last_seen_at=NOW)
+
+    preview = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PREVIEW_PATH, data={"category": "listings", "age_days": "1"}
+    )
+    assert preview.status_code == 200
+    assert "This will delete 1 listing" in preview.text
+    assert 'id="prune-confirm-submit"' in preview.text
+
+    confirm = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PATH, data={"category": "listings", "age_days": "1"}
+    )
+    assert confirm.status_code == 200
+    assert "Deleted 1 listing (listings, older than 1 days) at " in confirm.text
+    # The one-way category names its snapshot, which is the only recovery path.
+    assert "Snapshot: jobsearch-" in confirm.text
+
+    remaining = await _listing_ids(session_factory)
+    assert stale not in remaining
+    assert fresh in remaining
+
+
+async def test_the_confirm_refuses_with_a_banner_when_the_re_derived_count_is_zero(
+    client: object, _artifacts_dir: Path
+) -> None:
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PATH, data={"category": "listings", "age_days": "1"}
+    )
+
+    assert response.status_code == 200
+    assert settings_module.PRUNE_EMPTY in response.text
+    assert "Deleted " not in response.text
+
+
+async def test_a_snapshot_destination_collision_refuses_and_deletes_nothing(
+    client: object, session_factory: async_sessionmaker[AsyncSession], _artifacts_dir: Path
+) -> None:
+    """The reused snapshot helper refuses rather than overwriting; the route owns the refusal."""
+    stale = await _seed_listing(session_factory, index=52, last_seen_at=OLD)
+    database_path = Path(str(session_factory.kw["bind"].sync_engine.url.database))
+    backups = database_path.parent / "prune-backups"
+    backups.mkdir(parents=True, exist_ok=True)
+    # Cover this second and the next: the route's own `datetime.now` picks one of them.
+    for offset in (0, 1):
+        moment = datetime.now(UTC) + timedelta(seconds=offset)
+        (backups / ("jobsearch-" + moment.strftime("%Y%m%dT%H%M%SZ") + ".db")).write_bytes(b"x")
+
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PATH, data={"category": "listings", "age_days": "1"}
+    )
+
+    assert response.status_code == 500
+    assert "the snapshot failed" in response.text
+    assert stale in await _listing_ids(session_factory)

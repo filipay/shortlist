@@ -40,9 +40,9 @@ gone a re-post of the same job returns as a **new** listing with a new
 ``first_seen_at``, and prior dismissals are gone. There is no tombstone; the
 snapshot taken immediately before is the only recovery.
 
-``queue_state`` is a **global** watermark row with no listing column, so it is not a
+The global last-visit watermark is a single row with no listing column, so it is not a
 per-listing child and is never deleted here: doing so would silently reset
-"new since last visit" for every listing (D-167's "its `queue_state`" is a wording
+"new since last visit" for every listing (D-167's "its queue watermark" is a wording
 slip, per research C2).
 """
 
@@ -298,6 +298,89 @@ async def _no_paths(session: AsyncSession, ids: list[int]) -> list[str]:
     return []
 
 
+def _select_listings(cutoff: datetime) -> Any:
+    """Stale listings, minus the three guards that protect a reader's work.
+
+    Excluded when ANY of these hold: the listing has an application (genuine user
+    work); it has an artifact row (so the artifact guards cannot be bypassed by
+    deleting the parent first); or either side of the dupes audit references it (the
+    audit must stay reversible).
+
+    NOT excluded merely because it has `listing_events` rows. That exclusion is what
+    the D-164 carve-out lifts, and it is the whole point of the caller's transaction:
+    the audit logs are never pruned *except* by the deletion of their parent listing.
+    Restricting this category to never-touched listings instead would make it useless
+    and the preview would honestly report a count of nearly zero.
+    """
+    app_linked = select(Application.id).where(Application.listing_id == Listing.id).exists()
+    artifact_linked = select(CvArtifact.id).where(CvArtifact.listing_id == Listing.id).exists()
+    dupe_linked = (
+        select(ListingDupe.id)
+        .where(
+            or_(
+                ListingDupe.listing_id == Listing.id,
+                ListingDupe.dup_listing_id == Listing.id,
+            )
+        )
+        .exists()
+    )
+    return select(Listing.id).where(
+        Listing.last_seen_at < cutoff,
+        ~app_linked,
+        ~artifact_linked,
+        ~dupe_linked,
+    )
+
+
+async def _paths_for_listings(session: AsyncSession, ids: list[int]) -> list[str]:
+    """The `.tex`/`.pdf` paths of the artifact rows about to be deleted as children."""
+    if not ids:
+        return []
+    rows = await session.execute(
+        select(CvArtifact.tex_path, CvArtifact.pdf_path).where(CvArtifact.listing_id.in_(ids))
+    )
+    return [path for row in rows for path in row if path]
+
+
+async def _delete_listings(session: AsyncSession, ids: list[int]) -> None:
+    """Hard-delete the selected listings and their per-listing children (D-167).
+
+    Children before parents, in foreign-key order: `scores`, the source provenance
+    rows, the exclusions, BOTH sides of the dupes audit, the CV artifacts, the CV
+    drafts and the screening drafts, then the listing events, then the listing itself.
+    `PRAGMA foreign_keys=ON` is on every connection, so any other order fails with
+    `FOREIGN KEY constraint failed`.
+
+    This is the ONE category that needs the append-only trigger suspended, and the
+    caller must have done it (see `TRIGGER_CARVE_OUT_CATEGORIES`): `listing_events`
+    rows cannot be deleted while the trigger stands. The suspension and the re-arm
+    happen inside the caller's single transaction, so a failure rolls both back.
+
+    D-167's accepted consequence: `listing_sources` carries the
+    ``UNIQUE(source, source_listing_id)`` upsert key, so a re-post of the same job
+    returns as a **new** listing with a new `first_seen_at` and prior dismissals are
+    gone. There is no tombstone. The global last-visit watermark is NOT touched — it
+    has no listing reference, and deleting it would silently mark every listing new.
+    """
+    await session.execute(sa_delete(Score).where(Score.listing_id.in_(ids)))
+    await session.execute(sa_delete(ListingSource).where(ListingSource.listing_id.in_(ids)))
+    await session.execute(
+        sa_delete(ListingExclusion).where(ListingExclusion.listing_id.in_(ids))
+    )
+    await session.execute(
+        sa_delete(ListingDupe).where(
+            or_(ListingDupe.listing_id.in_(ids), ListingDupe.dup_listing_id.in_(ids))
+        )
+    )
+    await session.execute(sa_delete(CvArtifact).where(CvArtifact.listing_id.in_(ids)))
+    await session.execute(sa_delete(CvDraft).where(CvDraft.listing_id.in_(ids)))
+    await session.execute(
+        sa_delete(ScreeningDraft).where(ScreeningDraft.listing_id.in_(ids))
+    )
+    await session.execute(sa_delete(ListingEvent).where(ListingEvent.listing_id.in_(ids)))
+    await session.execute(sa_delete(Listing).where(Listing.id.in_(ids)))
+
+
 #: The frozen category mapping every request lookup goes through. Adding a category
 #: is one entry here plus its selection functions; no request-derived string ever
 #: reaches a statement because the keys are checked against `PRUNE_CATEGORIES` first.
@@ -320,6 +403,12 @@ _CATEGORIES: Mapping[str, _Category] = MappingProxyType(
             paths=_no_paths,
             delete=_delete_source_request_log,
             nouns=("request log row", "request log rows"),
+        ),
+        "listings": _Category(
+            select=_select_listings,
+            paths=_paths_for_listings,
+            delete=_delete_listings,
+            nouns=("listing", "listings"),
         ),
     }
 )

@@ -18,17 +18,22 @@ implemented as an error path would surface only at the operator's confirm step.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api import settings as settings_module
 from app.db.models import (
     Application,
     CvArtifact,
     Listing,
+    ListingDupe,
     ListingEvent,
     ListingExclusion,
     LlmCall,
@@ -38,9 +43,16 @@ from app.db.models import (
     SourceRequestLog,
 )
 from app.db.repositories import cv_artifact_repo
-from app.db.repositories.retention_repo import RUN_FLOOR, PrunePreview, delete, preview
+from app.db.repositories.retention_repo import (
+    PRUNE_CATEGORIES,
+    RUN_FLOOR,
+    TRIGGER_CARVE_OUT_CATEGORIES,
+    PrunePreview,
+    delete,
+    preview,
+)
 
-NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+NOW = datetime.now(UTC).replace(microsecond=0)
 #: Comfortably older than any threshold used below.
 OLD = NOW - timedelta(days=400)
 
@@ -529,3 +541,277 @@ async def test_preview_and_delete_agree_for_runs_and_the_request_log(
         await session.commit()
 
     assert pairs == {"runs": (3, 3), "source_request_log": (0, 0)}
+
+
+# --- the listings category: the carve-out, the snapshot's trigger re-arm -------
+
+
+async def _delete_as_the_route_does(
+    session: AsyncSession, *, category: str, age_days: int = 1
+) -> tuple[int, list[Path]]:
+    """The route's orchestration, reproduced for a repository-level test.
+
+    The carve-out categories need the append-only trigger suspended around the delete;
+    the route owns that (in one transaction), and this helper does the same with the
+    SAME shared functions, so a repository test exercises the real sequence.
+    """
+    if category in TRIGGER_CARVE_OUT_CATEGORIES:
+        ddl = await settings_module._suspend_append_only_trigger(session)
+        result = await delete(session, category=category, age_days=age_days)
+        await settings_module._restore_append_only_trigger(session, ddl)
+        return result
+    return await delete(session, category=category, age_days=age_days)
+
+
+async def _seed_listings_corpus(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> dict[str, int]:
+    """One listing per guard, plus the two the carve-out deliberately allows."""
+    clean = await _seed_listing(session_factory, index=20, last_seen_at=OLD)
+    eventful = await _seed_listing(session_factory, index=21, last_seen_at=OLD)
+    applied = await _seed_listing(session_factory, index=22, last_seen_at=OLD)
+    artefacted = await _seed_listing(session_factory, index=23, last_seen_at=OLD)
+    dupe_a = await _seed_listing(session_factory, index=24, last_seen_at=OLD)
+    dupe_b = await _seed_listing(session_factory, index=25, last_seen_at=OLD)
+    fresh = await _seed_listing(session_factory, index=26, last_seen_at=NOW)
+    await _insert_artifact(session_factory, listing_id=artefacted, created_at=OLD)
+    async with session_factory() as session:
+        session.add(ListingEvent(listing_id=eventful, event_type="view", occurred_at=OLD))
+        session.add(
+            Application(listing_id=applied, status="queued", created_at=NOW, updated_at=NOW)
+        )
+        session.add(ListingDupe(listing_id=dupe_a, dup_listing_id=dupe_b, merged_at=OLD))
+        await session.commit()
+    return {
+        "clean": clean,
+        "eventful": eventful,
+        "applied": applied,
+        "artefacted": artefacted,
+        "dupe_a": dupe_a,
+        "dupe_b": dupe_b,
+        "fresh": fresh,
+    }
+
+
+async def _listing_ids(session_factory: async_sessionmaker[AsyncSession]) -> set[int]:
+    async with session_factory() as session:
+        return {int(row) for row in (await session.execute(select(Listing.id))).scalars().all()}
+
+
+async def test_the_listing_selection_excludes_applications_artifacts_and_both_dupe_sides(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    corpus = await _seed_listings_corpus(session_factory, artifacts_root)
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="listings", age_days=1, artifacts_root=artifacts_root
+        )
+
+    # `clean` and `eventful` only: the eventful one is NOT excluded, which is the
+    # carve-out; the application, the artifact and BOTH dupe sides are.
+    assert result.count == 2
+
+
+async def test_a_stale_listing_prune_deletes_its_children_and_its_events(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    corpus = await _seed_listings_corpus(session_factory, artifacts_root)
+    listing = corpus["clean"]
+    run_id = (await _seed_runs(session_factory, count=1))[0]
+    await _seed_source(session_factory)
+    tex = artifacts_root / "child.tex"
+    tex.write_bytes(b"x" * 4)
+    async with session_factory() as session:
+        session.add(Score(listing_id=listing, run_id=run_id, criteria_version=1, created_at=NOW))
+        await session.commit()
+
+    async with session_factory() as session:
+        count, paths = await _delete_as_the_route_does(session, category="listings")
+        await session.commit()
+
+    # `clean` and `eventful` both qualify, so both go — with everything hanging off them.
+    assert count == 2
+    remaining = await _listing_ids(session_factory)
+    assert listing not in remaining
+    assert corpus["eventful"] not in remaining
+    assert corpus["applied"] in remaining
+    assert corpus["artefacted"] in remaining
+    assert corpus["dupe_a"] in remaining and corpus["dupe_b"] in remaining
+    assert corpus["fresh"] in remaining
+    assert await _count(session_factory, "listing_events") == 0
+    assert await _count(session_factory, "listing_dupes") == 1
+    assert paths == []  # the only child artifact belonged to `artefacted`, which is kept
+
+
+async def test_a_listing_with_an_artifact_is_never_selected_and_yields_no_paths(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """The artifact guard also protects the files: a listing with an artifact is excluded.
+
+    `retention_repo` still returns the child artifact paths for this category (so a
+    future relaxation of the guard has a place to hand them over), but today the guard
+    makes that list empty by construction — asserted here so the coupling is visible.
+    """
+    listing = await _seed_listing(session_factory, index=30, last_seen_at=OLD)
+    tex = artifacts_root / "kept.tex"
+    tex.write_bytes(b"x" * 1)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=OLD, tex_path=str(tex))
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="listings", age_days=1, artifacts_root=artifacts_root
+        )
+        assert result.count == 0
+        count, paths = await _delete_as_the_route_does(session, category="listings")
+        await session.commit()
+
+    assert count == 0
+    assert paths == []
+    assert tex.exists()
+
+
+async def test_the_listing_prune_leaves_the_append_only_trigger_armed_with_its_negative_control(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """The re-arm assertion the reset itself lacks, plus a control proving it can fail."""
+    stale = await _seed_listing(session_factory, index=40, last_seen_at=OLD)
+    other = await _seed_listing(session_factory, index=41, last_seen_at=NOW)
+    async with session_factory() as session:
+        session.add(ListingEvent(listing_id=stale, event_type="view", occurred_at=OLD))
+        session.add(ListingEvent(listing_id=other, event_type="view", occurred_at=NOW))
+        await session.commit()
+
+    async with session_factory() as session:
+        count, _paths = await _delete_as_the_route_does(session, category="listings")
+        await session.commit()
+    assert count == 1
+
+    # 1) The database's OWN catalog proves the trigger is armed again after the commit.
+    database = str(session_factory.kw["bind"].sync_engine.url.database)
+    connection = sqlite3.connect(database)
+    try:
+        armed = connection.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+            (settings_module._APPEND_ONLY_TRIGGER,),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert armed == 1
+
+    # 2) An ordinary delete of a listing event is refused again (the trigger is live).
+    with pytest.raises(DatabaseError):
+        async with session_factory() as session:
+            await session.execute(
+                sa_delete(ListingEvent).where(ListingEvent.listing_id == other)
+            )
+            await session.commit()
+
+    # Negative control: with the trigger suspended the same delete SUCCEEDS, so the
+    # assertion above can genuinely fail rather than passing vacuously.
+    async with session_factory() as session:
+        ddl = await settings_module._suspend_append_only_trigger(session)
+        await session.execute(sa_delete(ListingEvent).where(ListingEvent.listing_id == other))
+        await settings_module._restore_append_only_trigger(session, ddl)
+        await session.commit()
+    assert await _count(session_factory, "listing_events") == 0
+
+
+# --- the four guards, parametrized over all four categories (a failure class) --
+
+
+async def _seed_guard_corpus(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> dict[str, object]:
+    """One corpus that exercises all four guards, for every category's prune."""
+    await _seed_source(session_factory)
+    runs = await _seed_runs(session_factory, count=RUN_FLOOR + 5)
+    async with session_factory() as session:
+        session.add_all(
+            [
+                LlmCall(run_id=run_id, purpose="rank", status="ok", created_at=NOW)
+                for run_id in runs
+            ]
+        )
+        await session.commit()
+
+    listing = await _seed_listing(session_factory, index=11, last_seen_at=OLD)
+    newest = await _insert_artifact(session_factory, listing_id=listing, created_at=OLD)
+    older = await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD - timedelta(days=10)
+    )
+    async with session_factory() as session:
+        session.add(
+            Application(
+                listing_id=listing, status="applied", cv_artifact_id=older, created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await session.commit()
+
+    eventful = await _seed_listing(session_factory, index=12, last_seen_at=OLD)
+    async with session_factory() as session:
+        session.add(ListingEvent(listing_id=eventful, event_type="view", occurred_at=OLD))
+        await session.commit()
+
+    return {
+        "runs": runs,
+        # The newest RUN_FLOOR runs are inside the floor's window and must survive.
+        "protected_runs": set(runs[len(runs) - RUN_FLOOR :]),
+        "newest": newest,
+        "older": older,
+    }
+
+
+@pytest.mark.parametrize("category", sorted(PRUNE_CATEGORIES))
+async def test_the_floor_guard_holds_for_every_category(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path, category: str
+) -> None:
+    corpus = await _seed_guard_corpus(session_factory, artifacts_root)
+
+    async with session_factory() as session:
+        await _delete_as_the_route_does(session, category=category)
+        await session.commit()
+
+    remaining = await _run_ids(session_factory)
+    assert corpus["protected_runs"] <= remaining  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("category", sorted(PRUNE_CATEGORIES))
+async def test_the_ledger_guard_holds_for_every_category(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path, category: str
+) -> None:
+    await _seed_guard_corpus(session_factory, artifacts_root)
+    before = await _count(session_factory, "llm_calls")
+
+    async with session_factory() as session:
+        await _delete_as_the_route_does(session, category=category)
+        await session.commit()
+
+    assert await _count(session_factory, "llm_calls") == before
+
+
+@pytest.mark.parametrize("category", sorted(PRUNE_CATEGORIES))
+async def test_the_application_link_guard_holds_for_every_category(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path, category: str
+) -> None:
+    corpus = await _seed_guard_corpus(session_factory, artifacts_root)
+
+    async with session_factory() as session:
+        await _delete_as_the_route_does(session, category=category)
+        await session.commit()
+
+    assert corpus["older"] in await _artifact_ids(session_factory)
+
+
+@pytest.mark.parametrize("category", sorted(PRUNE_CATEGORIES))
+async def test_the_newest_successful_artifact_guard_holds_for_every_category(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path, category: str
+) -> None:
+    corpus = await _seed_guard_corpus(session_factory, artifacts_root)
+
+    async with session_factory() as session:
+        await _delete_as_the_route_does(session, category=category)
+        await session.commit()
+
+    assert corpus["newest"] in await _artifact_ids(session_factory)
