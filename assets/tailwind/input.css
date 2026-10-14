@@ -1883,3 +1883,110 @@
   .answer-text{max-width:65ch}
   .answer-warning{color:#92400e;margin:.375rem 0;font-size:.9rem}
 }
+
+/* ---------------------------------------------------------------------------
+ * Responsive contract — the phone journey (D-159 / D-160 / D-162, UI-06).
+ * Authored here and rebuilt into `static/vendor/app.css` by the pinned CLI;
+ * the artefact is never hand-edited (T-08-05).
+ * --------------------------------------------------------------------------- */
+@layer components {
+  /* The accessible scroll region for the non-journey tables (Task 3). Copies the
+     shipped table shell's scroll declaration onto a wrapper element; the wrapper
+     carries `role="region" tabindex="0" aria-label` in the template. */
+  .table-scroll {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  /* The 44x44px touch-target floor (07 UI review Top Fix 1). The shipped
+     `button`/`.button` rules already supply inline-flex centring, so only the
+     minimum box is declared. `.queue-toggle` is grouped in because the journey
+     filter labels are defined in page templates outside this plan's file set. */
+  .touch-target,
+  .queue-toggle {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  /* The `/health` system-section dependency grid (plan 08-04 is the first
+     consumer). Copies the shipped `.run-reason-counts` declaration block. */
+  .health-system {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+  }
+
+  /* LAST in the file so it overrides the desktop rules it reflows. `@variant
+     max-md` compiles to the exact complement of Tailwind's `md` (48rem), so the
+     two regimes tile the width axis with no gap in between (RESEARCH Pitfall 8).
+     Card-reflow is for the journey tables only; admin tables scroll instead. */
+  @variant max-md {
+    .queue-table,
+    .queue-table thead,
+    .queue-table tbody,
+    .queue-table tr,
+    .queue-table td,
+    .health-table,
+    .health-table thead,
+    .health-table tbody,
+    .health-table tr,
+    .health-table td {
+      display: block;
+    }
+
+    /* Hide the header row by clip rather than `display: none`, so header
+       semantics survive best-effort. `display: block` on `tr`/`td` already
+       degrades table semantics in some engines; the `data-label` is what carries
+       the information, and no stronger guarantee is claimed (CONVENTIONS 6). */
+    .queue-table thead,
+    .health-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    /* Each reflowed row reads as a card. */
+    .queue-table tr,
+    .health-table tr {
+      border-bottom: 1px solid var(--color-border);
+      padding: 0.5rem 0;
+    }
+
+    /* `display: block` alone does not break an unbroken token, so a long source
+       name or a deep absolute CV path would widen the phone page. */
+    .queue-table td,
+    .health-table td {
+      overflow-wrap: anywhere;
+    }
+
+    /* The label line above each value. Scoped to `[data-label]`, so a cell with
+       no label renders nothing. */
+    .queue-table td[data-label]::before,
+    .health-table td[data-label]::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: var(--color-muted);
+      display: block;
+    }
+
+    /* Journey controls span the phone width; admin surfaces stay desktop-first
+       and are not reflowed (D-159). */
+    #queue-filters .queue-toggle,
+    #queue-filters .queue-sort,
+    #queue-filters .queue-threshold,
+    #run-search-now,
+    #queue-pager button {
+      width: 100%;
+    }
+
+    #queue-pager {
+      display: flex;
+      flex-wrap: wrap;
+    }
+  }
+}

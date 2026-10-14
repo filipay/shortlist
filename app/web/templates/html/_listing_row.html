@@ -34,8 +34,8 @@
     data-merged-from="{{ row.merged_from }}"
     data-saved="{{ 1 if row.saved else 0 }}"
     data-hidden="{{ 1 if row.hidden else 0 }}">
-  <td class="listing-title">{% if row.url %}<a class="listing-title-link" href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %} <a class="listing-detail-link" href="/listings/{{ row.id }}">Details</a></td>
-  <td class="listing-badges">
+  <td class="listing-title" data-label="Title">{% if row.url %}<a class="listing-title-link" href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %} <a class="listing-detail-link" href="/listings/{{ row.id }}">Details</a></td>
+  <td class="listing-badges" data-label="Signals">
     {% if row.saved %}<span class="badge badge-saved" id="listing-saved-{{ row.id }}">&#9733; saved</span>{% endif %}
     {% if row.hidden %}<span class="badge badge-hidden" id="listing-hidden-{{ row.id }}">hidden</span>{% endif %}
     {% if row.is_new %}<span class="badge badge-new">new</span>{% endif %}
@@ -49,20 +49,20 @@
     {% if row.total_score is not none %}<span class="badge badge-score" id="listing-score-{{ row.id }}">{{ "%.2f" | format(row.total_score) }}</span>{% endif %}
     {% if row.confidence_tier %}<span class="badge badge-score-tier-{{ row.confidence_tier }}">{{ row.confidence_tier }}</span>{% endif %}
   </td>
-  <td class="listing-company">{{ row.company }}</td>
-  <td class="listing-location">{{ row.location }}</td>
-  <td class="listing-source">
+  <td class="listing-company" data-label="Company">{{ row.company }}</td>
+  <td class="listing-location" data-label="Location">{{ row.location }}</td>
+  <td class="listing-source" data-label="Source">
     {% for link in row.source_links %}{% if link.url %}<a class="source-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.source }}</a>{% else %}{{ link.source }}{% endif %}{% if link.employer_url %} <a class="source-apply" href="{{ link.employer_url }}" target="_blank" rel="noopener noreferrer">Apply</a>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
   </td>
-  <td class="listing-posted">{{ row.posted | format_datetime }}</td>
+  <td class="listing-posted" data-label="Posted">{{ row.posted | format_datetime }}</td>
   {% if show_excluded %}
-  <td class="listing-exclusion">
+  <td class="listing-exclusion" data-label="Excluded by">
     {% for rule in row.rules %}
     <span class="rule-chip rule-chip-{{ rule.kind }}">{{ rule.kind }} ({{ rule.count }})</span>
     {% endfor %}
   </td>
   {% endif %}
-  <td class="listing-actions">
+  <td class="listing-actions" data-label="Actions">
     {# The queue's current predicate set rides on the action URL so the swapped row keeps
        the exclusion column the user is looking at. `event_type` is the whole request body;
        `occurred_at` is server-side and cannot be supplied here. The two controls come from
