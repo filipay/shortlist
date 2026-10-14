@@ -16,6 +16,7 @@ temp-file job store and no adapter is ever called.
 
 from __future__ import annotations
 
+import inspect
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -33,7 +34,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from zoneinfo import ZoneInfo
 
-from app.api.health_page import HEALTH_PAGE_PATH
+from app.api.health_page import (
+    HEALTH_PAGE_PATH,
+    PROBE_VERDICT_DOCUMENT,
+    PROMOTION_BOARDS,
+)
 from app.config import settings
 from app.db.models import Run, Source
 from app.db.repositories import operations_config_repo, source_repo
@@ -46,6 +51,7 @@ from app.llm.base import ProbeOutcome
 from app.main import create_app
 from app.probe import probe as probe_module
 from app.probe.probe import clear_cache
+from app.probe.survival import adzuna_promotion_condition
 from app.sources import registry
 from app.sources._ledger import record_fetch_outcome
 from app.sources.base import FetchBudget, FetchResult, JobSource, SearchQuery
@@ -481,6 +487,136 @@ async def test_a_source_with_no_recorded_request_keeps_its_stored_value(
 
 def test_the_derived_badge_vocabulary_is_the_shared_one() -> None:
     assert set(source_repo.CLASSIFICATION_HEALTH.values()) <= source_repo.VALID_HEALTH
+
+
+# --- the Adzuna promotion verdict, read-only (D-158) ---------------------------
+
+
+async def _seed_board_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    board: str,
+    statuses: list[str],
+) -> None:
+    """One run per status, each recording `board`, oldest-to-newest."""
+    async with session_factory() as session:
+        for index, status in enumerate(statuses):
+            session.add(
+                Run(
+                    search_id=None,
+                    trigger="manual",
+                    status="done",
+                    started_at=datetime(2026, 9, 1 + index, 6, 0, tzinfo=UTC),
+                    finished_at=datetime(2026, 9, 1 + index, 6, 5, tzinfo=UTC),
+                    fetched_count=10,
+                    source_counts_json={
+                        board: {"status": status, "fetched": 10, "created": 10}
+                    },
+                )
+            )
+        await session.commit()
+
+
+async def test_the_verdict_line_carries_the_recorded_fraction(page_env: PageEnv) -> None:
+    await _seed_board_runs(
+        page_env.session_factory,
+        board="indeed",
+        statuses=["blocked", "blocked", "blocked", "ok", "ok"],
+    )
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    # One predicate, one source of truth: recompute the condition the page reads.
+    async with page_env.session_factory() as session:
+        evidence = await source_repo.board_evidence(session, "indeed")
+    assert evidence is not None
+    p1 = next(
+        result
+        for result in adzuna_promotion_condition(evidence)
+        if result.signal == "P-1"
+    )
+    assert p1.status == "fail"
+
+    line = _line(text, "adzuna-verdict-indeed")
+    assert f"{p1.observed} blocked runs" in line, line
+    assert "condition met" in line
+    assert "condition not met" not in line
+    assert "Read the probe verdict" in line
+    assert PROBE_VERDICT_DOCUMENT in line
+
+
+async def test_a_not_met_window_renders_the_not_met_wording(page_env: PageEnv) -> None:
+    await _seed_board_runs(
+        page_env.session_factory, board="indeed", statuses=["ok"] * 5
+    )
+
+    line = _line(
+        (await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed"
+    )
+
+    assert "0/5 blocked runs" in line
+    assert "condition not met" in line
+
+
+async def test_a_short_window_renders_no_verdict_and_no_number(page_env: PageEnv) -> None:
+    await _seed_board_runs(page_env.session_factory, board="indeed", statuses=["blocked"])
+
+    line = _line(
+        (await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed"
+    )
+
+    assert "no verdict recorded yet" in line
+    sentence = re.search(r'<span class="[^"]*">(.*?)</span>', line, re.DOTALL).group(1)
+    assert not re.search(r"\d", sentence), f"a number was printed with no verdict: {sentence}"
+
+
+async def test_the_verdict_region_offers_no_control(page_env: PageEnv) -> None:
+    await _seed_board_runs(
+        page_env.session_factory, board="indeed", statuses=["blocked"] * 4
+    )
+
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+    region = re.search(
+        r'<section id="adzuna-verdict".*?</section>', text, re.DOTALL
+    ).group(0)
+
+    assert "<form" not in region
+    assert "<button" not in region
+    anchors = re.findall(r"<a\b[^>]*>", region)
+    assert len(anchors) == len(PROMOTION_BOARDS), anchors
+    for anchor in anchors:
+        assert "probe-verdict" in anchor, anchor
+    assert "promote" not in region.lower().replace("promotion", "")
+    assert "enable" not in region.lower()
+
+
+async def test_the_absent_verdict_region_still_says_so(page_env: PageEnv) -> None:
+    text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
+
+    for board in PROMOTION_BOARDS:
+        assert "no verdict recorded yet" in _line(text, f"adzuna-verdict-{board}")
+
+
+async def test_the_verdict_read_issues_no_board_request(
+    page_env: PageEnv,
+) -> None:
+    await _seed_board_runs(
+        page_env.session_factory, board="indeed", statuses=["blocked"] * 5
+    )
+
+    response = await page_env.client.get(HEALTH_PAGE_PATH)
+
+    assert response.status_code == 200
+    assert SENTINEL_CALLS == {}, "the verdict read put a request on a board"
+
+
+# --- the repository contract the page leans on --------------------------------
+
+
+def test_the_board_evidence_builder_lives_in_the_repository_layer() -> None:
+    builder = getattr(source_repo, "board_evidence", None)
+    assert callable(builder), "the board-evidence builder must live in the repository layer"
+    assert inspect.iscoroutinefunction(builder), "the builder must be async"
 
 
 if __name__ == "__main__":  # pragma: no cover

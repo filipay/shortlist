@@ -35,7 +35,10 @@ from app.api.health import dependency_report
 from app.config import settings
 from app.db.repositories import operations_config_repo, run_repo
 from app.db.repositories.run_repo import RunSummary
-from app.db.repositories.source_repo import get_source_health_with_signals
+from app.db.repositories.source_repo import (
+    board_evidence,
+    get_source_health_with_signals,
+)
 from app.db.session import get_session
 from app.domain.models import User
 from app.jobs import scheduler as scheduler_module
@@ -44,6 +47,7 @@ from app.latex.base import LatexEngine
 from app.llm import auth_configured, get_llm_backend
 from app.llm.base import LLMBackend
 from app.pipeline.rank import CV_FILENAME
+from app.probe.survival import BoardEvidence, adzuna_promotion_condition
 from app.web.template_env import make_templates
 
 log = structlog.get_logger(__name__)
@@ -59,6 +63,15 @@ HEALTH_TEMPLATE = "html/health.html"
 #: `/health` is pinned as JSON by the existing assertions and the compose smoke
 #: script (see the module docstring).
 HEALTH_PAGE_PATH = "/status"
+
+#: The boards the survival probe documents (D-04 §6). The promotion condition is
+#: defined over these scraped boards — Adzuna is the hedge that would be promoted
+#: if one of them stops being usable.
+PROMOTION_BOARDS: tuple[str, ...] = ("indeed", "linkedin")
+
+#: The verdict document the line links to. A committed repo path, never a network
+#: asset (T-08-19).
+PROBE_VERDICT_DOCUMENT = "docs/probes/2026-09-15-scraper-survival.md"
 
 
 def dependency_report_failed(error: str) -> dict[str, Any]:
@@ -175,6 +188,7 @@ async def page_context(
     schedule_line = await _schedule_line(session)
     skip_notice = await _skip_notice(session)
     last_run = await _last_run(session)
+    board_verdicts = await _board_verdicts(session)
 
     opencode = report["opencode"]
     return {
@@ -185,6 +199,7 @@ async def page_context(
         "schedule_line": schedule_line,
         "skip_notice": skip_notice,
         "last_run": last_run,
+        "board_verdicts": board_verdicts,
         # The `_health_strip.html` context names, fed from the shared report.
         "opencode_reachable": opencode["reachable"],
         "opencode_version": opencode["version"],
@@ -273,6 +288,65 @@ async def _last_run(session: AsyncSession) -> RunSummary | None:
         log.warning("health_page.last_run_failed", error=type(exc).__name__)
         return None
     return runs[0] if runs else None
+
+
+def _verdict_view(board: str, evidence: BoardEvidence | None) -> dict[str, Any]:
+    """The read-only verdict row for one board (D-158).
+
+    The number is the P-1 result's observed fraction and the met/not-met flag is
+    P-1's status — `adzuna_promotion_condition` is the ONE definition of the
+    condition, so the page cannot disagree with the probe document about whether it
+    fired. `skip` means the window is not full, so there is no verdict yet and a
+    number must never be printed (D-158 / RESEARCH Pattern 7).
+    """
+    hedge = f"{board.title()} hedge"
+    absent = {
+        "board": board,
+        "state": "absent",
+        "token": "health-empty",
+        "observed": None,
+        "sentence": f"{hedge}: no verdict recorded yet.",
+        "document": PROBE_VERDICT_DOCUMENT,
+    }
+    if evidence is None:
+        return absent
+
+    p1 = next(
+        (result for result in adzuna_promotion_condition(evidence) if result.signal == "P-1"),
+        None,
+    )
+    if p1 is None or p1.status == "skip":
+        return absent
+
+    met = p1.status == "fail"
+    observed = str(p1.observed)
+    return {
+        "board": board,
+        "state": "met" if met else "not_met",
+        "token": "req-met" if met else "req-partial",
+        "observed": observed,
+        "sentence": (
+            f"{hedge}: {observed} blocked runs — condition {'met' if met else 'not met'}"
+        ),
+        "document": PROBE_VERDICT_DOCUMENT,
+    }
+
+
+async def _board_verdicts(session: AsyncSession) -> list[dict[str, Any]]:
+    """One verdict row per board the survival probe documents. Total.
+
+    Each board's guard is its own, so one board's failure degrades that one line to
+    the honest absent state rather than losing the whole section.
+    """
+    verdicts: list[dict[str, Any]] = []
+    for board in PROMOTION_BOARDS:
+        try:
+            evidence = await board_evidence(session, board)
+        except Exception as exc:  # noqa: BLE001 — decorative data must not 500 the page
+            log.warning("health_page.verdict_failed", board=board, error=type(exc).__name__)
+            evidence = None
+        verdicts.append(_verdict_view(board, evidence))
+    return verdicts
 
 
 @router.get(HEALTH_PAGE_PATH, response_class=HTMLResponse)

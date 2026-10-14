@@ -48,6 +48,20 @@
 </p>
 {% endif %}
 
+{# D-158: the computed promotion verdict, shown as read-only EVIDENCE with its
+   number, plus a link to the committed probe document. Nothing in this section
+   changes which adapters run — there is deliberately no form, button or toggle
+   here, because the decision stays human and a later edit that adds one must fail
+   the page tests. #}
+<section id="adzuna-verdict" aria-label="Adzuna promotion verdict">
+  {% for verdict in board_verdicts %}
+  <p class="ranking-strip" id="adzuna-verdict-{{ verdict.board }}">
+    <span class="{{ verdict.token }}">{{ verdict.sentence }}</span>
+    <a href="{{ verdict.document }}" id="probe-verdict-{{ verdict.board }}">Read the probe verdict</a>
+  </p>
+  {% endfor %}
+</section>
+
 {# The per-source table is the queue's own partial, included verbatim, so the page
    and the strip render from one definition and cannot drift (D-155 / D-138). #}
 {% include "html/_health_strip.html" %}
