@@ -12,7 +12,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import applications as application_routes
@@ -67,8 +68,50 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("shutdown.scheduler_failed", error=type(exc).__name__)
 
 
+#: The `Sec-Fetch-Site` values a same-origin browser request can carry. `none` is a
+#: user-initiated navigation to this app; `same-origin` is this app's own form/fetch.
+_SAFE_FETCH_SITES = frozenset({"same-origin", "none"})
+
+
+def _is_cross_site(request: Request) -> bool:
+    """True only when the browser positively identifies a cross-site initiator.
+
+    Browsers attach `Sec-Fetch-Site` to every request, so a form or fetch from
+    another origin arrives as `cross-site` (or `same-site` for a sibling
+    host/port). When that header is absent the `Origin` header is the fallback,
+    compared against this request's own origin. A non-browser caller (curl) and
+    the test client send neither header and are allowed: the guard targets the
+    browser vector without breaking scripted callers. Absent metadata is never
+    treated as cross-site.
+    """
+    fetch_site = request.headers.get("sec-fetch-site")
+    if fetch_site is not None:
+        return fetch_site not in _SAFE_FETCH_SITES
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    host = request.headers.get("host", "")
+    return origin.rstrip("/") != f"{request.url.scheme}://{host}"
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Shortlist", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def _same_origin_guard(request: Request, call_next):
+        """Refuse a cross-site state-changing request (CR-01 / T-08-32).
+
+        v1 runs with no authentication (D-21), so every cross-origin POST is fully
+        authorised: with no session cookie to abuse there is no *benefit* to CSRF,
+        but the *capability* is intact — a plain form from any page the user's
+        browser loads is a "simple request" that reaches every mutating route
+        (reset, prune, CV overwrite, schedule, LLM selftest). This refuses such a
+        request with 403. It is a same-origin guard, not a CSRF token: it stops the
+        browser-driven vector and does not authenticate the local user.
+        """
+        if request.method not in ("GET", "HEAD", "OPTIONS") and _is_cross_site(request):
+            return PlainTextResponse("cross-origin request refused", status_code=403)
+        return await call_next(request)
 
     # Vendored assets only (UI-07) — no CDN. The directory is created if absent
     # so the app is importable before the asset build runs.

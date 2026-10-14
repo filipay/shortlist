@@ -9,12 +9,20 @@ control: the token is rendered into the page in plain text, so anyone who can lo
 `/settings` can read it. The automatic snapshot is the real mitigation, and `POST` is
 required so a link or a prefetch can never trigger the reset.
 
-v1 has no authentication at all (D-21), so there is no ambient credential for a
-cross-site request to abuse and these routes are not CSRF-exploitable today. That
-changes the moment session authentication lands (the planned Authentik step): with
-a session cookie present, `/settings/reset`, `/settings/schedule`,
-`/settings/prune/preview` and `/settings/prune` all become genuine CSRF holes
-unless a CSRF token is added.
+v1 has no authentication at all (D-21). That does not make these routes
+CSRF-safe: with no session cookie there is no credential for a cross-site
+request to *abuse*, but every cross-origin request is fully *authorised*, so a
+plain HTML form on any page the user's browser loads can reach every mutating
+route here (`/settings/reset`, `/settings/prune`, `/settings/prune/preview`,
+`/settings/cv`, `/settings/schedule`, `/settings/weights`,
+`/settings/screening-questions`, `/settings/cv-layout`, `/settings/llm-test`).
+The mitigation is the same-origin guard in `app/main.py` (`_is_cross_site`):
+a state-changing request whose fetch metadata names another origin is refused
+with 403. Residual limit: the guard is not a CSRF token — it stops the
+browser-driven cross-site vector and deliberately allows header-less callers
+(curl, tests), so it does not authenticate the local user, and a real CSRF
+token is still the right fix when session authentication (the planned
+Authentik step) lands.
 """
 
 from __future__ import annotations
@@ -251,6 +259,15 @@ async def _settings_context(
         # D-52's detail is read through the repository contract, not a second,
         # divergent query — the same read Phase 5 can share.
         probe = await llm_call_repo.latest_probe(session)
+    # D-168. One read backs both the initial render and the re-render after a
+    # preview. The age field pre-fills to the stored threshold for the select's
+    # default category (or 30); a submitted preview shows its own `age_days`
+    # instead. The field follows a DIFFERENT category only once that category's
+    # preview has been submitted, so the displayed field and the stored value can
+    # disagree while another category is selected — stated, not claimed away
+    # (CONVENTIONS rule 6). Making the select re-render server-side on a category
+    # change is deliberately out of scope for this fix.
+    retention = await operations_config_repo.read_retention(session)
     return {
         "banner": banner,
         "error": error,
@@ -274,11 +291,12 @@ async def _settings_context(
         # the initial render and the re-render after a save, so the pre-filled time,
         # timezone and enable control cannot disagree with what the scheduler runs.
         "schedule": await operations_config_repo.read_schedule(session),
-        # The retention thresholds (D-168). One read backs both the initial render and
-        # the re-render after a preview, so the field's default and the stored value
-        # cannot disagree. `prune_preview` is the dry-run result when one is present
-        # (a preview submit), and `None` on a plain page load.
-        "retention": await operations_config_repo.read_retention(session),
+        # The retention thresholds (D-168). See the note above the return: the age
+        # field's default is the stored threshold for the select's default
+        # category, and `prune_preview` (when present) overrides it with the
+        # submitted preview's own age. `None` on a plain page load.
+        "retention": retention,
+        "prune_age_default": retention.get(PRUNE_CATEGORY_LABELS[0][0], 30),
         "prune_preview": prune_preview,
         "prune_categories": PRUNE_CATEGORY_LABELS,
         "prune_run_floor": retention_repo.RUN_FLOOR,
@@ -440,17 +458,13 @@ async def save_screening_questions(
         raw = form.get("questions")
         submitted = raw.splitlines() if isinstance(raw, str) else []
 
-    stored = await apply_config_repo.write_questions(
-        session, submitted, now=datetime.now(UTC)
-    )
+    stored = await apply_config_repo.write_questions(session, submitted, now=datetime.now(UTC))
     await session.commit()
     log.info("settings.screening_questions_saved", count=len(stored))
     return templates.TemplateResponse(
         request,
         SETTINGS_TEMPLATE,
-        await _settings_context(
-            session, banner=f"Saved {len(stored)} screening question(s)."
-        ),
+        await _settings_context(session, banner=f"Saved {len(stored)} screening question(s)."),
     )
 
 
@@ -486,9 +500,7 @@ async def save_schedule(
             SETTINGS_TEMPLATE,
             await _settings_context(
                 session,
-                banner=(
-                    "That time could not be understood. Pick a time of day and try again."
-                ),
+                banner=("That time could not be understood. Pick a time of day and try again."),
                 error=True,
             ),
             status_code=400,
