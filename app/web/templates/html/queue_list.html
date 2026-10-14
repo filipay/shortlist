@@ -84,6 +84,7 @@
 <nav id="queue-pager" aria-label="Queue pagination">
   {% if page.has_prev %}
   <button type="button"
+          class="touch-target"
           id="queue-page-prev"
           hx-get="/queue/list?{{ page.query.query_string(offset=page.prev_offset) }}"
           hx-target="#queue-list"
@@ -94,6 +95,7 @@
   <span id="queue-page-position">Page {{ page.page_index }} of {{ page.page_count }} ({{ page.limit }} per page)</span>
   {% if page.has_more %}
   <button type="button"
+          class="touch-target"
           id="queue-page-next"
           hx-get="/queue/list?{{ page.query.query_string(offset=page.next_offset) }}"
           hx-target="#queue-list"

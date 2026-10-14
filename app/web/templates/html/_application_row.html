@@ -10,16 +10,16 @@
 <tr id="application-row-{{ row.id }}"
     class="listing-row{% if row.is_overdue %} listing-stale{% endif %}"
     data-status="{{ row.status }}">
-  <td class="listing-title">
+  <td class="listing-title" data-label="Listing">
     {% if row.listing_title %}{{ row.listing_title }}{% endif %}
     {% if row.company %}<span class="listing-company">{{ row.company }}</span>{% endif %}
     <a class="listing-detail-link" href="/listings/{{ row.listing_id }}">Details</a>
   </td>
-  <td><span class="badge badge-stage-{{ row.status }}">{{ row.status | human_label }}</span></td>
-  <td class="listing-posted">{{ row.applied_at | format_datetime }}</td>
-  <td class="{% if row.is_overdue %}next-overdue{% endif %}">{{ row.next_action_at | format_datetime }}</td>
-  <td class="tracker-note" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
-  <td class="tracker-actions">
+  <td data-label="Stage"><span class="badge badge-stage-{{ row.status }}">{{ row.status | human_label }}</span></td>
+  <td class="listing-posted" data-label="Applied">{{ row.applied_at | format_datetime }}</td>
+  <td class="{% if row.is_overdue %}next-overdue{% endif %}" data-label="Next action">{{ row.next_action_at | format_datetime }}</td>
+  <td class="tracker-note" data-label="Latest note" title="{{ row.notes or '' }}">{{ row.notes or '' }}</td>
+  <td class="tracker-actions" data-label="Actions">
     {# The guided transition (D-128/D-129). A refused transition returns the same
        `<tr id="application-row-N">` with `data-error`, swapped in place. Selecting
        `applied` reveals — and the server REQUIRES — an ok-only artefact picker
@@ -64,7 +64,7 @@
              hx-get="/applications/{{ row.id }}/history"
              hx-trigger="toggle once"
              hx-swap="innerHTML">
-      <summary>History ({{ row.event_count }})</summary>
+      <summary class="touch-target">History ({{ row.event_count }})</summary>
     </details>
   </td>
 </tr>

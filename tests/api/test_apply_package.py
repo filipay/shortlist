@@ -467,7 +467,7 @@ async def test_a_stored_answer_block_renders_with_evidence_and_the_copy_control(
     assert "Because I build pipelines." in response.text
     assert "<code>bul/northwind-labs-2021/1</code>" in response.text
     assert "Evidence:" in response.text
-    assert 'class="button"' in response.text
+    assert 'class="button touch-target"' in response.text
     assert "Copy answer" in response.text
     # No warning for a grounded answer; the destructive control carries its class + copy.
     assert 'class="answer-warning"' not in response.text

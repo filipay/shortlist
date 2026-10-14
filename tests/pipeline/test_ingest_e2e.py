@@ -185,12 +185,16 @@ async def test_queue_order_is_deterministic_when_first_seen_at_is_equal(
     # The title cell now optionally wraps the title in the posting anchor, so the
     # extraction tolerates the anchor rather than dropping it; the asserted titles
     # are unchanged.
-    titles = re.findall(r'<td class="listing-title">(?:<a [^>]*>)?([^<]+)', first.text)
+    titles = re.findall(
+        r'<td class="listing-title" data-label="Title">(?:<a [^>]*>)?([^<]+)',
+        first.text,
+    )
     assert titles == ["Platform Engineer", "Senior Python Engineer"], (
         "expected id-descending order as the tie-break on equal first_seen_at"
     )
     assert titles == re.findall(
-        r'<td class="listing-title">(?:<a [^>]*>)?([^<]+)', second.text
+        r'<td class="listing-title" data-label="Title">(?:<a [^>]*>)?([^<]+)',
+        second.text,
     ), (
         "the order must not change between two identical requests"
     )

@@ -25,12 +25,12 @@
     #}
     {% set nav_path = request.url.path if request is defined and request else '' %}
     <nav class="site-nav" aria-label="Main navigation">
-      <a class="nav-link{% if nav_path == '/' %} nav-current{% endif %}" href="/"{% if nav_path == '/' %} aria-current="page"{% endif %}>Queue</a>
-      <a class="nav-link{% if nav_path == '/applications' %} nav-current{% endif %}" href="/applications"{% if nav_path == '/applications' %} aria-current="page"{% endif %}>Applications</a>
-      <a class="nav-link{% if nav_path == '/searches' %} nav-current{% endif %}" href="/searches"{% if nav_path == '/searches' %} aria-current="page"{% endif %}>Searches</a>
-      <a class="nav-link{% if nav_path == '/merges' %} nav-current{% endif %}" href="/merges"{% if nav_path == '/merges' %} aria-current="page"{% endif %}>Merges</a>
-      <a class="nav-link{% if nav_path == '/runs' %} nav-current{% endif %}" href="/runs"{% if nav_path == '/runs' %} aria-current="page"{% endif %}>Runs</a>
-      <a class="nav-link{% if nav_path == '/settings' %} nav-current{% endif %}" href="/settings"{% if nav_path == '/settings' %} aria-current="page"{% endif %}>Settings</a>
+      <a class="nav-link{% if nav_path == '/' %} nav-current{% endif %} touch-target" href="/"{% if nav_path == '/' %} aria-current="page"{% endif %}>Queue</a>
+      <a class="nav-link{% if nav_path == '/applications' %} nav-current{% endif %} touch-target" href="/applications"{% if nav_path == '/applications' %} aria-current="page"{% endif %}>Applications</a>
+      <a class="nav-link{% if nav_path == '/searches' %} nav-current{% endif %} touch-target" href="/searches"{% if nav_path == '/searches' %} aria-current="page"{% endif %}>Searches</a>
+      <a class="nav-link{% if nav_path == '/merges' %} nav-current{% endif %} touch-target" href="/merges"{% if nav_path == '/merges' %} aria-current="page"{% endif %}>Merges</a>
+      <a class="nav-link{% if nav_path == '/runs' %} nav-current{% endif %} touch-target" href="/runs"{% if nav_path == '/runs' %} aria-current="page"{% endif %}>Runs</a>
+      <a class="nav-link{% if nav_path == '/settings' %} nav-current{% endif %} touch-target" href="/settings"{% if nav_path == '/settings' %} aria-current="page"{% endif %}>Settings</a>
     </nav>
     <main id="content">
       {% block content %}{% endblock %}

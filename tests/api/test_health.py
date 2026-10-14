@@ -638,8 +638,8 @@ async def test_the_strip_renders_last_success_returned_and_fill_rate(
     assert match is not None, "the strip rendered no row for indeed"
     block = match.group(0)
 
-    assert 'class="health-source">indeed' in block
-    assert 'class="health-returned">2' in block
+    assert 'class="health-source" data-label="Source">indeed' in block
+    assert 'class="health-returned" data-label="Returned">2' in block
     assert "never" not in block, "a recorded last success must render as a timestamp"
     # A blank description counts as empty: 1 of 2 filled, not 2 of 2 (RESEARCH S2).
     assert "description 50%" in block

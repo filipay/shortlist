@@ -50,11 +50,11 @@
     <tbody>
       {% for row in source_health %}
       <tr class="health-row" id="source-health-{{ row.name }}">
-        <td class="health-source">{{ row.name }}</td>
-        <td class="health-badge health-{{ row.health or 'unknown' }}">{{ row.health or 'unknown' }}</td>
-        <td class="health-last-success">{{ row.last_success_at.isoformat() if row.last_success_at else 'never' }}</td>
-        <td class="health-returned">{{ row.listings_returned }}</td>
-        <td class="health-fill-rate">
+        <td class="health-source" data-label="Source">{{ row.name }}</td>
+        <td class="health-badge health-{{ row.health or 'unknown' }}" data-label="Health">{{ row.health or 'unknown' }}</td>
+        <td class="health-last-success" data-label="Last success">{{ row.last_success_at.isoformat() if row.last_success_at else 'never' }}</td>
+        <td class="health-returned" data-label="Returned">{{ row.listings_returned }}</td>
+        <td class="health-fill-rate" data-label="Field fill-rate">
           {% for field_name, rate in row.field_fill_rate.items() %}
           <span class="fill-rate fill-{{ field_name }}">{{ field_name }} {{ (rate * 100) | round | int }}%</span>
           {% endfor %}

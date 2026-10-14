@@ -22,7 +22,7 @@ async def test_the_settings_page_renders(client) -> None:
 async def test_the_nav_reaches_settings(client) -> None:
     response = await client.get("/settings")
 
-    assert '<a class="nav-link nav-current" href="/settings"' in response.text
+    assert '<a class="nav-link nav-current touch-target" href="/settings"' in response.text
 
 
 async def test_the_page_names_the_confirm_token(client) -> None:
@@ -76,7 +76,7 @@ async def test_the_nav_marks_settings_as_the_current_page(client) -> None:
     response = await client.get("/settings")
 
     assert (
-        '<a class="nav-link nav-current" href="/settings" aria-current="page">'
+        '<a class="nav-link nav-current touch-target" href="/settings" aria-current="page">'
         "Settings</a>" in response.text
     )
 

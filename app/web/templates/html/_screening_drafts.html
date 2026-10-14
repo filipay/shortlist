@@ -43,7 +43,7 @@
     <p class="field-note">Advisory match band: {{ row.band }} — a rough lexical signal, not a guarantee.</p>
     {% endif %}
     <p>
-      <button type="button" class="button"
+      <button type="button" class="button touch-target"
               x-data="{ copied: false }"
               @click="navigator.clipboard.writeText($el.closest('div').querySelector('.answer-text').textContent).then(() => { copied = true; setTimeout(() => copied = false, 2000); })"
               x-text="copied ? 'Copied' : 'Copy answer'">Copy answer</button>

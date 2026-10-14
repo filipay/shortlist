@@ -102,7 +102,7 @@ async def test_a_listing_without_a_url_renders_a_plain_title(
     # the internal Details link to the job detail page (UI-02).
     assert 'class="listing-title-link"' not in response.text
     assert re.search(
-        r'<td class="listing-title">Backend Engineer\s*'
+        r'<td class="listing-title" data-label="Title">Backend Engineer\s*'
         r'<a class="listing-detail-link" href="/listings/\d+">Details</a></td>',
         response.text,
     ), response.text
@@ -230,6 +230,6 @@ async def test_a_non_web_source_url_renders_the_source_name_as_plain_text(
     assert "javascript:" not in response.text
     assert 'class="source-link"' not in response.text
     assert re.search(
-        r'<td class="listing-source">\s*linkedin\s*</td>', response.text
+        r'<td class="listing-source" data-label="Source">\s*linkedin\s*</td>', response.text
     ), response.text
 

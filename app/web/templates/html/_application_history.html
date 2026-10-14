@@ -6,7 +6,7 @@
 
    A NULL `from_status` (the first, `created` event) renders as `created`. Nothing
    here is editable: the event table is append-only (D-131). #}
-<summary>History ({{ count }})</summary>
+<summary class="touch-target">History ({{ count }})</summary>
 {% if events %}
 {% for event in events %}
 <div class="stage-entry">
