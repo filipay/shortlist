@@ -52,6 +52,45 @@ Override the target with `BASE_URL=http://host:port` and the wait budget with
    are present. This is the persistence half of the criterion: the SQLite file lives
    in the `./data` volume, so a restart must not lose it.
 5. The stack starts and serves with the opencode server **not running**.
+6. The **daily schedule** survives a restart and fires exactly once (PLAT-06). See
+   "The schedule persistence step" below.
+
+## The schedule persistence step (PLAT-06)
+
+Phase 8's schedule lives in a new singleton row and is re-configured at boot by the
+scheduler's create-if-absent reconcile. This step is the operator half of PLAT-06:
+single-worker safe and persistent across a restart. It is **recorded as an unrun
+verify** in `.planning/WINDOWS.md` until an operator signs it off — Docker is
+absent from the agent sandbox.
+
+```bash
+# 1. Set a daily time on the Settings page, e.g. a couple of minutes ahead:
+#    open http://localhost:8000/settings, tick "Run once a day", pick the time,
+#    choose Europe/Dublin and press "Save schedule".
+#    Confirm the page reports "Schedule saved." and that a next run is shown.
+
+# 2. Restart the containers:
+docker compose restart
+
+# 3. After the restart, reload http://localhost:8000/settings and confirm the
+#    schedule is still set — the same time, the same timezone, still enabled.
+
+# 4. Wait for the scheduled minute to pass, then count the runs for that trigger:
+curl -fsS 'localhost:8000/health' >/dev/null      # app is up
+#    open http://localhost:8000/runs and confirm EXACTLY ONE run whose trigger is
+#    `schedule` appeared after the scheduled minute — never two.
+```
+
+**A second concurrent run is the failure this step exists to catch.** The
+single-worker pin (`--workers 1`) is what stops N schedulers each running the same
+job, and the database in-flight guard is what stops a scheduled run overlapping an
+already-running one. Two `runs` rows with trigger `schedule` in the same minute, or
+one `schedule` run plus a second in-flight run, is a failure — record it verbatim,
+do not interpret it as a scheduling coincidence.
+
+**What a pass looks like:** the schedule document survives the restart; the
+settings page still shows it; and exactly one run row with trigger `schedule`
+appears for the scheduled firing.
 
 ## Failure modes and what they mean
 

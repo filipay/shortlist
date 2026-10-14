@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,6 +21,7 @@ from apscheduler.events import EVENT_JOB_MISSED
 from apscheduler.events import JobExecutionEvent
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -169,3 +171,153 @@ async def test_stale_running_rows_are_reconciled_to_partial(wired) -> None:
     assert row.finished_at is not None
     assert row.errors_json
     assert "reconciled" in row.errors_json[0]["error"]
+
+
+# --- the restart contract (PLAT-06) -------------------------------------------
+
+
+async def _write_schedule(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    enabled: bool,
+    hour: int = 7,
+    minute: int = 0,
+) -> None:
+    async with session_factory() as session:
+        await operations_config_repo.write_schedule(
+            session,
+            operations_config_repo.ScheduleConfig(
+                enabled=enabled, hour=hour, minute=minute, timezone="Europe/Dublin"
+            ),
+        )
+        await session.commit()
+
+
+def _matching_trigger() -> CronTrigger:
+    return CronTrigger(hour=7, minute=0, timezone=ZoneInfo("Europe/Dublin"))
+
+
+def _instance(tmp_path: Path) -> tuple[AsyncIOScheduler, object]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'jobs.db'}")
+    instance = AsyncIOScheduler(
+        jobstores={"default": SQLAlchemyJobStore(engine=engine)},
+        timezone=ZoneInfo("Europe/Dublin"),
+    )
+    return instance, engine
+
+
+async def test_a_past_due_fire_time_is_not_clobbered(wired, tmp_path: Path) -> None:
+    """This is the assertion that fails if `replace_existing=True` comes back."""
+    await _write_schedule(wired, enabled=True)
+    instance, engine = _instance(tmp_path)
+    past = datetime.now(UTC) - timedelta(hours=5)
+
+    # Seeded through APScheduler's own API (not by hand-crafting the store's private
+    # columns). Passing `next_run_time` stops the add/reconcile from recomputing it.
+    instance.add_job(
+        scheduler_module.run_scheduled_pipeline,
+        _matching_trigger(),
+        id=SCHEDULED_JOB_ID,
+        next_run_time=past,
+        replace_existing=False,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    instance.start(paused=True)
+    try:
+        before = instance.get_job(SCHEDULED_JOB_ID).next_run_time
+        assert before == past, "the seed did not persist the past-due fire time"
+
+        status = await scheduler_module.reconcile(instance, wired)
+
+        assert status == "unchanged"
+        after = instance.get_job(SCHEDULED_JOB_ID).next_run_time
+        assert after == before, "reconcile clobbered the persisted past-due fire time"
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
+
+
+async def test_reconcile_creates_the_job_when_absent(wired, tmp_path: Path) -> None:
+    await _write_schedule(wired, enabled=True)
+    instance, engine = _instance(tmp_path)
+    instance.start(paused=True)
+    try:
+        assert instance.get_jobs() == []
+
+        status = await scheduler_module.reconcile(instance, wired)
+
+        assert status == "registered"
+        jobs = instance.get_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].id == SCHEDULED_JOB_ID
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
+
+
+async def test_reconcile_is_idempotent(wired, tmp_path: Path) -> None:
+    await _write_schedule(wired, enabled=True)
+    instance, engine = _instance(tmp_path)
+    instance.start(paused=True)
+    try:
+        await scheduler_module.reconcile(instance, wired)
+        await scheduler_module.reconcile(instance, wired)
+
+        assert len(instance.get_jobs()) == 1
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
+
+
+async def test_reconcile_honours_an_enabled_disabled_flip(
+    wired, tmp_path: Path
+) -> None:
+    instance, engine = _instance(tmp_path)
+    instance.start(paused=True)
+    try:
+        await _write_schedule(wired, enabled=True)
+        await scheduler_module.reconcile(instance, wired)
+        assert len(instance.get_jobs()) == 1
+
+        await _write_schedule(wired, enabled=False)
+        await scheduler_module.reconcile(instance, wired)
+        assert instance.get_jobs() == []
+
+        await _write_schedule(wired, enabled=True)
+        await scheduler_module.reconcile(instance, wired)
+        assert len(instance.get_jobs()) == 1, "re-enabling created a second job"
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
+
+
+async def test_next_run_at_is_total(
+    wired, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 1. No scheduler at all → None, no raise.
+    monkeypatch.setattr(scheduler_module, "_scheduler", None)
+    assert scheduler_module.next_run_at() is None
+
+    # 2. A real, started scheduler with no job (the disabled-schedule state) → None.
+    instance, engine = _instance(tmp_path)
+    instance.start(paused=True)
+    monkeypatch.setattr(scheduler_module, "_scheduler", instance)
+    try:
+        assert scheduler_module.next_run_at() is None
+
+        # 3. An enabled schedule → a timezone-aware datetime.
+        await _write_schedule(wired, enabled=True)
+        await scheduler_module.reconcile(instance, wired)
+        value = scheduler_module.next_run_at()
+        assert isinstance(value, datetime)
+        assert value.tzinfo is not None
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
