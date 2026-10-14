@@ -17,8 +17,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
-from apscheduler.events import EVENT_JOB_MISSED
-from apscheduler.events import JobExecutionEvent
+from apscheduler.events import EVENT_JOB_MISSED, JobExecutionEvent
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -50,9 +49,7 @@ async def _run_count(session_factory: async_sessionmaker[AsyncSession]) -> int:
         return int(await session.scalar(select(func.count()).select_from(Run)) or 0)
 
 
-async def _seed_run(
-    session_factory: async_sessionmaker[AsyncSession], *, status: str
-) -> int:
+async def _seed_run(session_factory: async_sessionmaker[AsyncSession], *, status: str) -> int:
     async with session_factory() as session:
         run = Run(
             search_id=None,
@@ -173,6 +170,23 @@ async def test_stale_running_rows_are_reconciled_to_partial(wired) -> None:
     assert "reconciled" in row.errors_json[0]["error"]
 
 
+async def test_reconcile_stale_runs_preserves_existing_errors(wired) -> None:
+    """IN-03: the docstring says the reason lands in the row's EXISTING error storage."""
+    run_id = await _seed_run(wired, status="running")
+    async with wired() as session:
+        row = await session.get(Run, run_id)
+        row.errors_json = [{"source": "linkedin", "error": "an earlier failure"}]
+        await session.commit()
+
+    await scheduler_module.reconcile_stale_runs(wired)
+
+    async with wired() as session:
+        row = await session.get(Run, run_id)
+    assert row.errors_json[0] == {"source": "linkedin", "error": "an earlier failure"}
+    assert any("reconciled" in entry["error"] for entry in row.errors_json)
+    assert len(row.errors_json) == 2
+
+
 # --- the restart contract (PLAT-06) -------------------------------------------
 
 
@@ -274,9 +288,46 @@ async def test_reconcile_is_idempotent(wired, tmp_path: Path) -> None:
         engine.dispose()
 
 
-async def test_reconcile_honours_an_enabled_disabled_flip(
+async def test_a_timezone_change_is_detected_with_identical_cron_fields(
     wired, tmp_path: Path
 ) -> None:
+    """WR-02: `str(CronTrigger)` omits the timezone, so the old compare missed it.
+
+    Same fields, different timezone: the two triggers stringify identically
+    (`cron[hour='7', minute='0']`), so the pre-fix `str(existing.trigger) !=
+    str(trigger)` concluded "unchanged" and the job kept firing at the old absolute
+    time. The comparison now includes the trigger's timezone.
+    """
+    await _write_schedule(wired, enabled=True)  # desired timezone: Europe/Dublin
+    instance, engine = _instance(tmp_path)
+    desired = CronTrigger(hour=7, minute=0, timezone=ZoneInfo("Europe/Dublin"))
+    instance.add_job(
+        scheduler_module.run_scheduled_pipeline,
+        CronTrigger(hour=7, minute=0, timezone=ZoneInfo("UTC")),
+        id=SCHEDULED_JOB_ID,
+        replace_existing=False,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    instance.start(paused=True)
+    try:
+        before = instance.get_job(SCHEDULED_JOB_ID).trigger
+        assert str(before) == str(desired), "the repro needs identical cron strings"
+        assert str(before.timezone) != "Europe/Dublin"
+
+        status = await scheduler_module.reconcile(instance, wired)
+
+        assert status == "rescheduled"
+        after = instance.get_job(SCHEDULED_JOB_ID).trigger
+        assert str(after.timezone) == "Europe/Dublin"
+    finally:
+        instance.shutdown(wait=False)
+        await asyncio.sleep(0)
+        engine.dispose()
+
+
+async def test_reconcile_honours_an_enabled_disabled_flip(wired, tmp_path: Path) -> None:
     instance, engine = _instance(tmp_path)
     instance.start(paused=True)
     try:
@@ -297,9 +348,7 @@ async def test_reconcile_honours_an_enabled_disabled_flip(
         engine.dispose()
 
 
-async def test_next_run_at_is_total(
-    wired, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+async def test_next_run_at_is_total(wired, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # 1. No scheduler at all → None, no raise.
     monkeypatch.setattr(scheduler_module, "_scheduler", None)
     assert scheduler_module.next_run_at() is None

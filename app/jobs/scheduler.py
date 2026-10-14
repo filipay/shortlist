@@ -90,15 +90,11 @@ def _on_scheduler_event(event) -> None:  # noqa: ANN001 — an APScheduler event
     try:
         if event.code == EVENT_JOB_MISSED:
             # JobExecutionEvent carries `scheduled_run_time`.
-            _queue_skip_notice(
-                reason="missed", when=getattr(event, "scheduled_run_time", None)
-            )
+            _queue_skip_notice(reason="missed", when=getattr(event, "scheduled_run_time", None))
         elif event.code == EVENT_JOB_MAX_INSTANCES:
             # JobSubmissionEvent carries `scheduled_run_times` (a list).
             run_times = getattr(event, "scheduled_run_times", None) or []
-            _queue_skip_notice(
-                reason="in_flight", when=run_times[0] if run_times else None
-            )
+            _queue_skip_notice(reason="in_flight", when=run_times[0] if run_times else None)
         else:  # EVENT_JOB_ERROR
             log.warning(
                 "scheduler.job_error",
@@ -203,25 +199,25 @@ async def reconcile_stale_runs(
     """
     async with session_factory() as session:
         rows = (
-            (
-                await session.execute(
-                    select(Run).where(Run.status.not_in(tuple(TERMINAL_STATUSES)))
-                )
-            )
+            (await session.execute(select(Run).where(Run.status.not_in(tuple(TERMINAL_STATUSES)))))
             .scalars()
             .all()
         )
         for run in rows:
             run.status = "partial"
             run.finished_at = datetime.now(UTC)
+            # Append rather than replace: a row that was mid-flight when a previous
+            # build persisted its own errors must not lose them (the docstring's
+            # "recorded in the row's existing error storage"). In practice
+            # `errors_json` is written only at `_finish`, so this is defensive.
             run.errors_json = [
+                *list(run.errors_json or []),
                 {
                     "source": "*",
                     "error": (
-                        "reconciled to partial at boot: the process that owned this "
-                        "run is gone"
+                        "reconciled to partial at boot: the process that owned this run is gone"
                     ),
-                }
+                },
             ]
         await session.commit()
     return len(rows)
@@ -262,8 +258,15 @@ async def reconcile(
             misfire_grace_time=settings.schedule_misfire_grace_seconds,
         )
         return "registered"
-    if str(existing.trigger) != str(trigger):
-        # The user changed the time while the app was down, or the config drifted.
+    if not isinstance(existing.trigger, CronTrigger) or (
+        existing.trigger.fields,
+        str(existing.trigger.timezone),
+    ) != (trigger.fields, str(trigger.timezone)):
+        # The user changed the time or the timezone while the app was down, or the
+        # config drifted. Compare the trigger's OWN identity (its field values plus
+        # its timezone), never `str(trigger)`: `CronTrigger.__str__` omits the
+        # timezone, so a timezone-only change stringifies identically and a
+        # `str()` comparison would silently keep firing at the old absolute time.
         scheduler.reschedule_job(SCHEDULED_JOB_ID, trigger=trigger)
         return "rescheduled"
     # Leave the job untouched. Re-registering would recompute its next fire time to
