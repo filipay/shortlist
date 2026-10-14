@@ -32,6 +32,10 @@ dependencies = [
     # `app/cv/factstore.py` loads cv.yaml via yaml.safe_load at module scope, so
     # this is a RUNTIME dependency (CV-01, D-66) — not the dev-only entry it was.
     "pyyaml==6.0.3",
+    # Phase 8 (D-151 / PLAT-06): the in-process cron scheduler with a persistent
+    # job store for the nightly run. 4.x is still alpha and out. Exact pin only,
+    # cleared by a blocking human checkpoint (T-08-01).
+    "apscheduler==3.11.3",
     # Acquisition: install JobSpy from git at a PINNED FULL SHA, never PyPI.
     # PyPI's python-jobspy 1.1.82 predates the pinned LinkedIn date-parsing fix.
     # The distribution is named `python-jobspy`, NOT `jobspy` (an unrelated PyPI

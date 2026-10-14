@@ -65,4 +65,10 @@ services:
       # D-94's operator off switch: false makes a run ingest exactly as it does
       # today, with zero model calls.
       - RANKING_ENABLED=${RANKING_ENABLED:-true}
+      # Phase-8 scheduler knobs (D-151..D-154 / PLAT-06), forwarded for the same
+      # reason as the knobs above: the image carries no `.env`, so an unforwarded
+      # knob silently loses the host override. Both defaults match app/config.py
+      # exactly.
+      - SCHEDULE_TIMEZONE=${SCHEDULE_TIMEZONE:-Europe/Dublin}
+      - SCHEDULE_MISFIRE_GRACE_SECONDS=${SCHEDULE_MISFIRE_GRACE_SECONDS:-3600}
     command: ["./entrypoint.sh"]

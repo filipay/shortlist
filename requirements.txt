@@ -25,6 +25,11 @@ pypdf==6.19.0
 # scope, so this must be a RUNTIME pin — not the dev-only entry it once was.
 pyyaml==6.0.3
 
+# Phase 8 (D-151 / PLAT-06): the in-process cron scheduler with a persistent job
+# store for the nightly run. 4.x is still alpha and out. Exact pin only, cleared
+# by a blocking human checkpoint (T-08-01).
+apscheduler==3.11.3
+
 # Acquisition — from git at the pinned FULL SHA, never the stale PyPI release.
 # Note: the distribution is named `python-jobspy`, NOT `jobspy` (the PyPI `jobspy`
 # name is an unrelated project). Naming the wrong distribution makes pip report a

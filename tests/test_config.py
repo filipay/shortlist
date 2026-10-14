@@ -90,6 +90,12 @@ REQUIRED_SETTINGS_FIELDS = (
     # Phase 7 (D-125): the screening-drafting operator off switch. Like the two
     # switches above it is a boolean, so it is guarded by the surface tier only.
     "apply_drafting_enabled",
+    # Phase 8 (D-151..D-154 / PLAT-06): the scheduler's default timezone and its
+    # misfire grace window. The grace is a distinctive integer also listed in
+    # LIMIT_FIELDS, so the absence scan covers it inside `app/jobs`; the timezone
+    # is a string and is guarded by the surface tier only.
+    "schedule_timezone",
+    "schedule_misfire_grace_seconds",
 )
 
 #: Fields whose value is a ceiling an operator may need to tune.
@@ -137,6 +143,12 @@ LIMIT_FIELDS = (
     # absence scan cover `app/verify` (A7).
     "tailoring_grounding_threshold",
     "tailoring_grounding_review_threshold",
+    # Phase 8 (D-154): the misfire grace window. A distinctive integer above
+    # DISTINCTIVE_THRESHOLD_FLOOR, so listing it here makes the absence scan cover
+    # `app/jobs`. `schedule_timezone` is deliberately absent — it is a string, and
+    # `test_every_limit_field_is_a_required_numeric_ceiling` requires a numeric
+    # default for every member.
+    "schedule_misfire_grace_seconds",
 )
 
 #: The Phase-4 ceilings (PLAT-04 applied to the LaTeX lane), listed explicitly so a
@@ -209,7 +221,7 @@ DISTINCTIVE_THRESHOLD_FLOOR = 3
 #: Directories the absence check scans. `app/probe` arrives in plan 01-06;
 #: `app/latex` and `app/cv` arrive in plan 04-02/04-03 (PLAT-04 widened to the
 #: LaTeX lane, so a hard-coded engine ceiling there is caught too).
-SCANNED_DIRS = ("app/probe", "app/pipeline", "app/latex", "app/cv", "app/verify")
+SCANNED_DIRS = ("app/probe", "app/pipeline", "app/latex", "app/cv", "app/verify", "app/jobs")
 
 
 # --- 1. surface ---------------------------------------------------------------
@@ -227,6 +239,9 @@ def test_documented_defaults() -> None:
     assert Settings.model_fields["dedup_fuzzy_threshold"].default == 88
     # The shipped model default must be a model that can honour a forced tool call.
     assert Settings.model_fields["opencode_model"].default == "minimax-m3"
+    # Phase 8 (D-153 / D-154): the scheduler's default timezone and grace window.
+    assert Settings.model_fields["schedule_timezone"].default == "Europe/Dublin"
+    assert Settings.model_fields["schedule_misfire_grace_seconds"].default == 3600
 
 
 def test_the_phase_three_ceilings_are_guarded() -> None:

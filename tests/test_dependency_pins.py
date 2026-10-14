@@ -9,6 +9,7 @@ that falls out of step with `pyproject.toml` all fail here.
 
 `rapidfuzz` is Phase 2's dependency (T-02-04). `pypdf` and `pyyaml` are Phase 4's
 (T-04-SC): `pyyaml` is a dev→runtime promotion of an already-installed pin.
+`apscheduler` is Phase 8's (T-08-01).
 
 `tomllib` is stdlib on 3.11+, and the project pins >=3.13, so this adds no
 dependency of its own (which would be self-defeating for a dependency guard).
@@ -32,6 +33,8 @@ PINNED_VERSION = "3.14.6"
 PINNED_PACKAGES = (
     ("pypdf", "pypdf==6.19.0", "6.19.0"),
     ("pyyaml", "pyyaml==6.0.3", "6.0.3"),
+    # Phase 8's scheduler (T-08-01); the pin string must appear in BOTH manifests.
+    ("apscheduler", "apscheduler==3.11.3", "3.11.3"),
 )
 
 

@@ -50,6 +50,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
 RUN JOBSPY_SHA="$JOBSPY_SHA" python -c "import importlib.metadata as md, json, os; vcs = json.loads(md.distribution('python-jobspy').read_text('direct_url.json')).get('vcs_info', {}); assert vcs.get('vcs') == 'git', 'python-jobspy is not a VCS install: %r' % (vcs,); assert vcs.get('commit_id') == os.environ['JOBSPY_SHA'], 'wrong revision: %r != %r' % (vcs.get('commit_id'), os.environ['JOBSPY_SHA']); print('python-jobspy pinned at', os.environ['JOBSPY_SHA'])"
 
+# Prove the image's zoneinfo database resolves at BUILD time (T-08-03 / RESEARCH
+# Pitfall 7, assumption A1): APScheduler builds the nightly trigger with
+# `ZoneInfo("Europe/Dublin")`, and a base image carrying no tz database would fail
+# only at the first scheduled run. `tzdata` is the remedy if this ever fails. Same
+# shape as the JobSpy and Tectonic build-time proofs above.
+ENV TZ=Europe/Dublin
+RUN python -c "from zoneinfo import ZoneInfo; ZoneInfo('Europe/Dublin')"
+
 # --- Tectonic, the LaTeX engine (CV-05 / D-73/D-74) --------------------------
 # Install the pinned Tectonic binary and verify it in the SAME RUN that fetches it.
 # Mirrors the JobSpy assertion above: a checksum in a separate layer can be reused

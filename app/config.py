@@ -245,5 +245,17 @@ class Settings(BaseSettings):
     #: `ranking_max_calls_per_day` value and mints no new numeric knob.
     apply_drafting_enabled: bool = True
 
+    # --- Phase 8 schedule (D-151..D-154 / PLAT-06) ----------------------------
+    #: The scheduler's own default timezone, used when the stored schedule
+    #: document carries no timezone. Explicit, never the container's UTC: the
+    #: container must not silently inherit UTC, and DST must not shift the
+    #: morning run (D-153 / AGENTS.md §Technology Stack).
+    schedule_timezone: str = "Europe/Dublin"
+    #: The grace window that decides whether a fire time missed while the
+    #: container was down still runs, or is skipped-and-surfaced (D-154). It is
+    #: the boundary between "still happens" and "skipped, never caught up";
+    #: configuration, not a literal (PLAT-04).
+    schedule_misfire_grace_seconds: int = 3600
+
 
 settings = Settings()
