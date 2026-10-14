@@ -1,0 +1,27 @@
+{% extends "html/base.html" %}
+
+{% block title %}Health · Shortlist{% endblock %}
+
+{% block content %}
+<h2>Health</h2>
+
+{# The system section: assembly of data that already exists, never new
+   measurement (D-157). Every row is one of the four total dependency reports the
+   JSON endpoint publishes, so the two surfaces cannot disagree (D-138). #}
+<section id="health-system">
+  <h3>System</h3>
+  <p class="settings-note">
+    Read from recorded run outcomes — opening this page never contacts a job board.
+  </p>
+  <dl class="health-system">
+    {% for row in dependency_rows %}
+    <dt>{{ row.label }}</dt>
+    <dd><span class="health-badge health-{{ row.tone }}">{{ row.tone }}</span> {{ row.detail }}</dd>
+    {% endfor %}
+  </dl>
+</section>
+
+{# The per-source table is the queue's own partial, included verbatim, so the page
+   and the strip render from one definition and cannot drift (D-155 / D-138). #}
+{% include "html/_health_strip.html" %}
+{% endblock %}

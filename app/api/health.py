@@ -97,6 +97,40 @@ def _cv_report() -> dict[str, Any]:
     return fact_store_report(Path(settings.cv_dir) / CV_FILENAME)
 
 
+async def dependency_report(
+    session: AsyncSession, backend: LLMBackend, engine: LatexEngine
+) -> dict[str, Any]:
+    """The four boot-tolerant dependency reports, in ONE definition (D-138 / Pattern 6).
+
+    `GET /health` (JSON) and the `/status` page both call this, so they cannot
+    disagree about opencode reachability or `auth_configured`. Every probe is a
+    total function: a failure is REPORTED, never raised, and never changes
+    `status` (which the caller derives from `db` alone).
+
+    The returned key names, nesting and reading order ARE the JSON contract — 25
+    existing assertions, the auth-seam route inventory and `scripts/compose-smoke.sh`
+    all read this shape, so do not rename or reorder a key.
+
+    The live board probe (`probe_all`) is deliberately NOT here: it belongs to the
+    JSON endpoint's per-source map only. A page view must never put a request on a
+    job board (D-156), so the page must not inherit it.
+    """
+    database = "ok"
+    try:
+        await session.execute(text("SELECT 1"))
+    except Exception:  # noqa: BLE001 — health is a total function
+        database = "unreachable"
+
+    return {
+        "db": database,
+        "opencode": await _opencode_report(backend),
+        "tectonic": await _tectonic_report(engine),
+        # A missing or unreadable CV fact store never degrades "status" — the same
+        # rule the LaTeX engine already follows. Ranking is skipped, and that is data.
+        "cv": _cv_report(),
+    }
+
+
 @router.get("/health")
 async def health(
     user: User = Depends(current_user),
@@ -106,14 +140,7 @@ async def health(
     engine: LatexEngine = Depends(get_latex_engine),
 ) -> dict[str, Any]:
     """Always answers with 200. Degraded state is data, never an exception."""
-    database = "ok"
-    try:
-        await session.execute(text("SELECT 1"))
-    except Exception:  # noqa: BLE001 — health is a total function
-        database = "unreachable"
-
-    opencode = await _opencode_report(backend)
-    tectonic = await _tectonic_report(engine)
+    report = await dependency_report(session, backend, engine)
 
     try:
         probes = await probe_all(session_factory=session_factory)
@@ -156,13 +183,9 @@ async def health(
         # The LLM backend being down does NOT degrade the app's own health (D-08).
         # The same rule applies to the LaTeX engine: a missing binary is REPORTED
         # here, never raised, and never changes "status".
-        "status": "ok" if database == "ok" else "degraded",
-        "db": database,
-        "opencode": opencode,
-        "tectonic": tectonic,
-        # A missing or unreadable CV fact store never degrades "status" — the same
-        # rule the LaTeX engine already follows. Ranking is skipped, and that is data.
-        "cv": _cv_report(),
+        "status": "ok" if report["db"] == "ok" else "degraded",
+        # The four dependency reports, in their existing reading order.
+        **report,
         "sources": sources,
     }
 

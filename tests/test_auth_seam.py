@@ -66,6 +66,10 @@ EXPECTED_SEAM_ROUTES = frozenset(
         # and re-configures the live scheduler, so it carries the seam like every
         # other settings route.
         "/settings/schedule",
+        # Phase 8's health page (RUN-07 / D-155): the human-readable `/status`
+        # surface. `/health` stays JSON; this page renders the user's own system
+        # and source state, so it goes through the identity seam too.
+        "/status",
     }
 )
 

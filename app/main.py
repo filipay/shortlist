@@ -19,6 +19,7 @@ from app.api import applications as application_routes
 from app.api import apply as apply_routes
 from app.api import events as event_routes
 from app.api import health as health_routes
+from app.api import health_page as health_page_routes
 from app.api import listings as listing_routes
 from app.api import runs as run_routes
 from app.api import searches as search_routes
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(apply_routes.router)
     app.include_router(application_routes.router)
     app.include_router(health_routes.router)
+    app.include_router(health_page_routes.router)
     return app
 
 
