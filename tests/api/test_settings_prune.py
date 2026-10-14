@@ -8,6 +8,7 @@ unlink, the audit line and the retention threshold persisted on the operations r
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -208,7 +209,9 @@ async def test_a_path_outside_the_artifacts_directory_is_skipped_and_reported(
     outside.write_bytes(b"x" * 5)
     listing = await _seed_listing(session_factory)
     await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
-    await _insert_artifact(session_factory, listing_id=listing, created_at=OLD, pdf_path=str(outside))
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, pdf_path=str(outside)
+    )
 
     response = await client.post(  # type: ignore[attr-defined]
         settings_module.PRUNE_PATH, data={"category": "artifacts", "age_days": "30"}
@@ -241,6 +244,71 @@ async def test_the_chosen_threshold_is_persisted_and_survives_a_re_render(
 
     async with session_factory() as session:
         assert await operations_config_repo.read_retention(session) == {"artifacts": 45}
+
+
+def _prune_age_value(text: str) -> int:
+    """The `value` of the `#prune-age` input, via the element's own attributes."""
+    match = re.search(r'id="prune-age".*?value="(\d+)"', text, re.DOTALL)
+    assert match is not None, "the prune age input is missing"
+    return int(match.group(1))
+
+
+async def test_the_age_field_prefills_from_the_stored_threshold(
+    client: object, session_factory: async_sessionmaker[AsyncSession], _artifacts_dir: Path
+) -> None:
+    """WR-01: the form hardcoded 30 even though the page read the stored threshold.
+
+    The stored threshold for the select's default category must be what the field
+    pre-fills, not a literal, or the control D-168 says "remembers it" does not.
+    """
+    default_category = settings_module.PRUNE_CATEGORY_LABELS[0][0]
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PREVIEW_PATH,
+        data={"category": default_category, "age_days": "7"},
+    )
+    assert response.status_code == 200
+    async with session_factory() as session:
+        assert await operations_config_repo.read_retention(session) == {default_category: 7}
+
+    page = await client.get("/settings")  # type: ignore[attr-defined]
+
+    assert page.status_code == 200
+    assert _prune_age_value(page.text) == 7
+
+
+async def test_the_age_field_falls_back_to_thirty_with_no_stored_threshold(
+    client: object,
+) -> None:
+    page = await client.get("/settings")  # type: ignore[attr-defined]
+
+    assert _prune_age_value(page.text) == 30
+
+
+async def test_an_unknown_retention_key_is_dropped_on_read(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """IN-05: a hand-edited/legacy `retention_json` key must not surface in the page."""
+    async with session_factory() as session:
+        session.add(
+            OperationsConfig(
+                id=operations_config_repo.SINGLETON_ID,
+                schedule_json={},
+                retention_json={"not_a_category": 5, "runs": 9},
+                updated_at=NOW,
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        assert await operations_config_repo.read_retention(session) == {"runs": 9}
+
+
+async def test_an_unknown_retention_category_is_refused_before_any_sql(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        with pytest.raises(ValueError):
+            await operations_config_repo.write_retention(session, "not_a_category", 30)
 
 
 async def test_a_first_retention_write_satisfies_both_not_null_columns(

@@ -266,7 +266,7 @@
       overlapped.
     </p>
     <div class="form-actions">
-      <button type="submit" id="schedule-submit">Save schedule</button>
+      <button type="submit" class="touch-target" id="schedule-submit">Save schedule</button>
     </div>
   </form>
 </section>
@@ -320,14 +320,14 @@
              name="age_days"
              min="1"
              step="1"
-             value="{{ prune_preview.age_days if prune_preview else 30 }}">
+             value="{{ prune_preview.age_days if prune_preview else prune_age_default }}">
       <p class="field-note">days</p>
     </div>
     <p class="settings-note" id="prune-stored-thresholds">
       {% if retention %}Stored thresholds: {% for key, age in retention.items() %}{{ key }} {{ age }} days{% if not loop.last %}, {% endif %}{% endfor %}.{% else %}No retention thresholds stored yet.{% endif %}
     </p>
     <div class="form-actions">
-      <button type="submit" id="prune-preview-submit">Preview deletion</button>
+      <button type="submit" class="touch-target" id="prune-preview-submit">Preview deletion</button>
     </div>
   </form>
 
@@ -353,7 +353,7 @@
       <input type="hidden" name="age_days" value="{{ prune_preview.age_days }}">
       <div class="form-actions">
         <span class="field-note" id="prune-confirm-note">This cannot be undone.</span>
-        <button type="submit" id="prune-confirm-submit">Delete permanently</button>
+        <button type="submit" class="touch-target" id="prune-confirm-submit">Delete permanently</button>
       </div>
     </form>
     {% endif %}
