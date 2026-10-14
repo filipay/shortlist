@@ -110,6 +110,12 @@ def test_the_tailor_system_prompt_is_a_frozen_constant_with_no_interpolation() -
     assert "TAILOR_SYSTEM_PROMPT = f" not in source
     assert "{" not in TAILOR_SYSTEM_PROMPT
     assert "%s" not in TAILOR_SYSTEM_PROMPT
+    # The exclusivity rule the live duplicate-target refusal (InvalidPatchError) broke.
+    assert "AT MOST ONE operation" in TAILOR_SYSTEM_PROMPT
+    assert "never named twice" in TAILOR_SYSTEM_PROMPT
+    # The never-invent sentences stay intact.
+    assert "NEVER invent" in TAILOR_SYSTEM_PROMPT
+    assert "never add a bullet" in TAILOR_SYSTEM_PROMPT
 
 
 # --- the one call, one listing shape -------------------------------------------

@@ -366,11 +366,58 @@ def test_a_bullet_op_on_a_non_bullet_fact_id_raises() -> None:
     assert _texts(plan, ENTRY) == ["Second", "Third"]
 
 
-def test_a_duplicate_target_raises_invalid_patch_error() -> None:
-    facts = _facts()
+def test_a_duplicate_bullet_target_is_a_schema_validation_error() -> None:
+    """The literal live repro id must fail the SCHEMA the V2 retry loop validates.
+
+    A ``ValidationError`` here (not a post-hoc ``InvalidPatchError``) is what lets
+    ``_complete_v2`` feed the offending id back and re-ask the model (D-140).
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        TailoringPatch(
+            listing_id=183,
+            ops=[
+                BulletWeight(op="reweight_bullet", bullet_id="bul/devdesk-2026/2", weight=1.0),
+                BulletMove(op="move_bullet", bullet_id="bul/devdesk-2026/2"),
+            ],
+        )
+
+    assert "bul/devdesk-2026/2" in str(excinfo.value), "the offending id is named"
+
+
+def test_a_duplicate_section_target_is_a_schema_validation_error() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        TailoringPatch(
+            listing_id=183,
+            ops=[
+                ReorderSection(op="reorder_section", section_id="sec.experience", order=1),
+                ReorderSection(op="reorder_section", section_id="sec.experience", order=2),
+            ],
+        )
+
+    assert "sec.experience" in str(excinfo.value), "the offending id is named"
+
+
+def test_two_operations_on_different_bullets_still_validate() -> None:
+    """Negative control: exclusivity is per-id, not one-op-per-patch."""
     patch = _patch(
         BulletWeight(op="reweight_bullet", bullet_id="bul/acme-ltd-2021/1", weight=1.5),
-        DemoteBullet(op="demote_bullet", bullet_id="bul/acme-ltd-2021/1", reason="r"),
+        DemoteBullet(op="demote_bullet", bullet_id="bul/acme-ltd-2021/2", reason="r"),
+    )
+
+    assert len(patch.ops) == 2
+
+
+def test_a_duplicate_target_raises_invalid_patch_error() -> None:
+    """Defence-in-depth: ``_validate_patch`` keeps rule 2 for a schema-bypassing patch."""
+    facts = _facts()
+    # ``model_construct`` skips the schema validator above, so this reaches
+    # ``_validate_patch`` exactly as a patch that bypassed the schema would.
+    patch = TailoringPatch.model_construct(
+        listing_id=1,
+        ops=[
+            BulletWeight(op="reweight_bullet", bullet_id="bul/acme-ltd-2021/1", weight=1.5),
+            DemoteBullet(op="demote_bullet", bullet_id="bul/acme-ltd-2021/1", reason="r"),
+        ],
     )
 
     with pytest.raises(InvalidPatchError):

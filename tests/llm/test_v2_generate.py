@@ -28,6 +28,7 @@ import pytest
 import structlog
 
 from app.config import settings
+from app.domain.cv import TailoringPatch
 from app.domain.schemas.probe import ProbeResult
 from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
@@ -63,6 +64,7 @@ class Recorder:
         session: tuple[int, Any] = (200, {"data": {"id": V2_SESSION_ID}}),
         generate: tuple[int, Any] = (200, {"data": {"text": VALID_TEXT}}),
         generate_body: Any = None,
+        generate_bodies: list[tuple[int, Any]] | None = None,
         error: BaseException | None = None,
         post_error: BaseException | None = None,
         generate_error: BaseException | None = None,
@@ -75,6 +77,8 @@ class Recorder:
         self._session = session
         self._generate = generate
         self._generate_body = generate_body
+        self._generate_bodies = generate_bodies
+        self._generate_index = 0
         self._error = error
         self._post_error = post_error
         self._generate_error = generate_error
@@ -126,6 +130,14 @@ class Recorder:
                     return FakeResponse(recorder._session[0], recorder._session[1])
                 if recorder._generate_error is not None:
                     raise recorder._generate_error
+                if recorder._generate_bodies is not None:
+                    # Per-call bodies: the nth generate POST gets the nth entry (the
+                    # last is repeated once exhausted). Lets a test script a corrected
+                    # second reply.
+                    index = min(recorder._generate_index, len(recorder._generate_bodies) - 1)
+                    recorder._generate_index += 1
+                    status, body = recorder._generate_bodies[index]
+                    return FakeResponse(status, body)
                 body = (
                     recorder._generate_body
                     if recorder._generate_body is not None
@@ -309,6 +321,47 @@ async def test_the_reissued_prompt_carries_the_first_validation_error(
     assert first_validation_message not in messages[0]
     for prompt in messages[1:]:
         assert first_validation_message in prompt
+
+
+DUPLICATE_TARGET_TEXT = json.dumps(
+    {
+        "listing_id": 183,
+        "ops": [
+            {"op": "reweight_bullet", "bullet_id": "bul/devdesk-2026/2", "weight": 1.0},
+            {"op": "move_bullet", "bullet_id": "bul/devdesk-2026/2"},
+        ],
+    }
+)
+CORRECTED_TEXT = json.dumps({"listing_id": 183, "ops": []})
+
+
+async def test_a_duplicate_target_patch_is_retried_inside_the_schema_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live 502 repro: a duplicate-target patch spends the schema budget.
+
+    `TailoringPatch`'s schema validator raises the `ValidationError` inside `_salvage`,
+    so the loop feeds the offending id back and re-issues `generate` — attempts 2,
+    not the single shot that escaped to `InvalidPatchError` before.
+    """
+    recorder = Recorder(
+        generate_bodies=[
+            (200, {"data": {"text": DUPLICATE_TARGET_TEXT}}),
+            (200, {"data": {"text": CORRECTED_TEXT}}),
+        ]
+    )
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(schema=TailoringPatch, system="s", parts=["p"])
+
+    generates = _generate_requests(recorder)
+    assert len(generates) == 2, "the first reply is retried, not one-shot refused"
+    assert result.ok is True
+    assert result.attempts == 2
+    assert isinstance(result.data, TailoringPatch)
+    # The re-issued prompt carries the offending id the validator named.
+    assert "bul/devdesk-2026/2" not in generates[0][2]["prompt"]
+    assert "bul/devdesk-2026/2" in generates[1][2]["prompt"]
 
 
 # --- CR-01: the transport-retry loop runs on V2 too (D-151) --------------------

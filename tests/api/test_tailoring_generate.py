@@ -311,15 +311,15 @@ async def test_an_invalid_patch_emits_exactly_one_refusal_warning(
 ) -> None:
     """The refusal is observable: one warning carrying the class and the offending id.
 
-    ``InvalidPatchError`` means the id-grounding step PASSED and the schema was valid
-    — the model produced a self-conflicting op set, which this phase refuses rather
-    than repairs (D-118). Without this event the live failure is undiagnosable, so the
+    The duplicate-target case is now caught by ``TailoringPatch``'s schema validator
+    (a ``ValidationError`` the V2 loop retries), so ``model_construct`` builds the
+    patch that BYPASSES that schema to exercise ``_validate_patch``'s retained rule 2
+    as defence-in-depth. Without this event the route refusal is undiagnosable, so the
     test pins the payload to the exception class AND the identifier from ``str(exc)``.
-    The literal repro is two mutating ops on the same real bullet id.
     """
     listing_id = await _seed_scored_listing(session_factory, title="Conflict Role")
     bullet_id = "bul/northwind-labs-2021/1"
-    _BACKEND.patch = TailoringPatch(
+    _BACKEND.patch = TailoringPatch.model_construct(
         listing_id=listing_id,
         ops=[
             BulletWeight(op="reweight_bullet", bullet_id=bullet_id, weight=1.0),

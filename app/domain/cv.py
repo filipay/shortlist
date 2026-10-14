@@ -549,6 +549,31 @@ class TailoringPatch(_Forbid):
         """Route ``suggestions`` through the shared list helper (G-07-7/IN-01)."""
         return coerce_mapping_list(value)
 
+    @model_validator(mode="after")
+    def _refuse_duplicate_targets(self) -> TailoringPatch:
+        """Mirror ``_validate_patch`` rule 2 in the SCHEMA (D-140).
+
+        A duplicate target belongs in the schema so a violating reply becomes a
+        ``ValidationError``, which the existing V2 client-side schema-retry loop
+        already feeds back to the model, instead of a post-hoc ``InvalidPatchError``
+        the model never gets a chance to correct. ``_validate_patch`` keeps its own
+        duplicate check as defence-in-depth for any patch that bypasses this schema.
+        """
+        seen_bullets: set[str] = set()
+        seen_sections: set[str] = set()
+        for op in self.ops:
+            bullet_id = getattr(op, "bullet_id", None)
+            if isinstance(bullet_id, str):
+                if bullet_id in seen_bullets:
+                    raise ValueError(f"two operations target bullet {bullet_id!r}")
+                seen_bullets.add(bullet_id)
+            section_id = getattr(op, "section_id", None)
+            if isinstance(section_id, str):
+                if section_id in seen_sections:
+                    raise ValueError(f"two operations target section {section_id!r}")
+                seen_sections.add(section_id)
+        return self
+
 
 class UnknownIdError(Exception):
     """A patch operation references an ID the fact store does not carry."""
