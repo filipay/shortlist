@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 12
 waived_count: 1
 fixed_count: 2
-total_count: 14
-last_updated: 2026-10-14T17:24:00.000Z
+total_count: 15
+last_updated: 2026-10-14T18:13:03.559Z
 ---
 
 # Broken Windows Ledger
@@ -29,6 +29,7 @@ last_updated: 2026-10-14T17:24:00.000Z
 | 12 | 07.1 | unrun-verify | tests/llm/test_live_structured_call.py |  | Operator-run live V2 generate lane (D-145) is deselected and cannot run without a running, authenticated opencode server. Its V2 wiring is asserted statically; the D-145 negative model check is PROVISIONAL and must be reconciled with the observed error shape on the first operator run. | open |  | 2026-10-13T15:09:53.609Z |  |
 | 13 | 07.1 | unrun-verify | tests/llm/test_contract_live.py |  | Operator live lane requires a running authenticated opencode server; unrun in this environment (carried from 07.1-05). Documented by 07.1-06's runbook. | open |  | 2026-10-13T15:29:15.232Z |  |
 | 14 | 08 | unrun-verify | Dockerfile | 59 | The build-time `ZoneInfo('Europe/Dublin')` tz proof (T-08-03 / RESEARCH Pitfall 7, assumption A1) could not be executed: Docker is absent from the agent sandbox. The image build is the operator's arming step (`docker compose build`); tzdata is the documented remedy if the assertion fails. | open |  | 2026-10-14T17:24:00.000Z |  |
+| 15 | 08 | unrun-verify | docs/runbook-responsive-ui.md |  | Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator. | open |  | 2026-10-14T18:13:03.559Z |  |
 
 ````json
 [
@@ -186,6 +187,30 @@ last_updated: 2026-10-14T17:24:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-13T15:29:15.232Z",
+    "resolved_at": null
+  },
+  {
+    "id": 14,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "Dockerfile",
+    "line": 59,
+    "description": "The build-time `ZoneInfo('Europe/Dublin')` tz proof (T-08-03 / RESEARCH Pitfall 7, assumption A1) could not be executed: Docker is absent from the agent sandbox. The image build is the operator's arming step (`docker compose build`); tzdata is the documented remedy if the assertion fails.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T17:24:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 15,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "docs/runbook-responsive-ui.md",
+    "line": null,
+    "description": "Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T18:13:03.559Z",
     "resolved_at": null
   }
 ]
