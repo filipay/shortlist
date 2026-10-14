@@ -405,7 +405,26 @@ Plans:
   3. User can check system and source health from a health endpoint surfaced in the UI, with source status surfaced from recorded stop signals rather than auto-escalation.
   4. The UI is usable from both a laptop and a phone browser, with all assets vendored locally and no CDN dependency.
 
-**Plans**: TBD
+**Plans:** 5 plans in 4 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — One new dependency behind a human gate: `apscheduler==3.11.3` pinned in both manifests, the two schedule knobs as configuration, and a build-time timezone proof (RUN-05)
+- [ ] 08-02-PLAN.md — The phone is a first-class journey target: the phone-breakpoint reflow authored in the Tailwind input and rebuilt, journey-table labels, admin scroll regions, 44×44px touch targets, and the operator checklist (UI-06)
+
+**Wave 2** *(blocked on 08-01)*
+
+- [ ] 08-03-PLAN.md — Tracer: the tool runs itself once a day — the singleton schedule row (migration 0008), the in-process scheduler over a persistent job store, the settings schedule form, the scheduled target with its overlap guard and durable skip record, and the boot reconciliation (RUN-05, PLAT-06)
+
+**Wave 3** *(blocked on 08-03)*
+
+- [ ] 08-04-PLAN.md — The tool tells the truth about itself: `/status` over one shared dependency builder, the run-derived source badge, the next-run/last-run/missed-run lines, and the read-only Adzuna verdict (RUN-06, RUN-07)
+
+**Wave 4** *(blocked on 08-03; also ordered after 08-04 by the shared seam-route guard)*
+
+- [ ] 08-05-PLAN.md — Payments on the retention debts: the per-category, per-threshold manual prune with its preview, confirm, audit line, four hard guards, and the snapshotted stale-listing hard delete (RUN-07)
+
 **UI hint**: yes
 
 **Notes:** Scheduling is deliberately late — manual "run now" is the right trigger until the pipeline is trustworthy. The Adzuna adapter (v2, SRC-11) remains a contingent hedge: promote it here only if the Phase 1 probe verdict says LinkedIn/Indeed do not survive. "Also seen on", export, and batched notification are v2 and out of this phase's requirement scope.
@@ -425,7 +444,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
 | 6. Tailoring + Verification | 11/11 | Complete    | 2026-10-14 |
 | 7. Assisted Apply + Tracker | 14/14 | Complete    | 2026-10-12 |
-| 8. Operations + Polish | 0/0 | Not started | - |
+| 8. Operations + Polish | 0/5 | Planned | - |
 
 ---
 *Roadmap created: 2026-09-15 from `research/SUMMARY.md` §Implications for Roadmap and `research/ARCHITECTURE.md` §14.3. Coverage: 74/74 v1 requirements mapped.*

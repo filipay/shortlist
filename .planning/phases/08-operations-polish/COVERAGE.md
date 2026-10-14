@@ -1,0 +1,1 @@
+No external API integration: Phase 8 adds no external API or service client — in-process APScheduler, a DB-only HTML page, a manual prune over own rows, and CSS. The existing opencode client is unchanged.
