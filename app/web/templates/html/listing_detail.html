@@ -60,6 +60,7 @@
 {% set sub_scores = dict(row.factor_scores) %}
 <section>
   <h3>Factor breakdown</h3>
+  <div class="table-scroll" role="region" tabindex="0" aria-label="Fit breakdown">
   <table class="factor-table">
     <thead>
       <tr>
@@ -82,6 +83,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% else %}
 <p class="detail-not-ranked">

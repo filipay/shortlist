@@ -40,6 +40,7 @@
     rows behind it appear here.
   </p>
   {% else %}
+  <div class="table-scroll" role="region" tabindex="0" aria-label="Merges">
   <table class="merges-table">
     <thead>
       <tr>
@@ -104,6 +105,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endmacro %}

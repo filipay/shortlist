@@ -24,6 +24,7 @@
     <a href="/">queue</a> to start one.
   </p>
   {% else %}
+  <div class="table-scroll" role="region" tabindex="0" aria-label="Run history">
   <table class="runs-table">
     <thead>
       <tr>
@@ -93,6 +94,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endmacro %}
