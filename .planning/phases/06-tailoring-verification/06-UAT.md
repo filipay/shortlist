@@ -1,20 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 06-tailoring-verification
 source: [06-05-SUMMARY.md, 06-06-SUMMARY.md, 06-07-SUMMARY.md, 06-VERIFICATION.md, 06-REVIEW.md]
 started: 2026-09-24T23:28:14Z
-updated: 2026-10-13T08:05:00Z
+updated: 2026-10-14T13:00:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: Fail-vs-warn legibility
-expected: |
-  On the tailoring surface, a failing verification check is visually distinct from a
-  warning, and the blocked state reads as a reviewable outcome with a clear recovery path
-  rather than an opaque dead end.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -24,14 +18,14 @@ result: pass (2026-10-13) — `docker compose build` succeeded (477.5s; Tectonic
 
 ### 2. Fail-vs-warn legibility
 expected: On the tailoring surface, a failing verification check is visually distinct from a warning, and the blocked state reads as a reviewable outcome with a clear recovery path rather than an opaque dead end.
-result: [pending]
+result: pass (2026-10-14) — operator confirmed the blocked panel renders as specified against a seeded blocked artifact (listing 189, seed removed afterwards). The three rows were `pass` (green), `warn` (amber) and `fail` (red) — visibly distinct, confirmed against `.req-met/.req-partial/.req-gap` = `--color-success/--color-warning/--color-danger` in `static/vendor/app.css`. The panel names the ids and the offending values (`bullet-3`; `req-2`, `req-5`), states "The only recovery is to generate a fresh tailoring and review it again", offers no corrective control, and a blocked attempt carries no download link. Warns stayed non-blocking ("Warnings never block a download; only a failing check does.").
 
 ## Summary
 
 total: 2
-passed: 1
+passed: 2
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
