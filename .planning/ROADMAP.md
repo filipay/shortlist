@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: LLM Port + Structured Output** - Any schema-constrained call works end to end through opencode, with the contract pinned (completed 2026-09-21)
 - [x] **Phase 4: CV Fact Store + LaTeX Compile Spike** - The structured CV reproduces the base CV and Tectonic compiles the real `.tex` (runs in parallel with Phases 2–3) (completed 2026-09-21)
 - [x] **Phase 5: Ranking — CORE VALUE** - One ranked, explained queue with per-factor breakdown and named gaps (completed 2026-09-24)
-- [ ] **Phase 6: Tailoring + Verification** - A tailored, verified CV PDF, previewable and downloadable
+- [x] **Phase 6: Tailoring + Verification** - A tailored, verified CV PDF, previewable and downloadable (completed 2026-10-14)
 - [x] **Phase 7: Assisted Apply + Tracker** - Apply package plus application tracking linked to the exact verified artefact (completed 2026-10-12)
 - [ ] **Phase 8: Operations + Polish** - Scheduled runs, source health in the UI, responsive interface
 
@@ -268,7 +268,7 @@ Plans:
   3. The verification gate checks the compiled PDF for unsupported content, including metric containment (`_novel_numbers`-equivalent, with date-like-number exclusion).
   4. A CV that fails verification is blocked: it cannot be downloaded or attached, and the tool never auto-repairs it ("repair pressure is fabrication pressure").
 
-**Plans:** 11/11 plans executed (10 executed; 1 planned gap-closure), plus an unplanned round-5 gap-closure commit series (`da06178`/`3b3842b`/`5a667ec`) verified 2026-09-30
+**Plans:** 11/11 plans complete
 
 Plans:
 **Wave 1**
@@ -423,7 +423,7 @@ Note: Phase 4 executes **in parallel** with Phases 2–3, not after Phase 3.
 | 3. LLM Port + Structured Output | 10/10 | Complete    | 2026-09-21 |
 | 4. CV Fact Store + LaTeX Compile Spike | 5/5 | Complete    | 2026-09-21 |
 | 5. Ranking — CORE VALUE | 12/12 | Complete    | 2026-09-24 |
-| 6. Tailoring + Verification | 11/11 | In Progress|  |
+| 6. Tailoring + Verification | 11/11 | Complete    | 2026-10-14 |
 | 7. Assisted Apply + Tracker | 14/14 | Complete    | 2026-10-12 |
 | 8. Operations + Polish | 0/0 | Not started | - |
 

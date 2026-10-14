@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 6
-current_phase_name: Tailoring + Verification
+current_phase: 08
+current_phase_name: Operations + Polish
 status: planning
-stopped_at: Phase 07.1 complete, ready to plan Phase 6
-last_updated: "2026-10-14T12:08:47.780Z"
+stopped_at: Phases 1-7 complete (incl. inserted 07.1) — next is Phase 8 (Operations + Polish)
+last_updated: "2026-10-14T14:05:11.744Z"
 last_activity: 2026-10-14
-last_activity_desc: Phase 07.1 complete, transitioned to Phase 6
-state_head: cdbb1c63b23ef24fc227b8d8a0388e4b91aa7450
+last_activity_desc: Phase 06 complete; Phases 1-7 all complete — next is Phase 8
+state_head: 35fdb6ad6e3eed6f33486ea8ed7318567b9c0926
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 76
   completed_plans: 76
-  percent: 11
+  percent: 22
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-10-14)
 
 ## Current Position
 
-Phase: 6 — Tailoring + Verification
+Phase: 08 — Operations + Polish
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-14 — Phase 07.1 complete, transitioned to Phase 6
+Last activity: 2026-10-14 — Phase 06 complete; Phases 1-7 all complete — next is Phase 8
 
-Progress: [█░░░░░░░░░] 11%
+Progress: [██░░░░░░░░] 22%
 
 ## Performance Metrics
 
@@ -250,6 +250,7 @@ Recent decisions affecting current work:
 - [Phase 07.1]: live-found — a 401 on `/api/info` classifies `unauthenticated` and never falls through to the dead V1 discovery path, so a stale/missing password is named instead of surfacing as a `JSONDecodeError` (IN-02, `20a2651`)
 - [Phase 07.1]: auth is **required in practice** on opencode 2.0.26 — `serve` prints a freshly generated `server password` on every start and offers no unsecured mode (no CLI password flag), so restarting the server invalidates the value in `.env`; the earlier "auth is opt-in" narrowing (D-136, `e57a426`) was falsified against the live pinned release and corrected back
 - [Phase 07.1]: tailoring refusals are made schema-visible AND retriable — the at-most-one-operation-per-`bullet_id` rule lives in `TAILOR_SYSTEM_PROMPT` and in a `TailoringPatch` `model_validator`, so the V2 schema-retry loop can correct a duplicate-target reply instead of failing one-shot after `_validate_patch` (`3b74bff`); drafting's array-vs-object prompt contradiction fixed in `af17f8e`
+- [Phase 06]: the verification content fingerprint must be computed over the *declared* `covered_files` list — a report whose frontmatter lists N files but whose digest was computed over N-1 reads `stale` forever and blocks the UAT gate. When a freshly written report still reads `stale`, recompute with `computeCoveredDigest` (exported by `gsd-core/bin/lib/verification.cjs`) over the declared list and correct the frontmatter (done for phase 06 in `35fdb6a`)
 
 ### Pending Todos
 
@@ -258,14 +259,14 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 1] Blocking unknown #2 — scrape survival at personal scale is unmeasured; the Phase 1 probe answers it and re-ranks Adzuna from hedge to primary if LinkedIn/Indeed fail.
-- [Phase 4] Blocking unknown #1 — the real `.tex` is **not in this repo**; `.tex → cv.yaml` import cost and Tectonic bundle coverage remain unmeasured **for the real document**. Stays **open**, now with a named trigger: place the document at `cv/base.tex`, run `bash scripts/cv-tex-spike.sh`, and record the counts in `docs/probes/2026-09-21-cv-tex-spike.md` (`cv-tex-spike`), whose `UNRESOLVED` section names the exact checks (real-document decomposition, per-package bundle search, the engine's own flag names). Hard gate before Phase 6 is estimated.
+- [Phase 4] Blocking unknown #1 — the real `.tex` is **not in this repo**; `.tex → cv.yaml` import cost and Tectonic bundle coverage remain unmeasured **for the real document**. Stays **open**, now with a named trigger: place the document at `cv/base.tex`, run `bash scripts/cv-tex-spike.sh`, and record the counts in `docs/probes/2026-09-21-cv-tex-spike.md` (`cv-tex-spike`), whose `UNRESOLVED` section names the exact checks (real-document decomposition, per-package bundle search, the engine's own flag names). Hard gate before Phase 6 was estimated — Phase 6 nonetheless completed 2026-10-14 (its real-engine `-m latex` lane ran against the pinned Tectonic inside the container), but this stays open for the *real* document.
 - [Phase 3] Advisory, non-blocking — session-handshake failures report `attempts=0` and drop the resolved D-12 identity; the generic failure handler persists a raw exception class name as `error_kind`, outside the D-52 taxonomy; the differential cause can over-attribute on an empty `parts` list. Code review 03: 0 Critical / 3 Warning / 5 Info (`/gsd-code-review 03 --fix`).
 - [Phase 3] Security enforcement is enabled but no `03-SECURITY.md` exists — run `/gsd-secure-phase 03` before advancing if the threat model matters here.
 - [Phase 5] No real CV fact store exists yet, so a ranking pass takes the documented `fact_store_absent` skip — the ranking path is exercised end-to-end only once a `cv.yaml` is supplied. The skip and the exact loader path are now disclosed on `/settings`, the queue and `/health` (05-10), so this reads as a missing prerequisite, not a silent failure.
-- [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 6 reuses the action-surface pattern.
+- [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 8 reuses the action-surface pattern.
 - [Phase 7] §13a decision-coverage override (accepted 2026-10-06, user "proceed anyway"; **re-confirmed 2026-10-12**, user "proceed anyway", during the re-verification gap round 07-13/07-14) — the plan-phase decision-coverage gate found CONTEXT decisions without a literal `D-NN:` citation in a planned surface: originally 9 (D-120, D-126, D-128, D-129, D-130, D-131, D-132, D-133, D-134), now **8** — D-132 is newly cited by `07-13-PLAN.md` (`:26`, `:29`, `:59`, `:145`), leaving D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 uncovered. All are already implemented and verified by the executed 07-01..07-05 plans and confirmed implemented by plan-checker review; the gap is citation-only (the plans were authored 2026-09-30 before the citation convention). `verify-phase 07` must re-surface this override. Do not treat as unplanned work.
 - [Phase 7] **RESOLVED 2026-10-14** (was the deferred Phase-07 drafting limitation, G-07-7) — `Draft answers` now works live, confirmed by the operator. `af17f8e` removed the array-vs-object contradiction in the drafting prompt and `3b74bff` made the duplicate-target tailoring patch schema-visible and retriable. Original cause for the record: the provider emitted a list-typed field in a shape `unwrap_single_key_mapping` did not recognise, so the response was refused (`drafting_failed`). Closed as `G-07.1-1`/`G-07.1-2` in `07.1-UAT.md`; historical entries remain in `07-UAT.md`, `README.md` → Known limitations and `deferred-items.md`.
-- [Phase 7] Non-blocking WARNING (code review + verifier) — **WR-02**: `unwrap_single_key_mapping` bounds only the *direct* self-reference, so a two-node mutual `{"item": …}` cycle loops while its docstring claims self-reference "cannot hang" (CONVENTIONS rule 6 — false guarantee in prose). Not wire-reachable (JSON-derived payloads cannot be cyclic). `07-REVIEW.md` is `issues_found`: 0 Critical / 0 High / 1 Medium (WR-02) / 2 Low (IN-03, IN-04) — run `/gsd-code-review 07 --fix` if it matters before Phase 6 reuses the helper.
+- [Phase 7] Non-blocking WARNING (code review + verifier) — **WR-02**: `unwrap_single_key_mapping` bounds only the *direct* self-reference, so a two-node mutual `{"item": …}` cycle loops while its docstring claims self-reference "cannot hang" (CONVENTIONS rule 6 — false guarantee in prose). Not wire-reachable (JSON-derived payloads cannot be cyclic). `07-REVIEW.md` is `issues_found`: 0 Critical / 0 High / 1 Medium (WR-02) / 2 Low (IN-03, IN-04) — run `/gsd-code-review 07 --fix` if it matters before Phase 8 reuses the helper.
 
 ### Quick Tasks Completed
 
@@ -291,6 +292,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T12:15:00.000Z
-Stopped at: Phase 07.1 complete, ready to plan Phase 6
+Last session: 2026-10-14T14:10:00.000Z
+Stopped at: Phase 06 complete; Phases 1-7 all complete — next is Phase 8 (Operations + Polish)
 Resume file: None

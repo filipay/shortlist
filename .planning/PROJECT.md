@@ -171,4 +171,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-14 after Phase 07.1 (opencode V2 HTTP API migration) — the LLM backend speaks opencode 2.0.26's V2 API with runtime surface detection, so ranking, tailoring, screening-answer drafting and CV fact extraction work end-to-end again (confirmed live on the pinned server)*
+*Last updated: 2026-10-14 after Phase 6 (Tailoring + Verification) — the tail of the pipeline is closed: a tailored CV is generated as a typed patch over enumerated IDs, previewed with its change log before compiling, and gated on the compiled PDF — a CV that fails verification is blocked outright, never auto-repaired. Phases 1-7 (including the inserted 07.1 opencode V2 migration) are complete; Phase 8 (Operations + Polish) is next*
