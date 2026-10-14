@@ -42,7 +42,7 @@ from app.db.models import (
     Source,
     SourceRequestLog,
 )
-from app.db.repositories import cv_artifact_repo
+from app.db.repositories import cv_artifact_repo, retention_repo
 from app.db.repositories.retention_repo import (
     PRUNE_CATEGORIES,
     RUN_FLOOR,
@@ -96,7 +96,7 @@ async def _seed_listing(
 async def _insert_artifact(
     session_factory: async_sessionmaker[AsyncSession],
     *,
-    listing_id: int,
+    listing_id: int | None,
     created_at: datetime,
     status: str = "ok",
     tex_path: str | None = None,
@@ -130,10 +130,7 @@ async def _count(session_factory: async_sessionmaker[AsyncSession], table: str) 
 
     async with session_factory() as session:
         return int(
-            await session.scalar(
-                select(func.count()).select_from(Base.metadata.tables[table])
-            )
-            or 0
+            await session.scalar(select(func.count()).select_from(Base.metadata.tables[table])) or 0
         )
 
 
@@ -328,7 +325,9 @@ async def test_a_stored_path_outside_the_artifacts_directory_is_not_measured(
     outside.write_bytes(b"x" * 4096)
     listing = await _seed_listing(session_factory)
     await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
-    await _insert_artifact(session_factory, listing_id=listing, created_at=OLD, pdf_path=str(outside))
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, pdf_path=str(outside)
+    )
 
     async with session_factory() as session:
         result = await preview(
@@ -378,9 +377,7 @@ async def test_the_floor_protects_the_newest_runs_whatever_their_age(
     await _seed_runs(session_factory, count=3)
 
     async with session_factory() as session:
-        result = await preview(
-            session, category="runs", age_days=1, artifacts_root=artifacts_root
-        )
+        result = await preview(session, category="runs", age_days=1, artifacts_root=artifacts_root)
 
     assert result.count == 0
 
@@ -391,9 +388,7 @@ async def test_the_floor_protects_inside_runs_while_an_outer_run_is_selected(
     ids = await _seed_runs(session_factory, count=RUN_FLOOR + 5)
 
     async with session_factory() as session:
-        result = await preview(
-            session, category="runs", age_days=1, artifacts_root=artifacts_root
-        )
+        result = await preview(session, category="runs", age_days=1, artifacts_root=artifacts_root)
         assert result.count == 5
         count, _paths = await delete(session, category="runs", age_days=1)
         await session.commit()
@@ -412,16 +407,12 @@ async def test_a_run_with_undeletable_listing_events_is_excluded_from_the_select
     listing = await _seed_listing(session_factory, index=9)
     async with session_factory() as session:
         session.add(
-            ListingEvent(
-                listing_id=listing, event_type="view", occurred_at=NOW, run_id=ids[0]
-            )
+            ListingEvent(listing_id=listing, event_type="view", occurred_at=NOW, run_id=ids[0])
         )
         await session.commit()
 
     async with session_factory() as session:
-        result = await preview(
-            session, category="runs", age_days=1, artifacts_root=artifacts_root
-        )
+        result = await preview(session, category="runs", age_days=1, artifacts_root=artifacts_root)
         assert result.count == 4
         count, _paths = await delete(session, category="runs", age_days=1)
         await session.commit()
@@ -607,10 +598,33 @@ async def test_the_listing_selection_excludes_applications_artifacts_and_both_du
         result = await preview(
             session, category="listings", age_days=1, artifacts_root=artifacts_root
         )
+        selected = await retention_repo._select_ids(
+            session, "listings", retention_repo._cutoff(1, None)
+        )
 
     # `clean` and `eventful` only: the eventful one is NOT excluded, which is the
-    # carve-out; the application, the artifact and BOTH dupe sides are.
+    # carve-out; the application, the artifact and BOTH dupe sides are. Asserting the
+    # identities (not just the count) is what the test name claims.
+    assert set(selected) == {corpus["clean"], corpus["eventful"]}
     assert result.count == 2
+
+
+async def test_an_ok_artifact_with_a_null_listing_id_is_prunable(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """IN-02: `NULL = NULL` is NULL in SQL, so guard 4 never fired on an orphan.
+
+    An `ok` artifact with a NULL `listing_id` has no listing to protect; without the
+    explicit `listing_id.is_(None)` disjunct it was never selected and leaked forever.
+    """
+    await _insert_artifact(session_factory, listing_id=None, created_at=OLD)
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="artifacts", age_days=30, artifacts_root=artifacts_root
+        )
+
+    assert result.count == 1
 
 
 async def test_a_stale_listing_prune_deletes_its_children_and_its_events(
@@ -702,9 +716,7 @@ async def test_the_listing_prune_leaves_the_append_only_trigger_armed_with_its_n
     # 2) An ordinary delete of a listing event is refused again (the trigger is live).
     with pytest.raises(DatabaseError):
         async with session_factory() as session:
-            await session.execute(
-                sa_delete(ListingEvent).where(ListingEvent.listing_id == other)
-            )
+            await session.execute(sa_delete(ListingEvent).where(ListingEvent.listing_id == other))
             await session.commit()
 
     # Negative control: with the trigger suspended the same delete SUCCEEDS, so the
@@ -728,10 +740,7 @@ async def _seed_guard_corpus(
     runs = await _seed_runs(session_factory, count=RUN_FLOOR + 5)
     async with session_factory() as session:
         session.add_all(
-            [
-                LlmCall(run_id=run_id, purpose="rank", status="ok", created_at=NOW)
-                for run_id in runs
-            ]
+            [LlmCall(run_id=run_id, purpose="rank", status="ok", created_at=NOW) for run_id in runs]
         )
         await session.commit()
 
@@ -743,7 +752,10 @@ async def _seed_guard_corpus(
     async with session_factory() as session:
         session.add(
             Application(
-                listing_id=listing, status="applied", cv_artifact_id=older, created_at=NOW,
+                listing_id=listing,
+                status="applied",
+                cv_artifact_id=older,
+                created_at=NOW,
                 updated_at=NOW,
             )
         )

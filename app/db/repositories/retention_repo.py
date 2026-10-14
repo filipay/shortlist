@@ -131,7 +131,7 @@ def _human_size(size: int) -> str:
         if value < 1024.0 or unit == "GB":
             if unit == "B":
                 return str(int(value)) + " B"
-            return "{:.1f}".format(value) + " " + unit
+            return f"{value:.1f}" + " " + unit
     return str(int(value)) + " B"  # pragma: no cover — the loop always returns
 
 
@@ -189,6 +189,12 @@ def _select_artifacts(cutoff: datetime) -> Any:
     `ORDER BY created_at DESC, id DESC` restricted to `compile_status = 'ok'`, so the
     prune can never delete an artifact the listing page is showing. A `blocked` or
     `failed` row is not a successful artifact and so is not guarded by this one.
+
+    An `ok` row with a NULL `listing_id` (an orphan) has no listing to protect, so
+    guard 4 cannot apply to it: the correlated subquery compares
+    `newer.listing_id == CvArtifact.listing_id`, and `NULL = NULL` is NULL in SQL,
+    so without the explicit `listing_id.is_(None)` disjunct such a row would never be
+    selected and would leak forever (IN-02). It is therefore eligible on age alone.
     """
     newer = aliased(CvArtifact)
     newer_ok = (
@@ -206,13 +212,15 @@ def _select_artifacts(cutoff: datetime) -> Any:
         )
         .exists()
     )
-    app_linked = (
-        select(Application.id).where(Application.cv_artifact_id == CvArtifact.id).exists()
-    )
+    app_linked = select(Application.id).where(Application.cv_artifact_id == CvArtifact.id).exists()
     return select(CvArtifact.id).where(
         CvArtifact.created_at < cutoff,
         ~app_linked,
-        or_(CvArtifact.compile_status != "ok", newer_ok),
+        or_(
+            CvArtifact.listing_id.is_(None),
+            CvArtifact.compile_status != "ok",
+            newer_ok,
+        ),
     )
 
 
@@ -333,7 +341,15 @@ def _select_listings(cutoff: datetime) -> Any:
 
 
 async def _paths_for_listings(session: AsyncSession, ids: list[int]) -> list[str]:
-    """The `.tex`/`.pdf` paths of the artifact rows about to be deleted as children."""
+    """The `.tex`/`.pdf` paths of the artifact rows about to be deleted as children.
+
+    Always `[]` by construction: `_select_listings` excludes every listing that has
+    any `cv_artifacts` row (`~artifact_linked`), so no id handed here can be the
+    `listing_id` of an artifact. Kept (and paired with the defensive `CvArtifact`
+    delete in `_delete_listings`) rather than dropped, so a later relaxation of that
+    guard cannot silently orphan files: the paths would then be returned and
+    unlinked. Do not "fix" the empty result by relaxing the guard.
+    """
     if not ids:
         return []
     rows = await session.execute(
@@ -364,19 +380,18 @@ async def _delete_listings(session: AsyncSession, ids: list[int]) -> None:
     """
     await session.execute(sa_delete(Score).where(Score.listing_id.in_(ids)))
     await session.execute(sa_delete(ListingSource).where(ListingSource.listing_id.in_(ids)))
-    await session.execute(
-        sa_delete(ListingExclusion).where(ListingExclusion.listing_id.in_(ids))
-    )
+    await session.execute(sa_delete(ListingExclusion).where(ListingExclusion.listing_id.in_(ids)))
     await session.execute(
         sa_delete(ListingDupe).where(
             or_(ListingDupe.listing_id.in_(ids), ListingDupe.dup_listing_id.in_(ids))
         )
     )
+    # Defensive: `_select_listings` excludes any listing with an artifact row, so
+    # this matches zero rows today. Kept so a future relaxation of that guard cannot
+    # leave orphaned artifact rows (paired with `_paths_for_listings`).
     await session.execute(sa_delete(CvArtifact).where(CvArtifact.listing_id.in_(ids)))
     await session.execute(sa_delete(CvDraft).where(CvDraft.listing_id.in_(ids)))
-    await session.execute(
-        sa_delete(ScreeningDraft).where(ScreeningDraft.listing_id.in_(ids))
-    )
+    await session.execute(sa_delete(ScreeningDraft).where(ScreeningDraft.listing_id.in_(ids)))
     await session.execute(sa_delete(ListingEvent).where(ListingEvent.listing_id.in_(ids)))
     await session.execute(sa_delete(Listing).where(Listing.id.in_(ids)))
 

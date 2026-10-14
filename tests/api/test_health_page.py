@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
@@ -32,7 +33,6 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from zoneinfo import ZoneInfo
 
 from app.api.health_page import (
     HEALTH_PAGE_PATH,
@@ -166,9 +166,7 @@ async def page_env(
 async def test_the_page_renders_the_four_dependency_rows(
     page_env: PageEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "cv.yaml").write_text(
-        CV_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    (tmp_path / "cv.yaml").write_text(CV_FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(settings, "cv_dir", str(tmp_path))
     page_env.backend.outcome = ProbeOutcome(reachable=True, version="1.2.3")
 
@@ -206,7 +204,8 @@ async def test_the_health_page_is_surfaced_in_the_nav(page_env: PageEnv) -> None
 
     page = await page_env.client.get(HEALTH_PAGE_PATH)
     assert re.search(
-        r'<a class="nav-link nav-current touch-target" href="/status" aria-current="page">Health</a>',
+        r'<a class="nav-link nav-current touch-target" href="/status" '
+        r'aria-current="page">Health</a>',
         page.text,
     ), "the Health nav entry must read as the current page on /status"
 
@@ -335,9 +334,7 @@ async def _write_skip_notice(
 
 def _line(text: str, element_id: str) -> str:
     """The single element's own markup, so an assertion cannot read another line's."""
-    match = re.search(
-        rf'<p class="ranking-strip" id="{element_id}">.*?</p>', text, re.DOTALL
-    )
+    match = re.search(rf'<p class="ranking-strip" id="{element_id}">.*?</p>', text, re.DOTALL)
     assert match is not None, f"the page rendered no #{element_id}"
     return match.group(0)
 
@@ -346,9 +343,7 @@ async def test_the_next_run_line_renders_a_countdown_for_a_registered_job(
     page_env: PageEnv,
 ) -> None:
     await _write_schedule(page_env.session_factory, enabled=True, hour=7, minute=0)
-    status = await scheduler_module.reconcile(
-        page_env.scheduler, page_env.session_factory
-    )
+    status = await scheduler_module.reconcile(page_env.scheduler, page_env.session_factory)
     assert status == "registered"
 
     text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
@@ -526,9 +521,7 @@ async def _seed_board_runs(
                     started_at=datetime(2026, 9, 1 + index, 6, 0, tzinfo=UTC),
                     finished_at=datetime(2026, 9, 1 + index, 6, 5, tzinfo=UTC),
                     fetched_count=10,
-                    source_counts_json={
-                        board: {"status": status, "fetched": 10, "created": 10}
-                    },
+                    source_counts_json={board: {"status": status, "fetched": 10, "created": 10}},
                 )
             )
         await session.commit()
@@ -547,11 +540,7 @@ async def test_the_verdict_line_carries_the_recorded_fraction(page_env: PageEnv)
     async with page_env.session_factory() as session:
         evidence = await source_repo.board_evidence(session, "indeed")
     assert evidence is not None
-    p1 = next(
-        result
-        for result in adzuna_promotion_condition(evidence)
-        if result.signal == "P-1"
-    )
+    p1 = next(result for result in adzuna_promotion_condition(evidence) if result.signal == "P-1")
     assert p1.status == "fail"
 
     line = _line(text, "adzuna-verdict-indeed")
@@ -563,13 +552,9 @@ async def test_the_verdict_line_carries_the_recorded_fraction(page_env: PageEnv)
 
 
 async def test_a_not_met_window_renders_the_not_met_wording(page_env: PageEnv) -> None:
-    await _seed_board_runs(
-        page_env.session_factory, board="indeed", statuses=["ok"] * 5
-    )
+    await _seed_board_runs(page_env.session_factory, board="indeed", statuses=["ok"] * 5)
 
-    line = _line(
-        (await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed"
-    )
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed")
 
     assert "0/5 blocked runs" in line
     assert "condition not met" in line
@@ -578,9 +563,7 @@ async def test_a_not_met_window_renders_the_not_met_wording(page_env: PageEnv) -
 async def test_a_short_window_renders_no_verdict_and_no_number(page_env: PageEnv) -> None:
     await _seed_board_runs(page_env.session_factory, board="indeed", statuses=["blocked"])
 
-    line = _line(
-        (await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed"
-    )
+    line = _line((await page_env.client.get(HEALTH_PAGE_PATH)).text, "adzuna-verdict-indeed")
 
     assert "no verdict recorded yet" in line
     sentence = re.search(r'<span class="[^"]*">(.*?)</span>', line, re.DOTALL).group(1)
@@ -588,14 +571,10 @@ async def test_a_short_window_renders_no_verdict_and_no_number(page_env: PageEnv
 
 
 async def test_the_verdict_region_offers_no_control(page_env: PageEnv) -> None:
-    await _seed_board_runs(
-        page_env.session_factory, board="indeed", statuses=["blocked"] * 4
-    )
+    await _seed_board_runs(page_env.session_factory, board="indeed", statuses=["blocked"] * 4)
 
     text = (await page_env.client.get(HEALTH_PAGE_PATH)).text
-    region = re.search(
-        r'<section id="adzuna-verdict".*?</section>', text, re.DOTALL
-    ).group(0)
+    region = re.search(r'<section id="adzuna-verdict".*?</section>', text, re.DOTALL).group(0)
 
     assert "<form" not in region
     assert "<button" not in region
@@ -617,9 +596,7 @@ async def test_the_absent_verdict_region_still_says_so(page_env: PageEnv) -> Non
 async def test_the_verdict_read_issues_no_board_request(
     page_env: PageEnv,
 ) -> None:
-    await _seed_board_runs(
-        page_env.session_factory, board="indeed", statuses=["blocked"] * 5
-    )
+    await _seed_board_runs(page_env.session_factory, board="indeed", statuses=["blocked"] * 5)
 
     response = await page_env.client.get(HEALTH_PAGE_PATH)
 

@@ -28,6 +28,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OperationsConfig
+from app.db.repositories import retention_repo
 
 #: The pinned singleton row id (mirrors ``ck_operations_config_singleton``).
 SINGLETON_ID = 1
@@ -49,9 +50,7 @@ class ScheduleConfig:
 
 #: The fresh-install schedule. Disabled on purpose: scheduling is deliberately
 #: late and an off default is the safe state.
-DEFAULT_SCHEDULE = ScheduleConfig(
-    enabled=False, hour=7, minute=0, timezone="Europe/Dublin"
-)
+DEFAULT_SCHEDULE = ScheduleConfig(enabled=False, hour=7, minute=0, timezone="Europe/Dublin")
 
 
 def _schedule_payload(schedule: ScheduleConfig) -> dict[str, Any]:
@@ -129,8 +128,7 @@ async def write_schedule(
         raise ValueError(f"minute must be an integer in 0..59, got {schedule.minute!r}")
     if schedule.timezone not in ALLOWED_TIMEZONES:
         raise ValueError(
-            f"unknown timezone {schedule.timezone!r}; "
-            f"expected one of {sorted(ALLOWED_TIMEZONES)}"
+            f"unknown timezone {schedule.timezone!r}; expected one of {sorted(ALLOWED_TIMEZONES)}"
         )
 
     payload = _schedule_payload(schedule)
@@ -165,12 +163,19 @@ def _parse_retention(stored: Any) -> dict[str, int]:
     Per-entry rather than whole-document (unlike the schedule): a half-written
     threshold is simply absent, and a category with no stored age still has a default
     at the form, so no state is lost that a malformed document could hide.
+
+    Keys are narrowed to `retention_repo.PRUNE_CATEGORIES` (IN-05): a hand-edited or
+    legacy `retention_json` can otherwise surface an arbitrary key in the "Stored
+    thresholds" line. The write path validates the same set, so a value that survives
+    the read is one the prune can actually act on.
     """
     if not isinstance(stored, Mapping):
         return {}
     parsed: dict[str, int] = {}
     for key, value in stored.items():
         if not isinstance(key, str) or isinstance(value, bool):
+            continue
+        if key not in retention_repo.PRUNE_CATEGORIES:
             continue
         try:
             age = int(value)
@@ -202,8 +207,10 @@ async def write_retention(
 ) -> dict[str, int]:
     """Merge one category's age threshold into the stored retention payload. Never commits.
 
-    Raises `ValueError` before any SQL for a non-string category or a non-positive
-    age — a zero/negative threshold would make every record eligible.
+    Raises `ValueError` before any SQL for a category outside
+    `retention_repo.PRUNE_CATEGORIES` or a non-positive age — a zero/negative
+    threshold would make every record eligible, and an unknown category has no
+    prune behind it.
 
     The singleton row has TWO NOT NULL payload columns and is created lazily, so a
     create from this writer must supply ``schedule_json`` too: the *stored* schedule
@@ -213,8 +220,10 @@ async def write_retention(
     fresh install. Symmetrically the ``set_`` clause carries ONLY ``retention_json``
     and ``updated_at``, so a retention write can never clobber a stored schedule.
     """
-    if not isinstance(category, str) or not category:
-        raise ValueError("category must be a non-empty string")
+    if not isinstance(category, str) or category not in retention_repo.PRUNE_CATEGORIES:
+        raise ValueError(
+            f"category must be one of {sorted(retention_repo.PRUNE_CATEGORIES)}, got {category!r}"
+        )
     if isinstance(age_days, bool) or not isinstance(age_days, int) or age_days <= 0:
         raise ValueError("age_days must be a positive integer")
 
