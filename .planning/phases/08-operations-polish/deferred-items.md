@@ -24,3 +24,23 @@ sandbox is glibc. `.venv/bin/python` also resolves via a stale symlink to the sa
 Python 3.11. Verifications were therefore run with a working Python 3.11 interpreter
 (`/tmp/gsdvenv`) plus `PYTHONPATH`. No repo file depends on this; it only affects how the
 executor runs the suite here.
+
+## Resolved by plan 08-02
+
+The `test_the_committed_stylesheet_is_the_build_of_its_source` drift named above is now
+resolved: plan 08-02 rebuilt `static/vendor/app.css` from `assets/tailwind/input.css` with
+the pinned CLI (`tailwindcss@4.3.3`), and the byte-identity guard passes with the assertion
+**run**, not skipped.
+
+## `.planning/WINDOWS.md` ledger is inconsistent (blocks `windows append`)
+
+`gsd-tools windows append` refuses to write:
+
+`Error: Ledger counts disagree with entries: frontmatter open/waived/fixed/total=11/1/2/14 but entries yield 10/1/2/13.`
+
+The frontmatter `total_count: 14` (and `open_count: 11`) disagrees with the 13 rows present,
+so no new entry can be recorded. Pre-existing, unrelated to plan 08-02 (which introduces no
+defect of its own). The unrun operator verify for UI-06 that 08-02 would have recorded is
+therefore logged in `08-02-SUMMARY.md` instead. Repair: reconcile the frontmatter counters in
+`.planning/WINDOWS.md` with its rows.
+
