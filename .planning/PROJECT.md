@@ -171,4 +171,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 after Phase 5 (Ranking — CORE VALUE) — the ranked, explained queue is real: absolute per-listing scores with stored sub-scores, a grounded rationale and named gaps, and spend caps refused before the call*
+*Last updated: 2026-10-14 after Phase 07.1 (opencode V2 HTTP API migration) — the LLM backend speaks opencode 2.0.26's V2 API with runtime surface detection, so ranking, tailoring, screening-answer drafting and CV fact extraction work end-to-end again (confirmed live on the pinned server)*

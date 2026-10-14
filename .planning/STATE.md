@@ -1,38 +1,38 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "07.1"
-current_phase_name: Migrate the LLM backend to the opencode V2 HTTP API
-status: verifying
-stopped_at: Completed 07.1-06-PLAN.md
-last_updated: "2026-10-13T15:29:14.915Z"
-last_activity: 2026-10-13
-last_activity_desc: Phase 07.1 execution started
-state_head: 91041572db029ab1e10562ff3df14b4a5160c6ef
+current_phase: 6
+current_phase_name: Tailoring + Verification
+status: planning
+stopped_at: Phase 07.1 complete, ready to plan Phase 6
+last_updated: "2026-10-14T12:08:47.780Z"
+last_activity: 2026-10-14
+last_activity_desc: Phase 07.1 complete, transitioned to Phase 6
+state_head: cdbb1c63b23ef24fc227b8d8a0388e4b91aa7450
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 76
   completed_plans: 76
-  percent: 0
+  percent: 11
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-24)
+See: .planning/PROJECT.md (updated 2026-10-14)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 07.1 — Migrate the LLM backend to the opencode V2 HTTP API
+**Current focus:** Phase 6 — Tailoring + Verification
 
 ## Current Position
 
-Phase: 07.1 (Migrate the LLM backend to the opencode V2 HTTP API) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-10-13 — Phase 07.1 execution started
+Phase: 6 — Tailoring + Verification
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-14 — Phase 07.1 complete, transitioned to Phase 6
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 11%
 
 ## Performance Metrics
 
@@ -246,6 +246,10 @@ Recent decisions affecting current work:
 - [Phase 07.1]: 07.1-06: the runbook documents the D-135 pairing flow (POST /api/pair -> GET /auth/connect/{code}) as the password source and states the password is effectively required under V2; the app only consumes the token (D-138)
 - [Phase 07.1]: 07.1-06: the V2 live lane pins the committed _meta.server_version to 2.0.26 and fails on a version-only change (D-150)
 - [Phase 07.1]: 07.1-06: the accepted residual prompt-injection risk (V2 has no system field; domain grounding blocks fabricated facts but schema-valid-but-dishonest output is possible) is recorded in the runbook, README and AGENTS.md; a future AGENTS.md regeneration must re-apply it from .planning/research/STACK.md
+- [Phase 07.1]: live-found — a cold 2.0.26 server returns an empty `/api/model` for ~30 s, so discovery gets a bounded timeout budget and reports `models_warming` distinctly from `model_not_found`; the one-shot re-probe reports honestly rather than pretending there are no models (`1dbddbf`/`1a4c564`)
+- [Phase 07.1]: live-found — a 401 on `/api/info` classifies `unauthenticated` and never falls through to the dead V1 discovery path, so a stale/missing password is named instead of surfacing as a `JSONDecodeError` (IN-02, `20a2651`)
+- [Phase 07.1]: auth is **required in practice** on opencode 2.0.26 — `serve` prints a freshly generated `server password` on every start and offers no unsecured mode (no CLI password flag), so restarting the server invalidates the value in `.env`; the earlier "auth is opt-in" narrowing (D-136, `e57a426`) was falsified against the live pinned release and corrected back
+- [Phase 07.1]: tailoring refusals are made schema-visible AND retriable — the at-most-one-operation-per-`bullet_id` rule lives in `TAILOR_SYSTEM_PROMPT` and in a `TailoringPatch` `model_validator`, so the V2 schema-retry loop can correct a duplicate-target reply instead of failing one-shot after `_validate_patch` (`3b74bff`); drafting's array-vs-object prompt contradiction fixed in `af17f8e`
 
 ### Pending Todos
 
@@ -260,7 +264,7 @@ None yet.
 - [Phase 5] No real CV fact store exists yet, so a ranking pass takes the documented `fact_store_absent` skip — the ranking path is exercised end-to-end only once a `cv.yaml` is supplied. The skip and the exact loader path are now disclosed on `/settings`, the queue and `/health` (05-10), so this reads as a missing prerequisite, not a silent failure.
 - [Phase 5] Code review round 4 (`05-REVIEW.md`) reports `issues_found` on the 05-12 detail-action delta: 0 Critical / 1 Warning / 3 Info — run `/gsd-code-review 05 --fix` if the warning matters before Phase 6 reuses the action-surface pattern.
 - [Phase 7] §13a decision-coverage override (accepted 2026-10-06, user "proceed anyway"; **re-confirmed 2026-10-12**, user "proceed anyway", during the re-verification gap round 07-13/07-14) — the plan-phase decision-coverage gate found CONTEXT decisions without a literal `D-NN:` citation in a planned surface: originally 9 (D-120, D-126, D-128, D-129, D-130, D-131, D-132, D-133, D-134), now **8** — D-132 is newly cited by `07-13-PLAN.md` (`:26`, `:29`, `:59`, `:145`), leaving D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 uncovered. All are already implemented and verified by the executed 07-01..07-05 plans and confirmed implemented by plan-checker review; the gap is citation-only (the plans were authored 2026-09-30 before the citation convention). `verify-phase 07` must re-surface this override. Do not treat as unplanned work.
-- [Phase 7] **Accepted known limitation (deferred by user decision, 2026-10-12)** — drafting screening answers does not work live: clicking `Draft answers` returns "The drafting call did not return a usable response. Your existing drafts were kept." because the provider still emits a list-typed field in a shape `unwrap_single_key_mapping` does not recognise, so the response is refused (`drafting_failed`) and no answers render. UAT test 2 of 3 failed; tests 1 (tracker layout, G-07-5/G-07-6) and 3 (mvp goal-format) passed. Phase 07 was closed with this documented rather than iterated again ("move on as we've iterated so many times"). Recorded in `07-UAT.md` (`G-07-7 status: deferred`), `deferred-items.md`, `README.md` → Known limitations, and `07-VERIFICATION.md` (`overrides_applied: 2`, truth #12 ✓ PASSED (override)). Fix path: capture the raw payload of a failing call, widen the key-restricted unwrap to the observed shape, add the literal payload as a held-out fixture.
+- [Phase 7] **RESOLVED 2026-10-14** (was the deferred Phase-07 drafting limitation, G-07-7) — `Draft answers` now works live, confirmed by the operator. `af17f8e` removed the array-vs-object contradiction in the drafting prompt and `3b74bff` made the duplicate-target tailoring patch schema-visible and retriable. Original cause for the record: the provider emitted a list-typed field in a shape `unwrap_single_key_mapping` did not recognise, so the response was refused (`drafting_failed`). Closed as `G-07.1-1`/`G-07.1-2` in `07.1-UAT.md`; historical entries remain in `07-UAT.md`, `README.md` → Known limitations and `deferred-items.md`.
 - [Phase 7] Non-blocking WARNING (code review + verifier) — **WR-02**: `unwrap_single_key_mapping` bounds only the *direct* self-reference, so a two-node mutual `{"item": …}` cycle loops while its docstring claims self-reference "cannot hang" (CONVENTIONS rule 6 — false guarantee in prose). Not wire-reachable (JSON-derived payloads cannot be cyclic). `07-REVIEW.md` is `issues_found`: 0 Critical / 0 High / 1 Medium (WR-02) / 2 Low (IN-03, IN-04) — run `/gsd-code-review 07 --fix` if it matters before Phase 6 reuses the helper.
 
 ### Quick Tasks Completed
@@ -283,10 +287,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
 | Decision-coverage | Phase 07 §13a override (re-confirmed 2026-10-12): D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 lack `D-NN:` citations in planned surfaces (all already implemented); D-132 now cited by 07-13; override accepted, verify-phase must re-surface | open | 2026-10-12 | v1 |
-| Known limitation | Phase 07 G-07-7: `Draft answers` fails live (provider emits an unrecognised list-wrapper shape → `drafting_failed`, no answers render); UAT test 2 failed, deferred by user decision to ship anyway; documented in `README.md`, `deferred-items.md` and `07-UAT.md` | open | 2026-10-12 | v1 |
+| Known limitation | Phase 07 G-07-7: `Draft answers` fails live (provider emits an unrecognised list-wrapper shape → `drafting_failed`, no answers render); UAT test 2 failed, deferred by user decision to ship anyway; documented in `README.md`, `deferred-items.md` and `07-UAT.md` | resolved 2026-10-14 (`af17f8e` + `3b74bff`, confirmed live) | 2026-10-12 | v1 |
 
 ## Session Continuity
 
-Last session: 2026-10-13T15:29:09.025Z
-Stopped at: Completed 07.1-06-PLAN.md
+Last session: 2026-10-14T12:15:00.000Z
+Stopped at: Phase 07.1 complete, ready to plan Phase 6
 Resume file: None
