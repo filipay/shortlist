@@ -179,12 +179,12 @@ Semantic tokens available for status (existing, no new hues): `--color-success` 
 | Schedule line | `Next run in 3h 12m` · or `Next run at 07:00 Europe/Dublin — in 3h 12m` · or `Scheduling off` |
 | Missed-run notice (D-154) | `Last scheduled run was missed. Missed runs are skipped, never caught up.` |
 | Last-run line | `Last run: {Status} — {reason sentence}` + link `Run history` |
-| Adzuna verdict line (D-158) | `Adzuna hedge: 2/3 blocked runs — condition not met` (or `— condition met`, or `Adzuna hedge: no verdict recorded yet.`) + link `Read the probe verdict` → `docs/probes/2026-09-15-scraper-survival.md` |
+| Adzuna verdict line (D-158) | one line per promotion board — `Indeed hedge: 2/3 blocked runs — condition not met` and `Linkedin hedge: …` (or `— condition met`, or `{Board} hedge: no verdict recorded yet.`) + link `Read the probe verdict` → `docs/probes/2026-09-15-scraper-survival.md`. The label is per board (`{board.title()} hedge`) because P-1 is computed per board: the hedge is *against* Indeed/LinkedIn blocking, so naming the board is the honest reading. |
 | Per-source table | heading `Source health`; columns `Source · Health · Last success · Returned · Field fill-rate` (the shipped `_health_strip.html` table, verbatim) |
 | Health — no sources | `No sources registered yet.` |
 | Schedule card H3 | `Schedule` |
 | Schedule — enable control | label `Run once a day` (checkbox) |
-| Schedule — time label / helper | `Run at` · `The pipeline runs once a day at this time, in {timezone}.` |
+| Schedule — time label / helper | `Run at` · field note `Times are read in this timezone, not the container's UTC.` |
 | Schedule — timezone label | `Timezone` |
 | Schedule — helper | `Missed runs are skipped, never caught up, and a run already in progress is never overlapped.` |
 | Schedule — saved banner | `Schedule saved.` |
@@ -377,7 +377,7 @@ Applicable state considerations resolved: **17 covered, 1 backstop, 0 unresolved
 | overflow | journey tables on phone | ✅ covered | `.queue-table` / `.health-table` card-reflow below 768px via `data-label` (§A) — no horizontal scroll on the journey. |
 | overflow | admin tables (merges/runs/factor) | ✅ covered | Wrapped in `.table-scroll` with `role="region" tabindex="0" aria-label` so the table scrolls horizontally and stays keyboard-reachable; the table markup itself is unchanged (D-160). |
 | overflow | long source names / paths / fill-rate chips | 🧪 backstop | A long unbroken source name, an absolute CV path, or a long fill-rate chip list must wrap inside its card rather than force the page wider; the reflow's `display:block` cells plus `overflow-wrap:anywhere` on the value must hold — a held-out UI-state test asserts a long source name and a deep CV path do not widen the phone page. |
-| long-text | Adzuna verdict + schedule countdown | ✅ covered | The verdict renders the recorded evidence string (`Adzuna hedge: 2/3 blocked runs — condition not met`) as escaped text on one `.ranking-strip` line; when no verdict is recorded it reads `no verdict recorded yet` — never a fabricated number. |
+| long-text | promotion verdict + schedule countdown | ✅ covered | The verdict renders the recorded evidence string (`Indeed hedge: 2/3 blocked runs — condition not met`, one line per board) as escaped text on one `.ranking-strip` line; when no verdict is recorded it reads `no verdict recorded yet` — never a fabricated number. |
 | zero-one-many | prune preview counts | ✅ covered | The preview pluralises by count (`1 run` / `42 runs`, `1 artifact` / `118 artifacts`) and renders the size in the same line; a single non-zero member still renders the full line. |
 
 <!-- Status vocabulary (locked by probe-core): ✅ covered → a plain truth string lifted into

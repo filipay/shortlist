@@ -17,7 +17,7 @@ Verification depth: **ASVS L1** (grep-level presence, reinforced with the execut
 
 **Scope audited:** the dependency pin and its two configuration knobs (`pyproject.toml`, `requirements.txt`, `app/config.py`, `compose.yml`, `Dockerfile`, `entrypoint.sh`, `tests/test_dependency_pins.py`, `tests/test_config.py`); the responsive reflow source and committed artefact (`assets/tailwind/input.css`, `static/vendor/app.css`, `tests/test_stylesheet_coverage.py`, `tests/test_no_cdn.py`, the journey/admin templates); the scheduler slice (`app/jobs/scheduler.py`, `app/db/repositories/operations_config_repo.py`, `app/db/repositories/run_repo.py`, `app/main.py`, `app/api/settings.py`, `alembic/versions/0008_operations_config.py`, `app/db/models.py`); the health surface (`app/api/health.py`, `app/api/health_page.py`, `app/db/repositories/source_repo.py`, `app/web/templates/html/health.html`, `app/web/templates/html/base.html`); and the retention/prune surface (`app/db/repositories/retention_repo.py`, `app/api/settings.py`'s two prune routes and the reused reset helpers, `app/web/templates/html/settings.html`).
 
-**Register hygiene note:** `T-08-SC` is declared once in plan 08-01 and once in plan 08-03 with a per-plan scope; there are **31 unique numbered threats** (`T-08-01` … `T-08-31`) plus the two `T-08-SC` occurrences — **33 declared rows, 32 unique threats**. The two `T-08-SC` rows are merged into one row below (the 05/06/07 house convention). Every row across the five plans carries disposition `mitigate`; there are **no** `accept`- and no `transfer`-dispositioned rows. Severity spread: 15 high, 14 medium, 3 low, 0 critical.
+**Register hygiene note:** `T-08-SC` is declared once in plan 08-01 and once in plan 08-03 with a per-plan scope; there are **32 unique numbered threats** (`T-08-01` … `T-08-32`) plus the two `T-08-SC` occurrences — **34 declared rows, 33 unique threats**. `T-08-32` is the CR-01 cross-site POST threat, added to this register by the code-review fix (it was a live gap the plan-time register missed); it is closed by the same-origin guard. The two `T-08-SC` rows are merged into one row below (the 05/06/07 house convention). Every row across the five plans carries disposition `mitigate`; there are **no** `accept`- and no `transfer`-dispositioned rows. Severity spread: 16 high, 14 medium, 3 low, 0 critical.
 
 ---
 
@@ -45,6 +45,7 @@ Verification depth: **ASVS L1** (grep-level presence, reinforced with the execut
 | the database rows → the filesystem | Stored artifact paths are unlinked | Stored paths |
 | the transaction → the append-only invariant | The listing carve-out suspends a tamper-evidence trigger | Trigger DDL |
 | the destructive route → a prefetch or link | Both prune steps must be POSTs | HTTP method |
+| a cross-site page → a state-changing route | A form on any page the user's browser loads can POST to a mutating route; with no auth (D-21) every cross-origin request is authorised | Untrusted form fields |
 | the retention floor → the readers downstream | The ledger and run floor protect spend ceilings and the health page's inputs | Guarded rows |
 
 ---
@@ -84,6 +85,7 @@ Verification depth: **ASVS L1** (grep-level presence, reinforced with the execut
 | T-08-29 | Denial of Service (downstream correctness) | pruning the ledger, the run floor or the verdict's log inputs | high | mitigate | The four guards are conditions in the selections: the run floor reuses `RUN_HISTORY_LIMIT` (`app/db/repositories/retention_repo.py:178-180,248-253`), `llm_calls` rows survive with a nulled `run_id` (`:269`), application-linked artifacts and each listing's newest successful artifact are excluded (`:209-216`), and the source request log keeps rows belonging to retained runs (`:282-288`). Covered by four parametrized guard tests. | closed |
 | T-08-30 | Tampering | artifact rows left pointing at deleted files, or files deleted with a rolled-back commit | medium | mitigate | The repository never commits and never unlinks (`app/db/repositories/retention_repo.py:479-504`); the route commits the row deletes first (`app/api/settings.py:1148`) and only then unlinks (`:1169`), so a rolled-back commit never leaves live rows without files and an unlink failure is reported. | closed |
 | T-08-31 | Elevation of Privilege | a new destructive route without the identity seam | medium | mitigate | `preview_prune` and `confirm_prune` both declare `user: User = Depends(current_user)` (`app/api/settings.py:1032,1073`) and both paths are in `EXPECTED_SEAM_ROUTES` (`tests/test_auth_seam.py:76-77`); the dynamic walk passes. | closed |
+| T-08-32 | Spoofing / Tampering (cross-site request forgery) | a state-changing POST from another origin | high | mitigate | The same-origin guard `_same_origin_guard` / `_is_cross_site` (`app/main.py`) refuses a non-GET/HEAD/OPTIONS request whose `Sec-Fetch-Site` is not `same-origin`/`none` or whose `Origin` does not match the request's own origin, with a `403` (`tests/api/test_same_origin_guard.py`, parametrised over all nine mutating settings routes, carrying the finding's literal cross-site reset form). The module docstring that asserted the routes were "not CSRF-exploitable today" is corrected in the same change (CONVENTIONS rule 6). Residual limit: this is not a CSRF token — it stops the browser-driven vector and allows header-less callers (curl, tests), so it does not authenticate the local user; a real token is still owed when session authentication lands. | closed |
 | T-08-SC | Tampering (supply chain) | package installs across the phase (08-01…08-05) | high | mitigate | The phase adds exactly one runtime dependency behind a blocking human checkpoint (T-08-01); the diff of both manifests from 08-01's parent to HEAD shows only the `apscheduler==3.11.3` lines. Alembic 0008 is purely additive — one new table, no `alter_table`/`batch_alter_table`, `runs` untouched (`alembic/versions/0008_operations_config.py:43-52`). No npm/cargo/other install occurs. See also AR-08-01. | closed |
 
 *Status: open · closed · open — below high threshold (non-blocking)*
@@ -127,6 +129,7 @@ Hermetic evidence (provisioned Python 3.13.16 interpreter, since the sandbox `.v
 - `tests/jobs/test_scheduler.py tests/api/test_schedule_settings.py tests/api/test_health_page.py tests/db/test_retention_repo.py tests/api/test_settings_prune.py tests/test_auth_seam.py tests/test_dependency_pins.py tests/test_config.py` → **137 passed** (2026-10-14).
 - `tests/api/test_health.py tests/test_stylesheet_coverage.py tests/test_no_cdn.py tests/db/test_orm_drift.py tests/db/test_migration_contract.py tests/db/test_no_pii_columns.py` → **67 passed** (2026-10-14).
 - `tests/test_stylesheet_coverage.py -v -rs` re-run explicitly: **10 passed, 0 skipped** — the byte-identity assertion (T-08-05) was executed, not skipped. This is the strongest single piece of evidence in the phase: the committed artifact is the pinned CLI's build of its source.
+- `tests/api/test_same_origin_guard.py` (T-08-32, added by the CR-01 fix): **10 passed** — every mutating settings route refuses a `Sec-Fetch-Site: cross-site` / foreign-`Origin` POST with 403, while a same-origin and a header-less POST still succeed and a cross-site GET is allowed. The guard's residual limit (not a CSRF token; allows header-less callers) is stated in `app/api/settings.py`'s module docstring and here, per CONVENTIONS rule 6.
 
 Precise greps used to locate each declared mitigation:
 
@@ -153,6 +156,7 @@ Implementation files were read-only during this audit; no file other than this S
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-10-14 | 32 (33 declared rows across the five PLANs) | 32 | 0 | gsd-security-auditor |
+| 2026-10-14 | 33 (34 declared rows; T-08-32 added by the CR-01 review fix) | 33 | 0 | fixer (CR-01 gap closure) |
 
 ---
 
@@ -163,4 +167,4 @@ Implementation files were read-only during this audit; no file other than this S
 - [x] `threats_open: 0` confirmed
 - [x] `status: verified` set in frontmatter
 
-**Approval:** verified 2026-10-14 (08-01…08-05; 31 numbered threats plus the merged `T-08-SC`)
+**Approval:** verified 2026-10-14 (08-01…08-05; 32 numbered threats plus the merged `T-08-SC`; `T-08-32` added and closed by the CR-01 review fix)
