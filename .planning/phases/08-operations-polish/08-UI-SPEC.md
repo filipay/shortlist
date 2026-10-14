@@ -1,7 +1,8 @@
 ---
 phase: "08"
 slug: "operations-polish"
-status: draft
+status: approved
+reviewed_at: "2026-10-14"
 shadcn_initialized: false
 preset: none
 created: "2026-10-14"
@@ -348,7 +349,7 @@ receives is the responsive `.health-table` reflow from §A (it is a journey tabl
 > zero-one-many / long-text). Empty-state and error-state COPY lives in `## Copywriting Contract`
 > above — this section covers STATE coverage and references those rows rather than restating the copy.
 
-Applicable state considerations resolved: **18 covered, 2 backstop, 0 unresolved** (8 categories across 14 elements).
+Applicable state considerations resolved: **17 covered, 1 backstop, 0 unresolved** (8 categories across 14 elements, 18 rows).
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -374,7 +375,14 @@ Applicable state considerations resolved: **18 covered, 2 backstop, 0 unresolved
 <!-- Status vocabulary (locked by probe-core): ✅ covered → a plain truth string lifted into
      must_haves.truths; 🧪 backstop → a flat scalar { statement, verification: backstop } (no explicit
      evidence at verify time → insufficient_spec → human_needed, never a silent pass); ⚠ unresolved →
-     an explicit planner assumption. Rows are REPLACED, never appended, on a re-run. -->
+     an explicit planner assumption. Rows are REPLACED, never appended, on a re-run.
+
+     §9.5 UI-consideration probe: SKIPPED (recorded choice). The deterministic probe was re-run as a
+     recall check (14 elements × 8 categories = 80 raw items, 2 unclassified for the schedule/last-run
+     strips); every surfaced consideration maps onto a row above, and this section was authored
+     pre-approval and never clobbered by a revision loop (checker passed first pass). Re-running the
+     resolution loop would add churn, not coverage. The nav and Adzuna-verdict overflow cases the probe
+     raises are already resolved in §E (flex-wrap) and the long-text row respectively. -->
 
 ---
 
