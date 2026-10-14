@@ -699,6 +699,7 @@ class OpenCodeServerBackend:
                             backend="opencode_server",
                             status=result.status,
                             error_kind=result.error_kind,
+                            error=result.error,
                             attempts=result.attempts,
                             provider=provider_id,
                             model=model_id,
@@ -871,8 +872,9 @@ class OpenCodeServerBackend:
 
         V2 has no server-side structured output (D-139/D-141): the schema rides in
         the prompt, the model's text is extracted (`_extract_json`) then salvaged,
-        and a pydantic `ValidationError` re-issues `generate` with the first error
-        fed back, bounded to `1 + settings.opencode_structured_retry_count`
+        and either a pydantic `ValidationError` OR a non-JSON `ValueError` re-issues
+        `generate` with the first error fed back, bounded to
+        `1 + settings.opencode_structured_retry_count`
         requests total (the initial attempt plus the configured schema retries).
         `attempts` is the total number of `generate` requests issued (Pitfall P6),
         or the session POST count when session creation itself never completes.
@@ -934,6 +936,7 @@ class OpenCodeServerBackend:
         url = GENERATE_PATH.format(session_id=session_id)
         issued = 0
         last_error: str | None = None
+        last_error_kind: str | None = None
         for _attempt in range(schema_budget):
             response, transport_failure, attempted = (
                 await _post_with_transport_retries(
@@ -960,16 +963,23 @@ class OpenCodeServerBackend:
             )
             if classified is not None:
                 return classified
-            text = _dig(response.json(), GENERATE_RESPONSE_PATH)
+            payload = response.json()
+            text = _dig(payload, GENERATE_RESPONSE_PATH)
             if not isinstance(text, str):
+                # The part TYPE names tell a parts-only reply (`["reasoning"]`)
+                # apart from no parts at all — the two otherwise indistinguishable
+                # causes of a `status=invalid`. `_part_types` reads type names
+                # only; never part text (T-3-27).
+                part_types = _part_types(payload)
                 return _failure(
                     status="invalid",
                     error_kind=ERROR_KIND_INVALID,
-                    error="generate response carried no text",
+                    error=f"generate response carried no text (parts: {part_types})",
                     attempts=issued,
                     started=started,
                     model=model_id,
                     server_version=server_version,
+                    part_types=part_types,
                 )
             try:
                 data = _salvage(schema, _extract_json(text))
@@ -977,6 +987,7 @@ class OpenCodeServerBackend:
                 errors = exc.errors()
                 first = errors[0] if errors else None
                 last_error = first.get("msg") if isinstance(first, dict) else None
+                last_error_kind = "schema"
                 # D-140: feed the first pydantic error back into the re-issued
                 # prompt. The loop re-runs to the client-side schema budget.
                 prompt = to_generate_prompt(
@@ -987,18 +998,19 @@ class OpenCodeServerBackend:
                 )
                 continue
             except ValueError as exc:
-                return _failure(
-                    status="invalid",
-                    error_kind=ERROR_KIND_INVALID,
-                    error=(
-                        "generated text was not valid JSON: "
-                        f"{type(exc).__name__}: {exc}"
-                    ),
-                    attempts=issued,
-                    started=started,
-                    model=model_id,
-                    server_version=server_version,
+                # FIX (D-140 parity): a non-JSON response is the same failure
+                # CLASS as a validation error. Feed it back and spend the same
+                # schema budget instead of exiting after a single attempt (the
+                # live `attempts=1` on a `status=invalid` was this early return).
+                last_error = f"{type(exc).__name__}: {exc}"
+                last_error_kind = "json"
+                prompt = to_generate_prompt(
+                    schema=schema,
+                    system=system,
+                    parts=parts,
+                    correction=f"the previous response was not valid JSON: {last_error}",
                 )
+                continue
             return StructuredCallResult(
                 ok=True,
                 data=data,
@@ -1012,14 +1024,16 @@ class OpenCodeServerBackend:
                 server_version=server_version,
             )
 
+        if last_error_kind == "json":
+            error = f"generated text was not valid JSON: {last_error}"
+        elif last_error:
+            error = f"validation failed: {last_error}"
+        else:
+            error = "validation failed"
         return _failure(
             status="invalid",
             error_kind=ERROR_KIND_INVALID,
-            error=(
-                f"validation failed: {last_error}"
-                if last_error
-                else "validation failed"
-            ),
+            error=error,
             attempts=issued,
             started=started,
             model=model_id,

@@ -31,6 +31,7 @@ from app.config import settings
 from app.domain.schemas.probe import ProbeResult
 from app.llm import opencode_server
 from app.llm.base import DiscoveryResult, ProviderModel, StructuredCallResult
+from app.llm.builders import GENERATE_SCHEMA_DIRECTIVE
 from app.llm.contract import (
     GENERATE_PATH,
     INFO_PATH,
@@ -546,6 +547,195 @@ async def test_a_successful_v2_completion_emits_no_warning(
 
     assert result.ok is True
     assert _v2_failure_warnings(events) == []
+
+
+# --- the live repro: an unattributable `attempts=1` `status=invalid` -----------
+#
+# The recorded failure — for BOTH tailoring and drafting:
+#
+#   2026-10-14 10:12:09 [warning] llm.v2_completion_failed attempts=1
+#   backend=opencode_server error_kind=invalid model=big-pickle provider=opencode
+#   server_version=2.0.26 status=invalid
+#
+# `attempts=1` proves the schema-retry loop never retried, so it exited via one of
+# the two early returns below. Both are now observable and (for the JSON case)
+# retried to the same budget.
+
+#: Plain prose with no brace at all, so `_extract_json` returns it unchanged and
+#: `_salvage`'s `from_json` raises a bare `ValueError` (not a `ValidationError`).
+NON_JSON_TEXT = "the model answered in prose with no json object"
+
+
+@pytest.mark.parametrize(
+    "part_types, parts_body",
+    [
+        (["reasoning"], [{"type": "reasoning", "text": "LEAK-REASONING"}]),
+        (
+            ["reasoning", "text"],
+            [
+                {"type": "reasoning", "text": "LEAK-A"},
+                {"type": "text", "text": "LEAK-B"},
+            ],
+        ),
+        (["step-start"], [{"type": "step-start", "text": "LEAK-C"}]),
+        (["unknown"], [{"text": "no type field"}]),
+    ],
+)
+async def test_a_parts_only_reply_names_the_part_types_and_never_their_text(
+    monkeypatch: pytest.MonkeyPatch,
+    part_types: list[str],
+    parts_body: list[dict[str, Any]],
+) -> None:
+    """`no text` + parts is told apart from `no text` + nothing, without leaking text.
+
+    Failure class: a `generate` 200 whose `data.text` is absent but whose parts
+    carry content. The cause must name the part TYPES; a secret planted in a part's
+    `text` must never reach `error`.
+    """
+    recorder = Recorder(generate=(200, {"data": {}, "parts": parts_body}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.attempts == 1
+    error = result.error or ""
+    assert "generate response carried no text" in error
+    for expected in part_types:
+        assert expected in error
+    assert "LEAK" not in error, "a part's text must never reach the error"
+    assert result.part_types == part_types
+
+
+async def test_a_no_text_no_parts_reply_is_distinguished_from_a_parts_only_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`parts: None` names the other half of the same class — no parts observed."""
+    recorder = Recorder(generate=(200, {"data": {}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.status == "invalid"
+    assert "carried no text" in (result.error or "")
+    assert "parts: None" in (result.error or "")
+    assert result.part_types is None
+
+
+@pytest.mark.parametrize("retries", [1, 2, 3])
+async def test_a_non_json_generate_consumes_the_full_schema_budget(
+    monkeypatch: pytest.MonkeyPatch, retries: int
+) -> None:
+    """The JSON-parse failure retries like a validation failure (D-140 parity).
+
+    Before the fix a single non-JSON `generate` returned immediately — `attempts=1`
+    with `status=invalid`, the exact live symptom. It must now spend the whole
+    schema budget (`1 + opencode_structured_retry_count`) and feed the cause back.
+    """
+    monkeypatch.setattr(settings, "opencode_structured_retry_count", retries)
+    recorder = Recorder(generate=(200, {"data": {"text": NON_JSON_TEXT}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    expected = 1 + retries
+    messages = [entry[2]["prompt"] for entry in _generate_requests(recorder)]
+    assert len(messages) == expected
+    assert result.ok is False
+    assert result.status == "invalid"
+    assert result.error_kind == "invalid"
+    assert result.attempts == expected
+    assert "not valid JSON" in (result.error or "")
+    # The initial prompt carries no feedback; every retry names the JSON defect.
+    assert "not valid JSON" not in messages[0]
+    for prompt in messages[1:]:
+        assert "not valid JSON" in prompt
+
+
+@pytest.mark.parametrize(
+    "generate_text, expected, forbidden",
+    [
+        (NON_JSON_TEXT, "generated text was not valid JSON", "validation failed"),
+        (INVALID_TEXT, "validation failed", "not valid JSON"),
+    ],
+)
+async def test_the_final_message_distinguishes_json_parse_from_schema_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    generate_text: str,
+    expected: str,
+    forbidden: str,
+) -> None:
+    """The exhausted-budget exit must say WHICH kind of invalid it was."""
+    recorder = Recorder(generate=(200, {"data": {"text": generate_text}}))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    result = await backend.complete_structured(
+        schema=ProbeResult, system="s", parts=["p"]
+    )
+
+    assert result.status == "invalid"
+    assert expected in (result.error or "")
+    assert forbidden not in (result.error or "")
+
+
+@pytest.mark.parametrize(
+    "generate_body",
+    [
+        {"data": {}, "parts": [{"type": "reasoning", "text": "LEAK-WARNING"}]},
+        {"data": {"text": NON_JSON_TEXT}},
+    ],
+)
+async def test_the_failure_warning_carries_the_bounded_error(
+    monkeypatch: pytest.MonkeyPatch, generate_body: dict[str, Any]
+) -> None:
+    """`error` is added to the one warning so the cause is in the log itself.
+
+    Only bounded strings reach it (a pydantic `msg`, a `JSONDecodeError` message or
+    `_bounded_excerpt`); a secret planted in a part's text must not.
+    """
+    recorder = Recorder(generate=(200, generate_body))
+    backend = _v2_backend(monkeypatch, recorder)
+
+    with structlog.testing.capture_logs() as events:
+        result = await backend.complete_structured(
+            schema=ProbeResult, system="s", parts=["p"]
+        )
+
+    assert result.ok is False
+    warnings = _v2_failure_warnings(events)
+    assert len(warnings) == 1
+    assert warnings[0]["error"] == result.error
+    assert isinstance(warnings[0]["error"], str) and warnings[0]["error"]
+    assert "LEAK" not in warnings[0]["error"]
+
+
+def test_the_generate_directive_forbids_prose_and_code_fences() -> None:
+    """The schema directive asks for the bare object, and the schema keeps its slot.
+
+    `INVALID_TEXT` observed live was a fenced/prose-wrapped reply, so the directive
+    now says so explicitly. The order (system → directive + schema → untrusted
+    delimiter) is unchanged.
+    """
+    assert "nothing else" in GENERATE_SCHEMA_DIRECTIVE
+    assert "no prose" in GENERATE_SCHEMA_DIRECTIVE
+    assert "markdown code fences" in GENERATE_SCHEMA_DIRECTIVE
+
+    prompt = opencode_server.to_generate_prompt(
+        schema=ProbeResult, system="SENTINEL-SYSTEM", parts=["P"]
+    )
+    assert (
+        prompt.index("SENTINEL-SYSTEM")
+        < prompt.index(GENERATE_SCHEMA_DIRECTIVE)
+        < prompt.index('"acknowledged"')
+        < prompt.index("untrusted data")
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

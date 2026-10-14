@@ -187,6 +187,8 @@ def to_session_body(
 #: The frozen schema directive prefixed to every V2 prompt (V2 has no `format`).
 GENERATE_SCHEMA_DIRECTIVE = (
     "Return a single JSON object matching exactly this JSON schema:\n"
+    "Respond with that single JSON object and nothing else — no prose and no "
+    "markdown code fences.\n"
 )
 #: The hard delimiter + untrusted-data directive. V2 has no `system` field on its
 #: send endpoint, so this convention is the remaining separation between the
