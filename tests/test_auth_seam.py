@@ -62,6 +62,10 @@ EXPECTED_SEAM_ROUTES = frozenset(
         "/listings/{listing_id}/apply/draft",
         "/listings/{listing_id}/apply/question",
         "/listings/{listing_id}/apply/draft/delete",
+        # Phase 8's schedule form (D-151..D-153): it writes the user's own schedule
+        # and re-configures the live scheduler, so it carries the seam like every
+        # other settings route.
+        "/settings/schedule",
     }
 )
 

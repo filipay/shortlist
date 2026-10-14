@@ -25,6 +25,7 @@ from app.db.models import (
     ListingEvent,
     ListingExclusion,
     LlmCall,
+    OperationsConfig,
     QueueState,
     RankingConfig,
     Run,
@@ -133,6 +134,21 @@ async def _seed_corpus(
         # user config, so it gets a row too.
         session.add(
             ApplyConfig(id=1, questions_json={"questions": ["Why this role?"]}, updated_at=NOW)
+        )
+        # The operations document (migration 0008) is the user's own schedule and
+        # retention configuration — kept by a corpus reset, so it needs a row to prove it.
+        session.add(
+            OperationsConfig(
+                id=1,
+                schedule_json={
+                    "enabled": True,
+                    "hour": 7,
+                    "minute": 0,
+                    "timezone": "Europe/Dublin",
+                },
+                retention_json={},
+                updated_at=NOW,
+            )
         )
         session.add(
             Score(listing_id=first, run_id=run_id, criteria_version=1, created_at=NOW)

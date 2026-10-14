@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0007"], "expected exactly one recorded revision: 0007"
+    assert versions == ["0008"], "expected exactly one recorded revision: 0008"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0007"), head_lines[0]
+    assert head_lines[0].startswith("0008"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -711,6 +711,51 @@ def test_screening_draft_warnings_and_band_columns(migrated_db: Path) -> None:
         connection.close()
 
 
+# --- Item 19 (0008) — operations_config, the singleton operations document ------
+def test_operations_config_table_and_singleton_check(migrated_db: Path) -> None:
+    """D-153 / D-168: the schedule and retention document is one row keyed id = 1.
+
+    The named singleton CHECK must be in the migrated DDL and enforced, and the
+    revision must be purely additive — it creates exactly this table and touches no
+    other one (in particular not ``runs``, whose status enum stays unwidened).
+    """
+    connection = _connect(migrated_db)
+    try:
+        assert _exists(connection, "table", "operations_config")
+
+        columns = _table_info(connection, "operations_config")
+        assert {
+            "id",
+            "schedule_json",
+            "retention_json",
+            "last_schedule_skip_json",
+            "updated_at",
+        } <= set(columns)
+        assert columns["schedule_json"]["notnull"] == 1
+        assert columns["retention_json"]["notnull"] == 1
+        # Nullable: most of the time no run has been skipped.
+        assert columns["last_schedule_skip_json"]["notnull"] == 0
+
+        table_sql = _master(connection, "table", "operations_config")["sql"]
+        assert "ck_operations_config_singleton" in table_sql
+
+        connection.execute(
+            "INSERT INTO operations_config "
+            "(id, schedule_json, retention_json, updated_at) VALUES (1, '{}', '{}', ?)",
+            ("2026-10-14 00:00:00",),
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO operations_config "
+                "(id, schedule_json, retention_json, updated_at) VALUES (2, '{}', '{}', ?)",
+                ("2026-10-14 00:00:00",),
+            )
+    finally:
+        connection.close()
+
+
 # --- Regression — upgrading a *populated* 0001 must not abort ------------------
 def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, int]]) -> None:
     """A populated 0001 database upgrades to head without an FK/batch abort.
@@ -734,7 +779,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0007"], f"expected exactly 0007, saw {versions}"
+        assert versions == ["0008"], f"expected exactly 0008, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():

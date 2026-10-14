@@ -73,9 +73,14 @@ EXPECTED_JSON_COLUMNS: dict[str, frozenset[str]] = {
     # 0006 adds the per-question screening drafts (fact ids only) and the single-row
     # screening-question document (user question strings only). Neither carries a
     # recruiter/personal identifier. 0007 adds `warnings_json` — the checker's human
-    # sentences, each naming a fact id or digit token (never recruiter PII).
+    # sentences, each naming a fact id or digit token (never recruiter PII). 0008 adds
+    # the single-row operations document: the user's own time/timezone/thresholds, a
+    # skip reason, a fire-time timestamp and optionally a `runs.id` — nothing personal.
     "screening_drafts": frozenset({"evidence_json", "warnings_json"}),
     "apply_config": frozenset({"questions_json"}),
+    "operations_config": frozenset(
+        {"schedule_json", "retention_json", "last_schedule_skip_json"}
+    ),
     "applications": frozenset(),
     "application_events": frozenset(),
     "llm_calls": frozenset(),

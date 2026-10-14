@@ -512,6 +512,40 @@ class ApplyConfig(Base):
     )
 
 
+class OperationsConfig(Base):
+    """The single-row operations document (D-153 / D-168).
+
+    Mirrors ``ranking_config`` / ``apply_config``: ``id`` is pinned to 1 by the
+    explicitly named ``ck_operations_config_singleton``, so a read can always
+    address the one document by id. Three JSON columns (allow-listed in
+    ``tests/db/test_no_pii_columns.py``) carry the user's own settings only:
+
+    * ``schedule_json`` — the daily time-of-day, timezone and enable flag (D-153);
+    * ``retention_json`` — the per-category retention thresholds (D-168; plan
+      08-05 owns its reader and writer, this migration only creates the column);
+    * ``last_schedule_skip_json`` — the D-154 skip notice: a reason, the scheduled
+      fire time and optionally the in-flight ``runs.id``. Nullable because most of
+      the time no run has been skipped.
+
+    There is deliberately no foreign key — this is a global setting, not an
+    observation about a run — and no identity column: no
+    ``user_id``/``owner_id``/``tenant_id`` exists in v1 (D-21), and the singleton
+    shape stays additive for a future one.
+    """
+
+    __tablename__ = "operations_config"
+
+    id = Column(Integer, primary_key=True)
+    schedule_json = Column(JSON, nullable=False)
+    retention_json = Column(JSON, nullable=False)
+    last_schedule_skip_json = Column(JSON)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_operations_config_singleton"),
+    )
+
+
 class Application(Base):
     """Acceptance item 5: `cv_artifact_id` — the exact artefact that was sent."""
 

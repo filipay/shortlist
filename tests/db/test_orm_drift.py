@@ -54,6 +54,14 @@ def _is_internal(table: str) -> bool:
         # The FTS5 virtual table and its shadow tables are raw DDL (0001).
         or table.startswith("listing_fts")
         or table.startswith("sqlite_")
+        # APScheduler's job store (3.11.3, pinned) creates its own ``apscheduler_jobs``
+        # table with ``CREATE TABLE ... IF NOT EXISTS`` the first time a scheduler
+        # starts, outside Alembic. It is the LIBRARY's private schema and the library
+        # owns its DDL, so it is exempt rather than mirrored: declaring it in our own
+        # migration would hard-couple the repo to a third-party internal shape, and an
+        # APScheduler upgrade that changed the columns would then need a hand-written
+        # migration. The pin plus this exemption is the recorded mitigation (Pitfall 4).
+        or table == "apscheduler_jobs"
     )
 
 

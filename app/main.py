@@ -26,6 +26,7 @@ from app.api import settings as settings_routes
 from app.api import tailoring as tailoring_routes
 from app.db.repositories import source_repo
 from app.db.session import async_session_maker
+from app.jobs import scheduler as scheduler_module
 from app.web import routes as web_routes
 
 log = structlog.get_logger(__name__)
@@ -47,7 +48,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.info("startup.sources_seeded", sources=inserted)
     except Exception as exc:  # noqa: BLE001 — boot must not depend on the seeding
         log.warning("startup.sources_seed_failed", error=type(exc).__name__)
+
+    # The in-process daily scheduler (D-151..D-154 / PLAT-06). Its own non-fatal
+    # guard: a scheduler that cannot start degrades the feature and the app still
+    # serves (D-08), exactly like the seeding above.
+    try:
+        status = await scheduler_module.start_scheduler()
+        log.info("startup.scheduler", status=status)
+    except Exception as exc:  # noqa: BLE001 — boot must not depend on the scheduler
+        log.warning("startup.scheduler_failed", error=type(exc).__name__)
+
     yield
+
+    try:
+        await scheduler_module.stop_scheduler()
+    except Exception as exc:  # noqa: BLE001 — shutdown must never raise
+        log.warning("shutdown.scheduler_failed", error=type(exc).__name__)
 
 
 def create_app() -> FastAPI:

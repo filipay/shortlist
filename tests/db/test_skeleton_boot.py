@@ -42,6 +42,8 @@ EXPECTED_TABLES = (
     # Migration 0006: the screening drafts + the single-row screening-question doc.
     "screening_drafts",
     "apply_config",
+    # Migration 0008: the single-row schedule/retention document.
+    "operations_config",
 )
 
 
@@ -78,7 +80,7 @@ def test_migration_creates_every_table_at_latest_revision(migrated_db: Path) -> 
         version = connection.execute(
             "SELECT version_num FROM alembic_version"
         ).fetchall()
-        assert version == [("0007",)]
+        assert version == [("0008",)]
     finally:
         connection.close()
 

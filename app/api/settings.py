@@ -10,9 +10,10 @@ control: the token is rendered into the page in plain text, so anyone who can lo
 required so a link or a prefetch can never trigger the reset.
 
 v1 has no authentication at all (D-21), so there is no ambient credential for a
-cross-site request to abuse and this route is not CSRF-exploitable today. That changes
-the moment session authentication lands (the planned Authentik step): with a session
-cookie present, this route becomes a genuine CSRF hole unless a CSRF token is added.
+cross-site request to abuse and these routes are not CSRF-exploitable today. That
+changes the moment session authentication lands (the planned Authentik step): with
+a session cookie present, `/settings/reset` and `/settings/schedule` both become
+genuine CSRF holes unless a CSRF token is added.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ import yaml
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import delete, func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import current_user
 from app.api.searches import read_form
@@ -43,11 +44,17 @@ from app.cv.import_tex import parse_tex, write_draft
 from app.cv.layout import read_layout, write_layout
 from app.cv.llm_extract import ExtractionError, extract_facts
 from app.db.models import Base, Run
-from app.db.repositories import apply_config_repo, llm_call_repo, ranking_config_repo
-from app.db.session import get_session
+from app.db.repositories import (
+    apply_config_repo,
+    llm_call_repo,
+    operations_config_repo,
+    ranking_config_repo,
+)
+from app.db.session import get_session, get_session_factory
 from app.domain import rubric
 from app.domain.models import User
 from app.domain.schemas.probe import ProbeResult
+from app.jobs import scheduler as scheduler_module
 from app.latex.render import LAYOUTS
 from app.llm import get_llm_backend
 from app.llm.base import LLMBackend, StructuredCallResult
@@ -84,6 +91,12 @@ CV_LAYOUT_PATH = "/settings/cv-layout"
 #: The screening-question editor (D-124). A plain full-page POST like the weights card:
 #: no htmx swap is involved and the route makes ZERO model calls.
 SCREENING_QUESTIONS_PATH = "/settings/screening-questions"
+
+#: The daily schedule (D-151/D-152/D-153). One GLOBAL schedule, not per-search, stored
+#: in the `operations_config` singleton row; the user picks a time of day and a
+#: timezone, never a cron string. A plain full-page POST like the weights card, and it
+#: makes ZERO model calls. Saving re-configures the live scheduler with no restart.
+SCHEDULE_PATH = "/settings/schedule"
 
 #: The picker's grounded copy (DESIGN.md §4). Labels and notes are keyed by the
 #: renderer's own layout tokens; a token that lacks an entry still renders (its key),
@@ -165,13 +178,15 @@ RESET_DELETE_ORDER: tuple[str, ...] = (
 #: document (D-99) — the user's own configuration, like `searches` and `filter_rules`,
 #: so a corpus reset must not discard the weights. `apply_config` (migration 0006) is
 #: the single-row screening-question document — the same kind of user config, with no
-#: FK to `listings`, so a reset keeps it.
+#: FK to `listings`, so a reset keeps it. `operations_config` (migration 0008) is the
+#: user's own schedule and retention configuration — the same category again.
 RESET_KEPT_TABLES: tuple[str, ...] = (
     "searches",
     "filter_rules",
     "sources",
     "ranking_config",
     "apply_config",
+    "operations_config",
 )
 
 #: Tables that reference `listings` and are NOT deleted: a reset refuses while any of
@@ -229,6 +244,10 @@ async def _settings_context(
         # and the re-render after a save; the fallback for an absent row is the
         # code-level DEFAULT_QUESTIONS, so a fresh install shows a usable list.
         "screening_questions": await apply_config_repo.read_questions(session),
+        # The schedule card (D-151..D-153). One read through the repository backs both
+        # the initial render and the re-render after a save, so the pre-filled time,
+        # timezone and enable control cannot disagree with what the scheduler runs.
+        "schedule": await operations_config_repo.read_schedule(session),
         # The CV fact-store card. The same path string and the same total probe serve
         # the settings card, the queue status line and `/health`, so the three surfaces
         # cannot disagree about where the loader reads or whether it loaded.
@@ -289,6 +308,29 @@ def _parse_weights(
     if not errors and all(value <= 0.0 for value in weights.values()):
         errors.append("At least one weight must be greater than zero.")
     return weights, errors
+
+
+def _parse_schedule_form(
+    *, enabled: bool, run_at: str, timezone: str
+) -> operations_config_repo.ScheduleConfig | None:
+    """`ScheduleConfig` for a submitted schedule form, or `None` when it is invalid.
+
+    Validation at the boundary (D-34 / T-08-10): the time must be exactly `HH:MM`
+    with two digits on each side, hour <= 23 and minute <= 59, and the timezone must
+    be a member of the repository's frozen allow-list. Nothing is written on a
+    refusal, and no request-derived string reaches the trigger unvalidated.
+    """
+    parts = run_at.split(":")
+    if len(parts) != 2 or not all(part.isdigit() and len(part) == 2 for part in parts):
+        return None
+    hour, minute = int(parts[0]), int(parts[1])
+    if hour > 23 or minute > 59:
+        return None
+    if timezone not in operations_config_repo.ALLOWED_TIMEZONES:
+        return None
+    return operations_config_repo.ScheduleConfig(
+        enabled=enabled, hour=hour, minute=minute, timezone=timezone
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -375,6 +417,71 @@ async def save_screening_questions(
         await _settings_context(
             session, banner=f"Saved {len(stored)} screening question(s)."
         ),
+    )
+
+
+@router.post(SCHEDULE_PATH, response_class=HTMLResponse)
+async def save_schedule(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> HTMLResponse:
+    """Persist the daily schedule and re-configure the live scheduler (D-151..D-154).
+
+    A plain full-page POST like the weights card: no htmx swap, no model call, and it
+    works with JavaScript off. The hour, minute and timezone are validated at this
+    boundary before any SQL, so an invalid submission writes nothing and re-renders
+    with a 400 (T-08-10).
+
+    The row is committed **before** the scheduler is touched: an unavailable scheduler
+    leaves the change saved and reports it in the banner, rather than rolling the save
+    back into a lost change (Pattern 4). The reconcile call is wrapped because a
+    scheduler that cannot start must not 500 the settings page.
+    """
+    form = await read_form(request)
+    schedule = _parse_schedule_form(
+        enabled=form.get("enabled") is not None,
+        run_at=str(form.get("run_at") or "").strip(),
+        timezone=str(form.get("timezone") or "").strip(),
+    )
+    if schedule is None:
+        log.info("settings.schedule_rejected")
+        return templates.TemplateResponse(
+            request,
+            SETTINGS_TEMPLATE,
+            await _settings_context(
+                session,
+                banner=(
+                    "That time could not be understood. Pick a time of day and try again."
+                ),
+                error=True,
+            ),
+            status_code=400,
+        )
+
+    await operations_config_repo.write_schedule(session, schedule, now=datetime.now(UTC))
+    await session.commit()
+    log.info(
+        "settings.schedule_saved",
+        enabled=schedule.enabled,
+        hour=schedule.hour,
+        minute=schedule.minute,
+    )
+
+    banner = "Schedule saved."
+    try:
+        await scheduler_module.reconcile(scheduler_module.get_scheduler(), session_factory)
+    except Exception as exc:  # noqa: BLE001 — a saved schedule must survive a broken scheduler
+        log.warning("settings.schedule_reconcile_failed", error=type(exc).__name__)
+        banner = (
+            "Schedule saved, but the scheduler could not be reconfigured "
+            "(unavailable); it will apply at the next restart."
+        )
+    return templates.TemplateResponse(
+        request,
+        SETTINGS_TEMPLATE,
+        await _settings_context(session, banner=banner),
     )
 
 

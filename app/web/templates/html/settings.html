@@ -232,6 +232,45 @@
   </p>
 </section>
 
+<section class="settings-card" id="schedule-card">
+  <h3>Schedule</h3>
+  <p class="settings-note">
+    Run the search once a day, automatically. Pick a time of day and a timezone; a
+    cron string is never shown or typed. Saving applies immediately — there is no
+    restart.
+  </p>
+  <form method="post" action="/settings/schedule">
+    <label class="queue-toggle" for="schedule-enabled">
+      <input type="checkbox"
+             id="schedule-enabled"
+             name="enabled"
+             {% if schedule.enabled %}checked{% endif %}>
+      Run once a day
+    </label>
+    <div class="field">
+      <label class="field-label" for="schedule-run-at">Run at</label>
+      <input type="time"
+             id="schedule-run-at"
+             name="run_at"
+             value="{{ '%02d:%02d' | format(schedule.hour, schedule.minute) }}">
+    </div>
+    <div class="field">
+      <label class="field-label" for="schedule-timezone">Timezone</label>
+      <select id="schedule-timezone" name="timezone">
+        <option value="Europe/Dublin"{% if schedule.timezone == 'Europe/Dublin' %} selected{% endif %}>Europe/Dublin</option>
+      </select>
+      <p class="field-note">Times are read in this timezone, not the container's UTC.</p>
+    </div>
+    <p class="settings-note">
+      Missed runs are skipped, never caught up, and a run already in progress is never
+      overlapped.
+    </p>
+    <div class="form-actions">
+      <button type="submit" id="schedule-submit">Save schedule</button>
+    </div>
+  </form>
+</section>
+
 <section class="danger-card" id="danger-zone">
   <h3>Danger zone</h3>
   <p class="settings-note">
