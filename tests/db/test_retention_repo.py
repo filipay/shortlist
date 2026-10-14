@@ -22,12 +22,23 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import Application, CvArtifact, Listing
+from app.db.models import (
+    Application,
+    CvArtifact,
+    Listing,
+    ListingEvent,
+    ListingExclusion,
+    LlmCall,
+    Run,
+    Score,
+    Source,
+    SourceRequestLog,
+)
 from app.db.repositories import cv_artifact_repo
-from app.db.repositories.retention_repo import PrunePreview, delete, preview
+from app.db.repositories.retention_repo import RUN_FLOOR, PrunePreview, delete, preview
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 #: Comfortably older than any threshold used below.
@@ -100,6 +111,57 @@ async def _insert_artifact(
 async def _artifact_ids(session_factory: async_sessionmaker[AsyncSession]) -> set[int]:
     async with session_factory() as session:
         return {int(row) for row in (await session.execute(select(CvArtifact.id))).scalars().all()}
+
+
+async def _count(session_factory: async_sessionmaker[AsyncSession], table: str) -> int:
+    from app.db.models import Base
+
+    async with session_factory() as session:
+        return int(
+            await session.scalar(
+                select(func.count()).select_from(Base.metadata.tables[table])
+            )
+            or 0
+        )
+
+
+async def _seed_source(
+    session_factory: async_sessionmaker[AsyncSession], name: str = "linkedin"
+) -> None:
+    """`source_request_log.source` carries a FK to `sources.name`; seed it once."""
+    async with session_factory() as session:
+        if await session.scalar(select(Source.id).where(Source.name == name)) is None:
+            session.add(Source(name=name, display_name=name.title()))
+            await session.commit()
+
+
+async def _seed_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    count: int,
+    started_at: datetime = OLD,
+) -> list[int]:
+    """`count` finished manual runs, all at `started_at`, in ascending id order."""
+    async with session_factory() as session:
+        runs = [
+            Run(
+                search_id=None,
+                trigger="manual",
+                status="done",
+                started_at=started_at,
+                finished_at=started_at,
+                fetched_count=0,
+            )
+            for _ in range(count)
+        ]
+        session.add_all(runs)
+        await session.commit()
+        return [int(run.id) for run in runs]
+
+
+async def _run_ids(session_factory: async_sessionmaker[AsyncSession]) -> set[int]:
+    async with session_factory() as session:
+        return {int(row) for row in (await session.execute(select(Run.id))).scalars().all()}
 
 
 # --- the artifact category: one predicate, two statements ---------------------
@@ -293,3 +355,177 @@ async def test_a_bad_category_or_non_positive_age_is_refused(
             )
         with pytest.raises(ValueError):
             await delete(session, category=category, age_days=age_days)
+
+
+# --- the runs category: the floor, the events exclusion, the ledger ------------
+
+
+async def test_the_floor_protects_the_newest_runs_whatever_their_age(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    await _seed_runs(session_factory, count=3)
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="runs", age_days=1, artifacts_root=artifacts_root
+        )
+
+    assert result.count == 0
+
+
+async def test_the_floor_protects_inside_runs_while_an_outer_run_is_selected(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    ids = await _seed_runs(session_factory, count=RUN_FLOOR + 5)
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="runs", age_days=1, artifacts_root=artifacts_root
+        )
+        assert result.count == 5
+        count, _paths = await delete(session, category="runs", age_days=1)
+        await session.commit()
+
+    assert count == result.count
+    remaining = await _run_ids(session_factory)
+    assert set(ids[:5]).isdisjoint(remaining)
+    assert set(ids[5:]) <= remaining
+
+
+async def test_a_run_with_undeletable_listing_events_is_excluded_from_the_selection(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """The guard is a condition, not an error path — assert the selection, not a raise."""
+    ids = await _seed_runs(session_factory, count=RUN_FLOOR + 5)
+    listing = await _seed_listing(session_factory, index=9)
+    async with session_factory() as session:
+        session.add(
+            ListingEvent(
+                listing_id=listing, event_type="view", occurred_at=NOW, run_id=ids[0]
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="runs", age_days=1, artifacts_root=artifacts_root
+        )
+        assert result.count == 4
+        count, _paths = await delete(session, category="runs", age_days=1)
+        await session.commit()
+
+    assert count == 4
+    assert ids[0] in await _run_ids(session_factory)
+
+
+async def test_the_ledger_rows_survive_with_a_nulled_run_reference(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    ids = await _seed_runs(session_factory, count=RUN_FLOOR + 1)
+    pruned, retained = ids[0], ids[-1]
+    async with session_factory() as session:
+        session.add_all(
+            [
+                LlmCall(run_id=pruned, purpose="rank", status="ok", created_at=NOW),
+                LlmCall(run_id=retained, purpose="rank", status="ok", created_at=NOW),
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        count, _paths = await delete(session, category="runs", age_days=1)
+        await session.commit()
+
+    assert count == 1
+    assert await _count(session_factory, "llm_calls") == 2
+    async with session_factory() as session:
+        references = {
+            None if value is None else int(value)
+            for value in (await session.execute(select(LlmCall.run_id))).scalars().all()
+        }
+    assert None in references  # the pruned run's reference was NULLed, not deleted
+    assert retained in references
+
+
+async def test_the_runs_ordering_deletes_children_before_parents(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """A naive `DELETE FROM runs` fails: `scores.run_id` is NOT NULL."""
+    ids = await _seed_runs(session_factory, count=RUN_FLOOR + 1)
+    pruned = ids[0]
+    listing = await _seed_listing(session_factory, index=7)
+    await _seed_source(session_factory)
+    async with session_factory() as session:
+        session.add(Score(listing_id=listing, run_id=pruned, criteria_version=1, created_at=NOW))
+        session.add(
+            ListingExclusion(
+                listing_id=listing, run_id=pruned, rule_kind="location", created_at=NOW
+            )
+        )
+        session.add(
+            SourceRequestLog(
+                source="linkedin", run_id=pruned, occurred_at=OLD, kind="search", ok=True
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        count, _paths = await delete(session, category="runs", age_days=1)
+        await session.commit()
+
+    assert count == 1
+    assert await _count(session_factory, "scores") == 0
+    assert await _count(session_factory, "listing_exclusions") == 0
+    assert await _count(session_factory, "source_request_log") == 0
+
+
+# --- the source request log: its own floor (a verdict input survives) ---------
+
+
+async def test_a_source_log_row_of_a_retained_run_survives_and_an_orphan_row_is_selected(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    ids = await _seed_runs(session_factory, count=RUN_FLOOR)
+    retained = ids[-1]
+    await _seed_source(session_factory)
+    async with session_factory() as session:
+        session.add_all(
+            [
+                SourceRequestLog(
+                    source="linkedin", run_id=retained, occurred_at=OLD, kind="search", ok=True
+                ),
+                SourceRequestLog(
+                    source="linkedin", run_id=None, occurred_at=OLD, kind="search", ok=True
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="source_request_log", age_days=1, artifacts_root=artifacts_root
+        )
+        assert result.count == 1
+        count, _paths = await delete(session, category="source_request_log", age_days=1)
+        await session.commit()
+
+    assert count == result.count == 1
+    assert await _count(session_factory, "source_request_log") == 1
+
+
+async def test_preview_and_delete_agree_for_runs_and_the_request_log(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    await _seed_runs(session_factory, count=RUN_FLOOR + 3)
+
+    async with session_factory() as session:
+        pairs: dict[str, tuple[int, int]] = {}
+        for category in ("runs", "source_request_log"):
+            result = await preview(
+                session, category=category, age_days=1, artifacts_root=artifacts_root
+            )
+            count, _paths = await delete(session, category=category, age_days=1)
+            pairs[category] = (result.count, count)
+        await session.commit()
+
+    assert pairs == {"runs": (3, 3), "source_request_log": (0, 0)}

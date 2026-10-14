@@ -231,16 +231,95 @@ async def _delete_artifacts(session: AsyncSession, ids: list[int]) -> None:
     await session.execute(sa_delete(CvArtifact).where(CvArtifact.id.in_(ids)))
 
 
+def _select_runs(cutoff: datetime) -> Any:
+    """Old runs, minus the floor and minus any run whose events cannot be deleted.
+
+    Guard 1: a run inside the newest `RUN_FLOOR` runs (by `started_at`, `id`) survives
+    whatever its age — the source-health badge and the Adzuna promotion verdict read
+    that window, so starving it would make the health page lie.
+
+    The event constraint is an EXCLUSION, not an error path (C3): a run with
+    `listing_events` children cannot be deleted while the append-only trigger stands,
+    and the runs category does not suspend it. Excluding the run here means the dry-run
+    preview tells the truth, instead of a foreign-key failure at the operator's confirm
+    step. Do not "simplify" this away — the alternative is a delete that fails live.
+    """
+    undeletable = select(ListingEvent.id).where(ListingEvent.run_id == Run.id).exists()
+    return select(Run.id).where(
+        Run.started_at.is_not(None),
+        Run.started_at < cutoff,
+        Run.id.not_in(_floor_ids()),
+        ~undeletable,
+    )
+
+
+async def _delete_runs(session: AsyncSession, ids: list[int]) -> None:
+    """Delete the selected runs: children first, then the runner — never the ledger.
+
+    `scores` carries a NOT NULL foreign key to `runs`, so a naive delete fails at run
+    time; `listing_exclusions` and `source_request_log` are nullable but still block.
+    The DELIBERATE EXCEPTION to "delete the children" is `llm_calls`: guard 2 forbids
+    pruning the call ledger, so its rows SURVIVE with `run_id` set to NULL. Those rows
+    back the per-run and rolling-24h spend ceilings — deleting them would silently
+    uncap spending.
+    """
+    await session.execute(sa_delete(Score).where(Score.run_id.in_(ids)))
+    await session.execute(sa_delete(ListingExclusion).where(ListingExclusion.run_id.in_(ids)))
+    await session.execute(sa_delete(SourceRequestLog).where(SourceRequestLog.run_id.in_(ids)))
+    await session.execute(update(LlmCall).where(LlmCall.run_id.in_(ids)).values(run_id=None))
+    await session.execute(sa_delete(Run).where(Run.id.in_(ids)))
+
+
+def _select_source_request_log(cutoff: datetime) -> Any:
+    """Old request-log rows, but never a row belonging to a retained run.
+
+    Age alone is not sufficient: `app/probe/survival.py` names `source_request_log` as
+    a verdict input, so the rows that feed the survival verdict must survive with the
+    runs they belong to. This floor is a genuine ADDITION to the stated invariants
+    (D-165's floor covers runs, not this log) — not a re-statement of one. A row with
+    no run reference has no verdict input to protect and is eligible on age alone.
+    """
+    return select(SourceRequestLog.id).where(
+        SourceRequestLog.occurred_at < cutoff,
+        or_(
+            SourceRequestLog.run_id.is_(None),
+            SourceRequestLog.run_id.not_in(_floor_ids()),
+        ),
+    )
+
+
+async def _delete_source_request_log(session: AsyncSession, ids: list[int]) -> None:
+    """Delete the selected request-log rows. No children, no files."""
+    await session.execute(sa_delete(SourceRequestLog).where(SourceRequestLog.id.in_(ids)))
+
+
+async def _no_paths(session: AsyncSession, ids: list[int]) -> list[str]:
+    """The `paths` callable for a category that owns no files on disk."""
+    return []
+
+
 #: The frozen category mapping every request lookup goes through. Adding a category
 #: is one entry here plus its selection functions; no request-derived string ever
 #: reaches a statement because the keys are checked against `PRUNE_CATEGORIES` first.
 _CATEGORIES: Mapping[str, _Category] = MappingProxyType(
     {
+        "runs": _Category(
+            select=_select_runs,
+            paths=_no_paths,
+            delete=_delete_runs,
+            nouns=("run", "runs"),
+        ),
         "artifacts": _Category(
             select=_select_artifacts,
             paths=_paths_for_artifacts,
             delete=_delete_artifacts,
             nouns=("artifact", "artifacts"),
+        ),
+        "source_request_log": _Category(
+            select=_select_source_request_log,
+            paths=_no_paths,
+            delete=_delete_source_request_log,
+            nouns=("request log row", "request log rows"),
         ),
     }
 )
