@@ -265,6 +265,11 @@ absent from the agent sandbox.
 > HTML, with the JSON moved to `/health.json`) unless the plan chooses otherwise. The contract below
 > is about the **page**; it must agree with the JSON on opencode reachability and `auth_configured`
 > (D-138, already enforced once — both read `app.llm.auth_configured`).
+>
+> **RESOLVED (decision, 2026-10-14):** the JSON endpoint **keeps `/health`** (zero churn — 25
+> `.json()` assertions, the `test_auth_seam.py` route inventory, and `scripts/compose-smoke.sh` all
+> pin it); the page gets its own path **`/status`**. FastAPI is first-match-wins, so the page route
+> must not also declare `/health`. §E's nav href follows this.
 
 The page **reads the DB only** and puts **no request on a job board** (D-156): source status is
 computed from recorded run outcomes and recorded stop signals, never a live probe on page view. Like
@@ -334,6 +339,9 @@ the existing `#danger-zone` card — plan's choice — with H3 `Prune history`. 
 
 Add one `Health` entry to `base.html`'s `.site-nav` (`base.html:27-33`) using the shipped pattern:
 `<a class="nav-link touch-target{% if nav_path == '/health' %} nav-current{% endif %}" href="/health"{% if nav_path == '/health' %} aria-current="page"{% endif %}>Health</a>`. Seven entries wrap inside `.site-nav`'s existing `flex-wrap`; no CSS change is needed for the wrap.
+**RESOLVED (2026-10-14):** the page path is **`/status`**, so the shipped pattern above is adapted to
+`nav_path == '/status'` / `href="/status"` — the label stays `Health`. `/health` remains the JSON
+endpoint (see §B).
 
 ### F. Queue-page strip — unchanged
 
