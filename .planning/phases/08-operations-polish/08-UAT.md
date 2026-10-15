@@ -3,7 +3,7 @@ status: testing
 phase: 08-operations-polish
 source: [08-VERIFICATION.md]
 started: 2026-10-14T22:28:03Z
-updated: 2026-10-14T23:56:00Z
+updated: 2026-10-15T01:00:00Z
 ---
 
 <!-- Presentation preference (user): every UAT checkpoint MUST be shown with exact, step-by-step instructions (setup + numbered actions + what to observe + how to reply). Never present the bare expected-behavior line alone. -->
@@ -50,7 +50,10 @@ expected: |
   delete; the audit line names the category/age/count; no protected row is removed.
 why_human: Docker and a browser are absent; automated coverage exists (`test_retention_repo.py`,
   `test_settings_prune.py`) but the rendered walk is unrun (WINDOWS #17).
-result: issue
+result: [pending]
+retest: the defect below is fixed by 08-06 (`2783c65`, `1df348a`); re-walk the preview and
+  confirm a sane figure — and, if anything could not be measured, the `· N path(s) not measured`
+  clause. A live re-walk is still unrun (WINDOWS #18).
 reported: "This will delete 4 artifacts · 117043.0 GB." (2026-10-14) — the freed-size figure is
   impossible (~117 TB for four CVs; the whole `artifacts/` tree is 460 KB), so the preview
   misreports its own impact. `_human_size` is provably correct, so `size_bytes` ≈ 1.2567e14 must
@@ -73,8 +76,8 @@ result: [pending]
 
 total: 5
 passed: 0
-issues: 1
-pending: 4
+issues: 0
+pending: 5
 skipped: 0
 blocked: 0
 
@@ -82,11 +85,17 @@ blocked: 0
 
 - gap_id: G-08-1
   truth: "The prune preview truthfully reports the disk space the deletion will free."
-  status: deferred
+  status: resolved
+  resolved_by: 08-06-PLAN.md
+  resolved_at: 2026-10-15T01:00:00Z
   reason: |
     Observed `117043.0 GB` for four artifacts during the operator walk (2026-10-14). The
-    formatter is correct; the only `st_size` site (`retention_repo._size_inside`) accepts any
-    resolved path without an `S_ISREG` gate or a plausibility bound, so a directory, a special
-    file, or a bind mount that reports a bogus `st_size` is summed and presented as a fact.
-    Deferred by the user's decision on 2026-10-14 (record them, close phase 8 first) to
-    `.planning/todos/pending/2026-10-14-prune-preview-misreports-freed-size.md`.
+    formatter is correct; the only `st_size` site (`retention_repo._size_inside`) accepted any
+    resolved path without an `S_ISREG` gate, so a directory or special file was summed and
+    presented as a fact.
+    Closed by 08-06: `_size_inside` now returns a size only for `stat.S_ISREG`, non-regular
+    entries increment `missing_files` instead, the summary appends `· N path(s) not measured`
+    whenever the total is partial, and a structlog trail names every not-measured path and
+    reason. No plausibility cap was added (deliberate), so a bind mount reporting a bogus
+    `st_size` for a genuinely regular file would still be summed — the DEBUG trail is the
+    identifier. The post-fix live re-walk is unrun (WINDOWS #18).
