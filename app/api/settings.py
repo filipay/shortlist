@@ -28,6 +28,7 @@ Authentik step) lands.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import os
 import shutil
@@ -56,6 +57,7 @@ from app.db.models import Base
 from app.db.repositories import (
     apply_config_repo,
     llm_call_repo,
+    llm_config_repo,
     operations_config_repo,
     ranking_config_repo,
     retention_repo,
@@ -68,7 +70,7 @@ from app.domain.schemas.probe import ProbeResult
 from app.jobs import scheduler as scheduler_module
 from app.latex.render import LAYOUTS
 from app.llm import get_llm_backend
-from app.llm.base import LLMBackend, StructuredCallResult
+from app.llm.base import DiscoveryResult, LLMBackend, ProviderModel, StructuredCallResult
 from app.pipeline.rank import CV_FILENAME
 from app.web.template_env import make_templates
 
@@ -252,6 +254,7 @@ async def _settings_context(
     probe_info_keys: list[str] | None = None,
     probe_structured: bool = False,
     prune_preview: retention_repo.PrunePreview | None = None,
+    llm_discovery: DiscoveryResult | None = None,
 ) -> dict[str, Any]:
     backend = session.get_bind()
     database_path = Path(str(backend.url.database or ""))
@@ -268,7 +271,18 @@ async def _settings_context(
     # (CONVENTIONS rule 6). Making the select re-render server-side on a category
     # change is deliberately out of scope for this fix.
     retention = await operations_config_repo.read_retention(session)
+    try:
+        selection = await llm_config_repo.read_selection(session)
+        model_context = _llm_model_context(selection, llm_discovery)
+    except ValueError:
+        model_context = _llm_model_context(None, llm_discovery)
+        model_context["llm_model_current_label"] = (
+            "Stored model selection is invalid. Clear it or save a valid choice."
+        )
+        banner = "The stored model selection is invalid; LLM calls will refuse to run."
+        error = True
     return {
+        **model_context,
         "banner": banner,
         "error": error,
         # The CV intake result (POST /settings/cv). Defined on every render so the
@@ -324,6 +338,171 @@ async def _settings_context(
         "probe_structured": probe_structured,
         "system_prompt": SELFTEST_SYSTEM_PROMPT,
     }
+
+
+def _selection_value(selection: ProviderModel) -> str:
+    return json.dumps(selection.model_dump(), separators=(",", ":"))
+
+
+def _discovery_status(discovery: DiscoveryResult | None) -> str:
+    if discovery is None:
+        return "not_loaded"
+    if discovery.error_kind in {"unauthenticated", "models_warming"}:
+        return discovery.error_kind
+    if not discovery.reachable or discovery.error_kind:
+        return "unavailable"
+    return "ok" if discovery.providers else "empty"
+
+
+LLM_DISCOVERY_MESSAGES = {
+    "not_loaded": (
+        "Available models have not been loaded. "
+        "The saved choice has not been confirmed available."
+    ),
+    "ok": "Available models loaded. Discovery does not test structured-call compatibility.",
+    "empty": (
+        "The backend advertised no available models. "
+        "The saved choice has not been confirmed available."
+    ),
+    "unavailable": (
+        "The LLM backend is unavailable. The saved choice has not been confirmed available."
+    ),
+    "unauthenticated": (
+        "The LLM backend requires valid server authentication. "
+        "The saved choice has not been confirmed available."
+    ),
+    "models_warming": (
+        "The LLM backend is still loading its models. "
+        "The saved choice has not been confirmed available."
+    ),
+}
+
+
+def _llm_model_context(
+    selection: ProviderModel | None, discovery: DiscoveryResult | None
+) -> dict[str, Any]:
+    status = _discovery_status(discovery)
+    selected = _selection_value(selection) if selection else ""
+    pairs = set()
+    if status == "ok":
+        for pair in discovery.providers:
+            try:
+                llm_config_repo.validate_selection(pair)
+            except ValueError:
+                continue
+            pairs.add((pair.provider_id, pair.model_id))
+    saved = (selection.provider_id, selection.model_id) if selection else None
+    unconfirmed = saved is not None and saved not in pairs
+    if saved:
+        pairs.add(saved)
+    default_label = f"Environment default: {settings.opencode_model}"
+    options = [{"value": "", "label": default_label, "selected": not selected}]
+    for provider, model in sorted(pairs):
+        value = _selection_value(ProviderModel(provider_id=provider, model_id=model))
+        options.append({
+            "value": value, "label": f"{provider} / {model}", "selected": value == selected
+        })
+    message = LLM_DISCOVERY_MESSAGES[status]
+    if status == "ok" and unconfirmed:
+        message += " The saved choice is not currently advertised; it has been kept unchanged."
+    return {
+        "llm_model_options": options,
+        "llm_model_selection": selected,
+        "llm_model_current_label": (
+            f"{selection.provider_id} / {selection.model_id}" if selection else default_label
+        ),
+        "llm_model_discovery_status": status,
+        "llm_model_discovery_message": message,
+    }
+
+
+async def _discover_llm_models(backend: LLMBackend) -> DiscoveryResult:
+    try:
+        return await backend.discover_models()
+    except Exception:  # noqa: BLE001 — external failure, never echo exception details
+        return DiscoveryResult(reachable=False)
+
+
+@router.get("/settings/llm-models", response_class=HTMLResponse)
+async def load_llm_models(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    backend: LLMBackend = Depends(get_llm_backend),
+) -> HTMLResponse:
+    discovery = await _discover_llm_models(backend)
+    return templates.TemplateResponse(
+        request, SETTINGS_TEMPLATE, await _settings_context(session, llm_discovery=discovery)
+    )
+
+
+@router.post("/settings/llm-model", response_class=HTMLResponse)
+async def save_llm_model(
+    request: Request,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+    backend: LLMBackend = Depends(get_llm_backend),
+) -> HTMLResponse:
+    form = await read_form(request)
+    raw = form.get("model_selection")
+    selection = None
+    discovery = None
+    status_code = 200
+    unchanged = False
+    banner = "Global LLM model saved." if raw else "Environment default restored."
+    try:
+        # JSON can use twelve characters per Unicode code point in either identifier.
+        if not isinstance(raw, str) or len(raw) > 16_384:
+            raise ValueError("Invalid model selection")
+        if raw:
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or set(payload) != {"provider_id", "model_id"}:
+                raise ValueError("Invalid model selection")
+            if not all(isinstance(value, str) for value in payload.values()):
+                raise ValueError("Invalid model selection")
+            selection = llm_config_repo.validate_selection(ProviderModel(**payload))
+    except (ValueError, TypeError, RecursionError):
+        status_code = 422
+        banner = "Choose a valid provider and model. The saved choice has not changed."
+
+    if status_code == 200 and selection is not None:
+        try:
+            current = await llm_config_repo.read_selection(session)
+        except ValueError:
+            current = None
+            status_code = 503
+            banner = "The stored model selection is invalid. Clear it before saving a new choice."
+        # Release the read snapshot before discovery; only validated identifiers are written later.
+        await session.commit()
+        unchanged = selection == current
+        if status_code == 200 and not unchanged:
+            discovery = await _discover_llm_models(backend)
+            status = _discovery_status(discovery)
+            if status not in {"ok", "empty"}:
+                status_code = 503
+                banner = LLM_DISCOVERY_MESSAGES[status]
+            elif selection not in discovery.providers:
+                status_code = 422
+                banner = (
+                    "That exact provider and model is not advertised. "
+                    "The saved choice has not changed."
+                )
+
+    if status_code == 200 and not unchanged:
+        try:
+            await llm_config_repo.write_selection(session, selection)
+            await session.commit()
+        except Exception:  # noqa: BLE001 — no storage details in the response
+            await session.rollback()
+            status_code = 503
+            banner = "The model selection could not be saved. The saved choice has not changed."
+    return templates.TemplateResponse(
+        request, SETTINGS_TEMPLATE,
+        await _settings_context(
+            session, banner=banner, error=status_code != 200, llm_discovery=discovery
+        ),
+        status_code=status_code,
+    )
 
 
 def _parse_weights(

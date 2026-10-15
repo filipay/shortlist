@@ -45,6 +45,7 @@ class CvDraftRecord:
     patch_json: dict[str, Any]
     fact_store_hash: str | None
     created_at: datetime
+    requested_model: str | None = None
 
 
 def _to_record(row: CvDraft) -> CvDraftRecord:
@@ -59,6 +60,7 @@ def _to_record(row: CvDraft) -> CvDraftRecord:
         patch_json=dict(row.patch_json) if isinstance(row.patch_json, dict) else row.patch_json,
         fact_store_hash=row.fact_store_hash,
         created_at=row.created_at,
+        requested_model=row.requested_model,
     )
 
 
@@ -69,6 +71,7 @@ async def upsert_draft(
     base_cv_version_id: int | None,
     patch_json: dict[str, Any],
     fact_store_hash: str | None,
+    requested_model: str | None = None,
     now: datetime | None = None,
 ) -> CvDraftRecord:
     """Replace the live draft for one listing and return it. Never commits.
@@ -87,6 +90,7 @@ async def upsert_draft(
             ),
             patch_json=patch_json,
             fact_store_hash=fact_store_hash,
+            requested_model=requested_model,
             created_at=moment,
         )
         session.add(row)

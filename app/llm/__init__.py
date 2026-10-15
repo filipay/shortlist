@@ -29,7 +29,9 @@ def get_llm_backend() -> LLMBackend:
     override it (the default lane must never touch a live server), and no client
     state is shared between requests.
     """
-    return OpenCodeServerBackend()
+    from app.db.session import get_session_factory
+
+    return OpenCodeServerBackend(selection_session_factory=get_session_factory())
 
 
 __all__ = [

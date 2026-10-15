@@ -4,7 +4,7 @@ status: Awaiting next milestone
 stopped_at: Phase 08 complete — all phases complete
 last_updated: "2026-10-15T10:49:36.398Z"
 last_activity: 2026-10-15
-last_activity_desc: Milestone v1.0 completed and archived
+last_activity_desc: Quick task 261015-l05 completed — global LLM model selector (uncommitted)
 state_head: 9d719c2187b80dc95fc0edf990457a67f18e8639
 progress:
   total_phases: 9
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-15)
 Phase: Milestone v1.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-15 — Milestone v1.0 completed and archived
+Last activity: 2026-10-15 — Quick task 261015-l05 completed — global LLM model selector (uncommitted)
 
 ## Performance Metrics
 
@@ -269,6 +269,7 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261015-l05 | Global persisted opencode provider/model selector | 2026-10-15 | Uncommitted (not authorized) | [261015-l05-add-global-persisted-opencode-provider-a](quick/261015-l05-add-global-persisted-opencode-provider-a/) |
 
 ### Roadmap Evolution
 

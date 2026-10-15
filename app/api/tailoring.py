@@ -468,7 +468,7 @@ async def generate_tailored_cv(
     ``POST /listings/{id}/cv/delete``.
 
     `tailor_listing` never lets a backend transport failure escape: it records the
-    attempt's audit row and returns `None`, so the `patch is None` branch below IS
+    attempt's audit row and returns `None`, so the `outcome is None` branch below IS
     the typed refusal — a 502 `data-error="tailoring_failed"` fragment from the
     review region, with the attempt's row already written and committed by the
     `await session.commit()` above. No second try/except belongs here: once the
@@ -495,7 +495,7 @@ async def generate_tailored_cv(
             TAILOR_SKIP_FACT_STORE, TAILOR_SKIP_LABELS[TAILOR_SKIP_FACT_STORE], 409
         )
 
-    patch = await tailor_listing(
+    outcome = await tailor_listing(
         backend,
         session,
         listing=listing,
@@ -504,13 +504,14 @@ async def generate_tailored_cv(
         now=datetime.now(UTC),
     )
     await session.commit()
-    if patch is None:
+    if outcome is None:
         return _error_fragment(
             "tailoring_failed",
             "The tailoring call did not return a usable patch. Try again.",
             502,
         )
 
+    patch = outcome.patch
     try:
         plan = apply_patch(facts, patch)
     except (UnknownIdError, InvalidPatchError) as exc:
@@ -542,6 +543,7 @@ async def generate_tailored_cv(
         base_cv_version_id=version.id if version is not None else None,
         patch_json=patch.model_dump(mode="json"),
         fact_store_hash=facts_hash(facts),
+        requested_model=outcome.requested_model,
         now=datetime.now(UTC),
     )
     await session.commit()
@@ -643,6 +645,22 @@ async def compile_tailored_cv(
             409,
         )
 
+    draft = await cv_draft_repo.read_draft(session, listing_id)
+    requested_model = None
+    if (
+        draft is not None
+        and draft.listing_id == listing_id
+        and patch.listing_id == listing_id
+        and draft.base_cv_version_id == (current.id if current is not None else None)
+        and draft.fact_store_hash == facts_hash(facts)
+    ):
+        try:
+            stored_patch = TailoringPatch.model_validate(draft.patch_json)
+        except ValidationError:
+            stored_patch = None
+        if stored_patch == patch:
+            requested_model = draft.requested_model
+
     record = await compile_tailored(
         session,
         listing=listing,
@@ -652,6 +670,7 @@ async def compile_tailored_cv(
         engine=engine,
         artifacts_dir=Path(settings.artifacts_dir),
         now=datetime.now(UTC),
+        requested_model=requested_model,
     )
     await session.commit()
 

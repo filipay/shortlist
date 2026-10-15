@@ -452,6 +452,7 @@ class CvDraft(Base):
     #: The semantic fact-store hash captured at generate time (``facts_hash``, a
     #: sha256 hex), so D-109's guard still round-trips fact-store drift on reload.
     fact_store_hash = Column(String(64))
+    requested_model = Column(String(512))
     created_at = Column(DateTime, nullable=False)
 
     __table_args__ = (
@@ -539,10 +540,18 @@ class OperationsConfig(Base):
     schedule_json = Column(JSON, nullable=False)
     retention_json = Column(JSON, nullable=False)
     last_schedule_skip_json = Column(JSON)
+    llm_provider_id = Column(String(512))
+    llm_model_id = Column(String(512))
     updated_at = Column(DateTime, nullable=False)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_operations_config_singleton"),
+        CheckConstraint(
+            "(llm_provider_id IS NULL AND llm_model_id IS NULL) OR "
+            "(llm_provider_id IS NOT NULL AND llm_model_id IS NOT NULL "
+            "AND length(trim(llm_provider_id)) > 0 AND length(trim(llm_model_id)) > 0)",
+            name="ck_operations_config_llm_selection",
+        ),
     )
 
 

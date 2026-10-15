@@ -129,7 +129,7 @@ async def test_exactly_one_call_carries_one_listing_and_the_stored_requirements(
 
     async with session_factory() as session:
         listing = await session.get(Listing, listing_id)
-        patch = await tailor_listing(
+        outcome = await tailor_listing(
             stub,
             session,
             listing=listing,
@@ -139,7 +139,7 @@ async def test_exactly_one_call_carries_one_listing_and_the_stored_requirements(
         )
         await session.commit()
 
-    assert isinstance(patch, TailoringPatch)
+    assert isinstance(outcome.patch, TailoringPatch)
     assert len(stub.calls) == 1, "exactly one call per generate"
     call = stub.calls[0]
     assert call["system"] == TAILOR_SYSTEM_PROMPT
