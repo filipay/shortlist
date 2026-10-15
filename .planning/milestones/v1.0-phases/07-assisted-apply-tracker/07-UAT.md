@@ -4,6 +4,10 @@ phase: 07-assisted-apply-tracker
 source: [07-VERIFICATION.md]
 started: 2026-10-12T15:45:00Z
 updated: 2026-10-12T16:30:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  gap_snapshot: "diagnosed::scenarios=0"
 ---
 
 <!-- Presentation preference (user): every UAT checkpoint MUST be shown with exact, step-by-step instructions (setup + numbered actions + what to observe + how to reply). Never present the bare expected-behavior line alone. -->
@@ -15,6 +19,7 @@ updated: 2026-10-12T16:30:00Z
 ## Tests
 
 ### 1. Tracker layout re-run (G-07-5 + G-07-6)
+
 expected: |
   Record an application with a ~300-character note and a next-action date; open `/applications`
   at 1280px and 375px; run the rendered-rect snippet from 07-11-PLAN Task 2 per row.
@@ -24,6 +29,7 @@ result: pass
 reported: "pass" (2026-10-12) — G-07-5 and G-07-6 confirmed fixed in the live UI.
 
 ### 2. Drafting round-trip + clipboard re-run (G-07-7, backstop)
+
 expected: |
   Click `Draft answers` on a package whose provider wraps a list-typed field as `{"item": …}`;
   confirm four reviewable answers render, then click `Copy answer` and paste into a scratch
@@ -33,6 +39,7 @@ reported: "The drafting call did not return a usable response. Your existing dra
 severity: major
 
 ### 3. MVP mode / goal-format (developer decision)
+
 expected: |
   Either the `mvp` annotation is confirmed intentional (standard goal-backward verification, as
   performed here) or the developer runs `/gsd mvp-phase 7` to convert the goal.

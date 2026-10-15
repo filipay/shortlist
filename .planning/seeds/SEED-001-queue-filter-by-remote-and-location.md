@@ -5,6 +5,10 @@ planted: 2026-09-16
 planted_during: Phase 2 — Clean, Filtered, Queryable Queue
 trigger_when: when planning queue/UI polish, or any phase about filtering or browsing the queue
 scope: small-to-medium
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: dormant
 ---
 
 # SEED-001: Ad-hoc queue filters over listing attributes (remote: no, location: Galway)

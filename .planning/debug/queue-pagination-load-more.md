@@ -7,12 +7,18 @@ gap_id: G-05-3
 severity: major
 requirement: UI-01
 updated: 2026-09-23
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: root_cause_found
 ---
 
 # Symptom
+
 User reported: "one usability issue is 'load more' loads more found jobs but then cannot go back to the previous jobs, we should have paginated responses and a ui way to show what page we're on and how many jobs per page"
 
 # Expected Truth (G-05-3)
+
 The queue is navigable, not one-way: the user can move back to earlier listings after loading further ones, and the UI shows which page they are on and how many listings each page holds (UI-01 browse).
 
 ## Current Focus
@@ -23,6 +29,7 @@ expecting: confirmed
 next_action: none — root cause reported; fix owned by plan-phase --gaps.
 
 ## Symptoms
+
 expected: Queue is navigable both ways; user can return to earlier listings; UI shows page position and page size.
 actual: Load-more replaces the visible list with the next offset's rows; earlier jobs are gone; no back/prev control, no page indicator.
 errors: none (silent UX defect)
@@ -86,6 +93,7 @@ started: always broken (introduced with the Phase-2 Load-more paging, D-42)
   implication: Prev/next can reuse the existing endpoint with no new plumbing; stable row ids make an append-style swap dedup-safe.
 
 ## Resolution
+
 root_cause: >
   The queue's paging affordance is forward-only and stateless in the DOM. (1) "Load more"
   performs an `hx-swap="innerHTML"` replacement of `#queue-list` with only the next

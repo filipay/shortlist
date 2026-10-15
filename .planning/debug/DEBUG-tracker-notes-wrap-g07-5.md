@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "G-07-5 — tracker Notes column forces horizontal scroll; long notes don't wrap; actions unreachable (and dd/mm/yyyy overlays Update status)"
 created: 2026-10-06T00:00:00Z
 updated: 2026-10-06T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: "CONFIRMED — the tracker reuses the queue's nowrap cell vocabulary on a row shape it was never sized for. `.truncate` (nowrap, no width) makes the note column demand the note's full max-content width; `.listing-actions` (nowrap) makes the actions column demand the sum of both edit forms; because `.queue-table` is `display:block; overflow-x:auto`, that over-width becomes a horizontal scrollbar instead of wrapping, pushing the last (Actions) column off-screen."
@@ -14,6 +19,7 @@ expecting: "Done — mechanism matches the screenshot and the CSS."
 next_action: "None — diagnosis complete (find_root_cause_only)."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: "The tracker Notes column is readable without horizontal scrolling; long notes wrap and the row's actions remain reachable. (UAT test 1 as originally written asserted one-line truncation + title=; the corrected truth is wrap.)"
@@ -23,6 +29,7 @@ reproduction: "Open `/applications` with a row whose note is longer than the cel
 started: "Discovered during UAT (2026-10-06)"
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "The note cell's `title=\"\"` attribute is missing, so the full note is lost."
@@ -34,6 +41,7 @@ started: "Discovered during UAT (2026-10-06)"
   timestamp: 2026-10-06
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-10-06
@@ -77,6 +85,7 @@ started: "Discovered during UAT (2026-10-06)"
   implication: "The spec carried a self-contradiction; the corrected truth resolves it in favour of wrapping. This is why the shipped behavior satisfies neither intent cleanly."
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: |

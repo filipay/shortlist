@@ -4,9 +4,14 @@ title: Add a prune-all action across every category
 area: ui
 severity: minor
 files:
+
   - app/db/repositories/retention_repo.py
   - app/api/settings.py
   - app/web/templates/html/settings.html
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
 ---
 
 ## Problem

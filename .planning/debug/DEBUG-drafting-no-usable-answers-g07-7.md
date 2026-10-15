@@ -4,6 +4,10 @@ trigger: "G-07-7 — drafting-no-usable-answers-g07-7"
 created: 2026-10-12T00:00:00Z
 updated: 2026-10-12T10:20:00Z
 goal: find_root_cause_only
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 # G-07-7 — "The drafting call did not return a usable response"

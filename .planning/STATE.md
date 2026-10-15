@@ -1,37 +1,35 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 08
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 08 complete — all phases complete
-last_updated: "2026-10-15T10:19:33.545Z"
+last_updated: "2026-10-15T10:49:36.398Z"
 last_activity: 2026-10-15
-last_activity_desc: Phase 08 complete
-state_head: c2fefd9201465f1ef791aa9f2bd651413e47bb1d
+last_activity_desc: Milestone v1.0 completed and archived
+state_head: 9d719c2187b80dc95fc0edf990457a67f18e8639
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 82
   completed_plans: 82
-  percent: 11
+  percent: 0
+current_phase: 08
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-14)
+See: .planning/PROJECT.md (updated 2026-10-15)
 
 **Core value:** Every morning there is one ranked, explained, apply-ready queue of jobs worth considering — so the search→judge→tailor loop costs minutes instead of hours.
-**Current focus:** Phase 08 — Operations + Polish
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 08
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-10-15 — Phase 08 complete
-
-Progress: [█░░░░░░░░░] 11%
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-15 — Milestone v1.0 completed and archived
 
 ## Performance Metrics
 
@@ -271,10 +269,6 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260929-i46 | Extract the required years of experience from each listing's description as a soft ranking hint | 2026-09-29 | 6ebc31b | [260929-i46-extract-the-required-years-of-experience](./quick/260929-i46-extract-the-required-years-of-experience/) |
-| 260929-m1j | Fix the skills section: widen the model-assisted CV extraction schema so each skill carries a group, update the extraction prompt to ask for it, and group the rendered skills by group in the LaTeX template so the section renders as labelled lines instead of one row per skill | 2026-09-29 | 3dbaecd | [260929-m1j-fix-the-skills-section-widen-the-model-a](./quick/260929-m1j-fix-the-skills-section-widen-the-model-a/) |
-| 260929-pan | Make the tailored CV actively fit the page budget: drop the lowest-value whole bullets until it fits, the candidates are exhausted, or the pass bound is hit, recording each drop as a reasoned change in the patch and the compile response | 2026-09-29 | 59ed706 | [260929-pan-make-the-tailored-cv-actively-fit-the-pa](./quick/260929-pan-make-the-tailored-cv-actively-fit-the-pa/) |
-| 260930-lay | Add three committed CV layouts (Classic default / Modern / Compact) with one remembered global preference stored as a one-token layout file beside cv.yaml, applied to the next tailored CV, failing closed to Classic, and a settings picker | 2026-09-30 | 0b8911e | [260930-lay-cv-layout-variants](./quick/260930-lay-cv-layout-variants/) |
 
 ### Roadmap Evolution
 
@@ -288,9 +282,35 @@ Items acknowledged and deferred at milestone close, most recent first:
 |----------|------|--------|-------------|-----------|
 | Decision-coverage | Phase 07 §13a override (re-confirmed 2026-10-12): D-120, D-126, D-128, D-129, D-130, D-131, D-133, D-134 lack `D-NN:` citations in planned surfaces (all already implemented); D-132 now cited by 07-13; override accepted, verify-phase must re-surface | open | 2026-10-12 | v1 |
 | Known limitation | Phase 07 G-07-7: `Draft answers` fails live (provider emits an unrecognised list-wrapper shape → `drafting_failed`, no answers render); UAT test 2 failed, deferred by user decision to ship anyway; documented in `README.md`, `deferred-items.md` and `07-UAT.md` | resolved 2026-10-14 (`af17f8e` + `3b74bff`, confirmed live) | 2026-10-12 | v1 |
+| debug_sessions | DEBUG-drafting-no-usable-answers-g07-7 | diagnosed | 2026-10-15 | v1.0 |
+| debug_sessions | DEBUG-tracker-control-overlap-g07-6 | diagnosed | 2026-10-15 | v1.0 |
+| debug_sessions | DEBUG-tracker-notes-wrap-g07-5 | diagnosed | 2026-10-15 | v1.0 |
+| debug_sessions | DEBUG-uat-05-cv-intake-undiscoverable | diagnosed | 2026-10-15 | v1.0 |
+| debug_sessions | DEBUG-uat-05-ranking-skip-invisible | diagnosed | 2026-10-15 | v1.0 |
+| debug_sessions | queue-pagination-load-more | root_cause_found | 2026-10-15 | v1.0 |
+| debug_sessions | uat-05-detail-action-feedback | diagnosed | 2026-10-15 | v1.0 |
+| quick_tasks | 260929-pan-make-the-tailored-cv-actively-fit-the-pa | acknowledged | 2026-10-15 | v1.0 |
+| quick_tasks | 260930-lay-cv-layout-variants | acknowledged | 2026-10-15 | v1.0 |
+| seeds | SEED-001-queue-filter-by-remote-and-location | dormant | 2026-10-15 | v1.0 |
+| seeds | SEED-002-multi-source-fact-store | dormant | 2026-10-15 | v1.0 |
+| todos | 2026-10-14-add-prune-all-action.md | (presence-only) | 2026-10-15 | v1.0 |
+| todos | 2026-10-14-allow-explicit-prune-guard-override.md | (presence-only) | 2026-10-15 | v1.0 |
+| uat_gaps | 03/03-UAT.md | testing (3 pending) | 2026-10-15 | v1.0 |
+| uat_gaps | 04/04-UAT.md | testing (2 pending) | 2026-10-15 | v1.0 |
+| uat_gaps | 07/07-UAT.md | diagnosed (0 pending) | 2026-10-15 | v1.0 |
+| deferred_items | 02/deferred-items.md: `.venv-host` unusable in this sandbox (build-time absolute shebang; x86_64 wheels vs musl interpreter) — pre-existing environment breakage, workaround is the sibling `.venv/` | acknowledged | 2026-10-15 | v1.0 |
+| deferred_items | 02/deferred-items.md: default `DATABASE_URL_SYNC` (`sqlite:////data/jobsearch.db`) not writable in this sandbox — matches documented D-17 container assumption | acknowledged | 2026-10-15 | v1.0 |
+| deferred_items | 07/deferred-items.md: `assets/tailwind/input.css` drifted from `static/vendor/app.css` since phase 5 — resolved by 07-13 | acknowledged | 2026-10-15 | v1.0 |
+| deferred_items | 07/deferred-items.md: G-07-7 drafting screening answers failed live, deferred by user decision — resolved 2026-10-14 (`af17f8e` + `3b74bff`) | acknowledged | 2026-10-15 | v1.0 |
+| deferred_items | 07.1/deferred-items.md: pre-existing ruff F401 `INFO_PATH` unused (`app/llm/opencode_server.py:63`) | acknowledged | 2026-10-15 | v1.0 |
+| deferred_items | 07.1/deferred-items.md: committed V2 slice not byte-accurate (`request_body_properties.id` and `Model.Ref.variant` omitted) — harmless under the operator lane's committed-subset diff | acknowledged | 2026-10-15 | v1.0 |
 
 ## Session Continuity
 
 Last session: 2026-10-14T15:40:06.676Z
 Stopped at: Phase 08 complete — all phases complete
 Resume file: .planning/phases/08-operations-polish/08-CONTEXT.md
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

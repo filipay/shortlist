@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: unknown
+---
+
 # 260929-pan — make the tailored CV actively fit the page budget
 
 ## What shipped

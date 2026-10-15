@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "uat-05-detail-action-feedback — Save and Hide controls on the phase-05 ranked-job detail page produce no visible feedback; user also cannot find where saved jobs go"
 created: 2026-09-24T00:00:00Z
 updated: 2026-09-24T00:00:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: CONFIRMED — two contributing causes: (1) the detail page's Save/Hide forms carry the queue-row htmx target `#listing-row-{id}`, which the detail page never renders, so htmx raises targetError and no swap/feedback occurs; (2) saved jobs are reachable only via the queue's unlabelled-as-a-view "Saved" checkbox filter, with no link or hint from the detail page where Save is clicked.
@@ -14,6 +19,7 @@ expecting: Confirmed.
 next_action: "Diagnose-only mode — return ROOT CAUSE FOUND. No fix applied."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: Open a job detail, click Save and Hide, and decide whether the current no-feedback behaviour is acceptable. The event is appended server-side, but the on-page swap never happens because the forms target `#listing-row-{id}`, which the detail page never renders — htmx raises `targetError`. Record a deliberate fix-vs-accept decision.
@@ -23,6 +29,7 @@ reproduction: Test 8 in UAT — boot the app, open a job detail, click Save, the
 started: Discovered during UAT
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "The POST fails or is rejected, so no event is persisted."
@@ -34,6 +41,7 @@ started: Discovered during UAT
   timestamp: 2026-09-24T00:00:00Z
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-09-24T00:00:00Z
@@ -67,6 +75,7 @@ started: Discovered during UAT
   implication: "No automated gate covers the detail page's action target — the mismatch shipped undetected. This is the 'why not caught' answer: a gap in the detail-page test, not a failing existing gate."
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: "Two contributing causes. (1) FEEDBACK: the job detail page's Save and Hide forms (app/web/templates/html/listing_detail.html:101-104 and :112-115) set hx-target=\"#listing-row-{row.id}\", an element rendered only by the queue row partial (app/web/templates/html/_listing_row.html:30). The detail page renders no such element, so htmx cannot resolve the target and raises htmx:targetError; the POST still reaches app/api/events.py, appends the event and returns the row fragment, but the fragment is never swapped in, so the page shows no change. The button's own label/state would only update on a manual reload. (2) DISCOVERABILITY: saved jobs are reachable only via the queue page's `Saved` checkbox filter (app/web/templates/html/queue.html:86-97, wired through routes.py:148 and queue_repo.py:509-510); the detail page offers no link, hint, count or post-save affordance pointing at it, so a user who just clicked Save has no path to find them."

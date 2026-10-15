@@ -4,6 +4,10 @@ gap: G-07-6
 slug: tracker-control-overlap-g07-6
 created: 2026-10-12
 goal: find_root_cause_only
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 # G-07-6 — Tracker row controls overlap (`dd/mm/yyyy` over `Update status`)

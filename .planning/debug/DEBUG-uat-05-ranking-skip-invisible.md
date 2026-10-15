@@ -7,9 +7,14 @@ gap_id: G-05-1
 phase: 05-ranking-core-value
 truth: "The queue ranking strip and the job detail page distinguish ranking-in-progress from ranking-skipped, and name the skip reason when the pass did not run."
 mode: find_root_cause_only
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 hypothesis: "CONFIRMED — the ranking pass's outcome is never persisted on the run. `_finish` is the sole writer of the three free-form JSON columns and writes them independently of the detached ranking task; all three skip paths return before `run_ranking`'s one write (`ranked_count`), so `runs.ranked_count` stays NULL and the queue strip — gated on `ranked_count is not None` — renders nothing. Running and skipped are therefore visually identical, and no reason is recorded anywhere a UI can read."
@@ -18,6 +23,7 @@ expecting: "Exactly one writer per column (`_finish`), NULL conflates running/sk
 next_action: "Diagnosis complete; hand fix surface to the planning/executing agent. No code modified."
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: "When ranking does not run, the queue ranking strip says ranking is skipped and names why; while it is running the strip says so; the job detail page says the same. The user can tell 'still running' from 'skipped' from 'ranked'."
@@ -27,6 +33,7 @@ reproduction: "Run the pipeline with `settings.cv_dir` containing no readable `c
 started: "Always — the skip paths have existed since Phase 5 (D-88/D-94). There has never been a persisted ranking-outcome marker."
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "The ranking task crashed mid-pass and lost its result."
@@ -50,6 +57,7 @@ started: "Always — the skip paths have existed since Phase 5 (D-88/D-94). Ther
   timestamp: 2026-09-23T09:08:00Z
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-09-23T09:08:00Z
@@ -98,6 +106,7 @@ started: "Always — the skip paths have existed since Phase 5 (D-88/D-94). Ther
   implication: "A fix that persists a marker changes the premise of `_assert_skipped` (still zero LLM/score rows, but now a run-row marker); new/changed assertions will be needed. No test currently asserts a run-level ranking-skip marker because none exists."
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: >
@@ -213,6 +222,7 @@ Surface 3 is the truth's "queue ranking strip"; surface 2 is its "job detail pag
 # Recommended minimal fix surface (NOT implemented)
 
 **Files that must change:**
+
 1. `app/pipeline/rank.py` — `start_ranking_task` returns its skip reason (`str | None`) instead of only logging; extract the `ranking_disabled` + `fact_store_absent` checks into a shared sync helper used by both the new precheck and `run_ranking`. (Optionally have `run_ranking`'s terminal write set `ranking.status="done"`.)
 2. `app/pipeline/run.py` — in the ranking block (:898-913) compute the outcome (`started` / `ranking_in_flight` / `ranking_disabled` / `fact_store_absent` / `not_attempted`) synchronously; pass it into `_finish`; `_finish` writes it as `reason_counts_json["ranking"] = {"status": ..., "reason": ...}` (or a `rank` entry in `stage_log_json`), in its single commit.
 3. `app/db/repositories/run_repo.py` — `RunSummary` gains `ranking_status` / `ranking_reason`, parsed in `_summary`; `_ranking_strip` consumes them.

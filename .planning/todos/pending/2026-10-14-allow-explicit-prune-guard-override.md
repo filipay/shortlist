@@ -4,9 +4,14 @@ title: Allow an explicit, non-default override of two prune guards
 area: api
 severity: minor
 files:
+
   - app/db/repositories/retention_repo.py
   - app/api/settings.py
   - app/web/templates/html/settings.html
+
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
 ---
 
 ## Problem

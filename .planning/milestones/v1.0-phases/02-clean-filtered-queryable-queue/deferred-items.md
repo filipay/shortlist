@@ -23,6 +23,7 @@ changes (scope boundary: do not auto-fix unrelated pre-existing issues).
   0002; rebuilding `.venv-host` is an operator action outside this plan's files.
   The phase-level `<verification>` commands text should be read as
   `.venv/bin/python -m pytest` in this sandbox.
+  status: acknowledged
 
 ### Default `DATABASE_URL_SYNC` is not writable in this sandbox (pre-existing, environment)
 
@@ -34,3 +35,4 @@ changes (scope boundary: do not auto-fix unrelated pre-existing issues).
   `DATABASE_URL_SYNC="sqlite:///$(pwd)/data/<file>.db"`.
 - **Why deferred:** matches the documented D-17 deployment assumption
   (`/data` is the container volume); not a code defect.
+  status: acknowledged

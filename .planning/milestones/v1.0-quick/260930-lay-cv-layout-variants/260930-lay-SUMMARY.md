@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: unknown
+---
+
 # 260930-lay — Add three committed CV layouts with one remembered preference
 
 ## What shipped

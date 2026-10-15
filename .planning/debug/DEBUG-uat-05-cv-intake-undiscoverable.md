@@ -8,6 +8,10 @@ phase: 05-ranking-core-value
 truth: "The app tells the user a CV fact store is required for ranking and how to supply it."
 mode: find_root_cause_only
 bug_class: Bohrbug (deterministic product/discoverability omission; not in common-bug-patterns catalog)
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -22,6 +26,7 @@ expecting: "Confirmed by inventory — see Evidence."
 next_action: "Diagnosis complete. Return ROOT CAUSE FOUND. No fix (diagnose-only mode)."
 
 ## Symptoms
+
 <!-- IMMUTABLE after gathering -->
 
 expected: "A user opening the web UI can discover that ranking needs a CV fact store, learn the
@@ -36,6 +41,7 @@ reproduction: "Open the web UI as an operator with an empty cv/ dir. /settings, 
 started: "Always — Phase 4 shipped the parser + store, no roadmap phase includes CV intake/disclosure."
 
 ## Eliminated
+
 <!-- APPEND only -->
 
 - hypothesis: "The defect is that the app has no CV upload UI."
@@ -53,6 +59,7 @@ started: "Always — Phase 4 shipped the parser + store, no roadmap phase includ
   timestamp: 2026-09-23
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: 2026-09-23

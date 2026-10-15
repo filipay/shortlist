@@ -5,6 +5,10 @@ planted: 2026-10-01
 planted_during: Phase 7 — Assisted Apply + Tracker
 trigger_when: when planning CV intake or fact-store expansion, or any phase about onboarding or multi-source authoring
 scope: medium-large
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-15
+  status: dormant
 ---
 
 # SEED-002: Fill the fact store from more than one source (personal site, LinkedIn, …)
