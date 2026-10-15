@@ -25,7 +25,17 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any, Literal
 
-SourceName = Literal["linkedin", "indeed", "adzuna", "glassdoor", "google"]
+SourceName = Literal[
+    "linkedin",
+    "indeed",
+    "adzuna",
+    "glassdoor",
+    "google",
+    "bayt",
+    "arbeitnow",
+    "remotive",
+    "jobicy",
+]
 
 FetchStatus = Literal["ok", "partial", "blocked", "rate_limited", "error"]
 

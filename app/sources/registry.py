@@ -62,10 +62,23 @@ def all_adapters() -> dict[str, type[JobSource]]:
 
 # Registration is performed by importing the adapter modules — a new board is
 # registered by being imported here.
-from app.sources import indeed, linkedin  # noqa: E402
+from app.sources import (  # noqa: E402
+    arbeitnow,
+    bayt,
+    glassdoor,
+    indeed,
+    jobicy,
+    linkedin,
+    remotive,
+)
 
 register(linkedin.LinkedInAdapter)
 register(indeed.IndeedAdapter)
+register(glassdoor.GlassdoorAdapter)
+register(bayt.BaytAdapter)
+register(arbeitnow.ArbeitnowAdapter)
+register(remotive.RemotiveAdapter)
+register(jobicy.JobicyAdapter)
 
 
 __all__ = [
