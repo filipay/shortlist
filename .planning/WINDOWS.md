@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 10
 waived_count: 1
-fixed_count: 2
+fixed_count: 7
 total_count: 18
-last_updated: 2026-10-15T00:56:48.763Z
+last_updated: 2026-10-15T10:21:34.597Z
 ---
 
 # Broken Windows Ledger
@@ -28,11 +28,11 @@ last_updated: 2026-10-15T00:56:48.763Z
 | 11 | 07.1 | unrun-verify | tests/llm/test_contract_live.py |  | Operator-run live V2 contract lane (D-150) is deselected by addopts and cannot run in the executor sandbox. The projection logic was validated during execution against the recorded 2.0.26 /openapi.json capture: 6 facts, 0 divergent pointers; version assertion targets GET /api/info == _meta.server_version 2.0.26. The pytest -m live lane itself remains for the operator per docs/runbook-opencode-contract.md. | open |  | 2026-10-13T15:09:53.380Z |  |
 | 12 | 07.1 | unrun-verify | tests/llm/test_live_structured_call.py |  | Operator-run live V2 generate lane (D-145) is deselected and cannot run without a running, authenticated opencode server. Its V2 wiring is asserted statically; the D-145 negative model check is PROVISIONAL and must be reconciled with the observed error shape on the first operator run. | open |  | 2026-10-13T15:09:53.609Z |  |
 | 13 | 07.1 | unrun-verify | tests/llm/test_contract_live.py |  | Operator live lane requires a running authenticated opencode server; unrun in this environment (carried from 07.1-05). Documented by 07.1-06's runbook. | open |  | 2026-10-13T15:29:15.232Z |  |
-| 14 | 08 | unrun-verify | Dockerfile | 59 | The build-time `ZoneInfo('Europe/Dublin')` tz proof (T-08-03 / RESEARCH Pitfall 7, assumption A1) could not be executed: Docker is absent from the agent sandbox. The image build is the operator's arming step (`docker compose build`); tzdata is the documented remedy if the assertion fails. | open |  | 2026-10-14T17:24:00.000Z |  |
-| 15 | 08 | unrun-verify | docs/runbook-responsive-ui.md |  | Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator. | open |  | 2026-10-14T18:13:03.559Z |  |
-| 16 | 08 | unrun-verify | docs/runbook-compose-smoke.md |  | PLAT-06 schedule persistence: set a daily time, docker compose restart, confirm the schedule survives and exactly one run with trigger 'schedule' fires (never two). Operator-run; Docker absent from the agent sandbox. | open |  | 2026-10-14T18:48:26.502Z |  |
-| 17 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Operator walk of the Prune history control (one pass per category: pick a category and an age, read the preview counts and protected line, confirm, verify the audit banner) is UNRUN — Docker and a browser are absent from the agent sandbox. Automated coverage: tests/db/test_retention_repo.py (guards + trigger re-arm) and tests/api/test_settings_prune.py (round-trip, refusals, audit line). | open |  | 2026-10-14T20:30:51.223Z |  |
-| 18 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Post-08-06 operator walk of the Prune history control is UNRUN — Docker and a browser are absent from the agent sandbox. The next live preview must show the unmeasured clause ('· N paths not measured') when a selected path is not a regular file, must never show an impossible size, and must log prune.size_measured / prune.size_not_measured events naming each path and its mode/size. Automated coverage: tests/db/test_retention_repo.py (regular-file gate, non-regular class, no-cap) and tests/api/test_settings_prune.py (rendered clause, negative control). | open |  | 2026-10-15T00:56:48.763Z |  |
+| 14 | 08 | unrun-verify | Dockerfile | 59 | The build-time `ZoneInfo('Europe/Dublin')` tz proof (T-08-03 / RESEARCH Pitfall 7, assumption A1) could not be executed: Docker is absent from the agent sandbox. The image build is the operator's arming step (`docker compose build`); tzdata is the documented remedy if the assertion fails. | fixed |  | 2026-10-14T17:24:00.000Z | 2026-10-15T10:21:34.066Z |
+| 15 | 08 | unrun-verify | docs/runbook-responsive-ui.md |  | Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator. | fixed |  | 2026-10-14T18:13:03.559Z | 2026-10-15T10:21:34.196Z |
+| 16 | 08 | unrun-verify | docs/runbook-compose-smoke.md |  | PLAT-06 schedule persistence: set a daily time, docker compose restart, confirm the schedule survives and exactly one run with trigger 'schedule' fires (never two). Operator-run; Docker absent from the agent sandbox. | fixed |  | 2026-10-14T18:48:26.502Z | 2026-10-15T10:21:34.339Z |
+| 17 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Operator walk of the Prune history control (one pass per category: pick a category and an age, read the preview counts and protected line, confirm, verify the audit banner) is UNRUN — Docker and a browser are absent from the agent sandbox. Automated coverage: tests/db/test_retention_repo.py (guards + trigger re-arm) and tests/api/test_settings_prune.py (round-trip, refusals, audit line). | fixed |  | 2026-10-14T20:30:51.223Z | 2026-10-15T10:21:34.469Z |
+| 18 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Post-08-06 operator walk of the Prune history control is UNRUN — Docker and a browser are absent from the agent sandbox. The next live preview must show the unmeasured clause ('· N paths not measured') when a selected path is not a regular file, must never show an impossible size, and must log prune.size_measured / prune.size_not_measured events naming each path and its mode/size. Automated coverage: tests/db/test_retention_repo.py (regular-file gate, non-regular class, no-cap) and tests/api/test_settings_prune.py (rendered clause, negative control). | fixed |  | 2026-10-15T00:56:48.763Z | 2026-10-15T10:21:34.597Z |
 
 ````json
 [
@@ -199,10 +199,10 @@ last_updated: 2026-10-15T00:56:48.763Z
     "file": "Dockerfile",
     "line": 59,
     "description": "The build-time `ZoneInfo('Europe/Dublin')` tz proof (T-08-03 / RESEARCH Pitfall 7, assumption A1) could not be executed: Docker is absent from the agent sandbox. The image build is the operator's arming step (`docker compose build`); tzdata is the documented remedy if the assertion fails.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-14T17:24:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-15T10:21:34.066Z"
   },
   {
     "id": 15,
@@ -211,10 +211,10 @@ last_updated: 2026-10-15T00:56:48.763Z
     "file": "docs/runbook-responsive-ui.md",
     "line": null,
     "description": "Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-14T18:13:03.559Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-15T10:21:34.196Z"
   },
   {
     "id": 16,
@@ -223,10 +223,10 @@ last_updated: 2026-10-15T00:56:48.763Z
     "file": "docs/runbook-compose-smoke.md",
     "line": null,
     "description": "PLAT-06 schedule persistence: set a daily time, docker compose restart, confirm the schedule survives and exactly one run with trigger 'schedule' fires (never two). Operator-run; Docker absent from the agent sandbox.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-14T18:48:26.502Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-15T10:21:34.339Z"
   },
   {
     "id": 17,
@@ -235,10 +235,10 @@ last_updated: 2026-10-15T00:56:48.763Z
     "file": "app/web/templates/html/settings.html",
     "line": null,
     "description": "Operator walk of the Prune history control (one pass per category: pick a category and an age, read the preview counts and protected line, confirm, verify the audit banner) is UNRUN — Docker and a browser are absent from the agent sandbox. Automated coverage: tests/db/test_retention_repo.py (guards + trigger re-arm) and tests/api/test_settings_prune.py (round-trip, refusals, audit line).",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-14T20:30:51.223Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-15T10:21:34.469Z"
   },
   {
     "id": 18,
@@ -247,10 +247,10 @@ last_updated: 2026-10-15T00:56:48.763Z
     "file": "app/web/templates/html/settings.html",
     "line": null,
     "description": "Post-08-06 operator walk of the Prune history control is UNRUN — Docker and a browser are absent from the agent sandbox. The next live preview must show the unmeasured clause ('· N paths not measured') when a selected path is not a regular file, must never show an impossible size, and must log prune.size_measured / prune.size_not_measured events naming each path and its mode/size. Automated coverage: tests/db/test_retention_repo.py (regular-file gate, non-regular class, no-cap) and tests/api/test_settings_prune.py (rendered clause, negative control).",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-15T00:56:48.763Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-15T10:21:34.597Z"
   }
 ]
 ````
