@@ -40,7 +40,7 @@ dependencies = [
     # PyPI's python-jobspy 1.1.82 predates the pinned LinkedIn date-parsing fix.
     # The distribution is named `python-jobspy`, NOT `jobspy` (an unrelated PyPI
     # project); naming the wrong distribution makes pip report a misleading error.
-    "python-jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1",
+    "python-jobspy @ git+https://github.com/speedyapply/JobSpy.git@1fffbcd4c1d822740157459fe527a916d3ce7a43",
 ]
 
 [project.optional-dependencies]
