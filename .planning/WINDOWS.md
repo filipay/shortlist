@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 15
 waived_count: 1
 fixed_count: 2
-total_count: 17
-last_updated: 2026-10-14T20:30:51.223Z
+total_count: 18
+last_updated: 2026-10-15T00:56:48.763Z
 ---
 
 # Broken Windows Ledger
@@ -32,6 +32,7 @@ last_updated: 2026-10-14T20:30:51.223Z
 | 15 | 08 | unrun-verify | docs/runbook-responsive-ui.md |  | Operator-only UI-06 responsive checklist (docs/runbook-responsive-ui.md) unrun: Docker and a browser are absent from the agent sandbox. The stylesheet byte-identity, reflow, per-cell labels, scroll regions and 44px tap-floor assertions are proven by the static + byte-identity tests; the rendered 320/375/768px visual walkthrough remains for the operator. | open |  | 2026-10-14T18:13:03.559Z |  |
 | 16 | 08 | unrun-verify | docs/runbook-compose-smoke.md |  | PLAT-06 schedule persistence: set a daily time, docker compose restart, confirm the schedule survives and exactly one run with trigger 'schedule' fires (never two). Operator-run; Docker absent from the agent sandbox. | open |  | 2026-10-14T18:48:26.502Z |  |
 | 17 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Operator walk of the Prune history control (one pass per category: pick a category and an age, read the preview counts and protected line, confirm, verify the audit banner) is UNRUN — Docker and a browser are absent from the agent sandbox. Automated coverage: tests/db/test_retention_repo.py (guards + trigger re-arm) and tests/api/test_settings_prune.py (round-trip, refusals, audit line). | open |  | 2026-10-14T20:30:51.223Z |  |
+| 18 | 08 | unrun-verify | app/web/templates/html/settings.html |  | Post-08-06 operator walk of the Prune history control is UNRUN — Docker and a browser are absent from the agent sandbox. The next live preview must show the unmeasured clause ('· N paths not measured') when a selected path is not a regular file, must never show an impossible size, and must log prune.size_measured / prune.size_not_measured events naming each path and its mode/size. Automated coverage: tests/db/test_retention_repo.py (regular-file gate, non-regular class, no-cap) and tests/api/test_settings_prune.py (rendered clause, negative control). | open |  | 2026-10-15T00:56:48.763Z |  |
 
 ````json
 [
@@ -237,6 +238,18 @@ last_updated: 2026-10-14T20:30:51.223Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T20:30:51.223Z",
+    "resolved_at": null
+  },
+  {
+    "id": 18,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "app/web/templates/html/settings.html",
+    "line": null,
+    "description": "Post-08-06 operator walk of the Prune history control is UNRUN — Docker and a browser are absent from the agent sandbox. The next live preview must show the unmeasured clause ('· N paths not measured') when a selected path is not a regular file, must never show an impossible size, and must log prune.size_measured / prune.size_not_measured events naming each path and its mode/size. Automated coverage: tests/db/test_retention_repo.py (regular-file gate, non-regular class, no-cap) and tests/api/test_settings_prune.py (rendered clause, negative control).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T00:56:48.763Z",
     "resolved_at": null
   }
 ]
