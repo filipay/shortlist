@@ -8,7 +8,9 @@ unlink, the audit line and the retention threshold persisted on the operations r
 
 from __future__ import annotations
 
+import os
 import re
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -363,6 +365,108 @@ async def test_the_protected_line_names_the_run_floor_actually_enforced(
     protected = "Kept regardless: the last " + str(retention_repo.RUN_FLOOR) + " runs"
     assert protected in response.text
     assert "the LLM call ledger, CVs" in response.text
+
+
+# --- the unmeasured clause in the preview summary -----------------------------
+
+
+def _make_non_regular(root: Path, kind: str, name: str) -> Path:
+    """Create a non-regular entry INSIDE `root` of the named kind, and return its path."""
+    path = root / name
+    if kind == "directory":
+        path.mkdir()
+    elif kind == "fifo":
+        os.mkfifo(path)
+    elif kind == "socket":
+        # A bound AF_UNIX socket leaves its filesystem entry behind once closed.
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.bind(str(path))
+        sock.close()
+    elif kind == "symlink_to_dir":
+        target = root / (name + "-target")
+        target.mkdir()
+        path.symlink_to(target)
+    else:  # pragma: no cover — a typo in the parametrisation, not a runtime path
+        raise AssertionError("unknown non-regular kind: " + kind)
+    return path
+
+
+def _summary_line(response_text: str) -> str:
+    """The inner text of the rendered `#prune-preview-summary` line, or `''` if absent."""
+    match = re.search(r'<li id="prune-preview-summary">(.*?)</li>', response_text, re.S)
+    return match.group(1) if match else ""
+
+
+async def test_a_directory_path_makes_the_summary_say_not_measured(
+    client: object, session_factory: async_sessionmaker[AsyncSession], _artifacts_dir: Path
+) -> None:
+    """Literal repro: `This will delete 4 artifacts · 117043.0 GB.`
+
+    The impossible `117043.0 GB` came from a stored path that was not a regular file
+    being summed into the total. The rendered summary must now report `0 B` and say how
+    many paths could not be measured — and must never show the impossible figure.
+    """
+    listing = await _seed_listing(session_factory)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
+    directory = _artifacts_dir / "a-directory-not-a-cv"
+    directory.mkdir()
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, pdf_path=str(directory)
+    )
+
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PREVIEW_PATH, data={"category": "artifacts", "age_days": "30"}
+    )
+
+    assert response.status_code == 200
+    assert 'id="prune-preview-summary"' in response.text
+    summary = _summary_line(response.text)
+    assert "This will delete 1 artifact" in summary
+    assert "0 B" in summary
+    assert "1 path not measured" in summary
+    assert "117043.0 GB" not in response.text
+
+
+@pytest.mark.parametrize("kind", ["directory", "fifo", "socket", "symlink_to_dir"])
+async def test_not_measured_paths_render_the_clause_for_every_non_regular_kind(
+    client: object,
+    session_factory: async_sessionmaker[AsyncSession],
+    _artifacts_dir: Path,
+    kind: str,
+) -> None:
+    """The failure CLASS, not one instance (CONVENTIONS rule 4): every non-regular kind."""
+    listing = await _seed_listing(session_factory)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
+    entry = _make_non_regular(_artifacts_dir, kind, "not-a-file-" + kind)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=OLD, pdf_path=str(entry))
+
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PREVIEW_PATH, data={"category": "artifacts", "age_days": "30"}
+    )
+
+    assert response.status_code == 200
+    summary = _summary_line(response.text)
+    assert "This will delete 1 artifact" in summary
+    assert "not measured" in summary
+    assert "0 B" in summary
+
+
+async def test_a_regular_file_preview_renders_without_the_not_measured_clause(
+    client: object, session_factory: async_sessionmaker[AsyncSession], _artifacts_dir: Path
+) -> None:
+    """The negative control: the clause is evidence of a real condition, not fixed copy."""
+    await _seed_prunable_artifact(session_factory, _artifacts_dir)
+
+    response = await client.post(  # type: ignore[attr-defined]
+        settings_module.PRUNE_PREVIEW_PATH, data={"category": "artifacts", "age_days": "30"}
+    )
+
+    assert response.status_code == 200
+    summary = _summary_line(response.text)
+    assert "This will delete 1 artifact" in summary
+    assert "30 B" in summary
+    assert "not measured" not in summary
+    assert 'id="prune-preview-missing"' not in response.text
 
 
 # --- the listings category: the snapshot, the audit, the refusals -------------

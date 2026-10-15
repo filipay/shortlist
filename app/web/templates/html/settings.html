@@ -335,9 +335,9 @@
   <div class="capability-warnings" id="prune-preview">
     <ul class="settings-counts">
       {% if prune_preview.count %}
-      <li id="prune-preview-summary">This will delete {{ prune_preview.count }} {{ prune_preview.noun }} · {{ prune_preview.size_display }}.</li>
+      <li id="prune-preview-summary">This will delete {{ prune_preview.count }} {{ prune_preview.noun }} · {{ prune_preview.size_display }}{% if prune_preview.missing_files %} · {{ prune_preview.missing_files }} path{{ '' if prune_preview.missing_files == 1 else 's' }} not measured{% endif %}.</li>
       {% if prune_preview.missing_files %}
-      <li id="prune-preview-missing">{{ prune_preview.missing_files }} stored path(s) were missing or outside the artifacts directory and were not measured.</li>
+      <li id="prune-preview-missing">A path that is missing, is not a regular file, or is outside the artifacts directory cannot be measured and is not counted in that size.</li>
       {% endif %}
       {% else %}
       <li id="prune-preview-empty">Nothing matches this threshold — nothing would be deleted.</li>

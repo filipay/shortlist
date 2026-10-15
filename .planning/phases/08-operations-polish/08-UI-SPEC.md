@@ -193,7 +193,7 @@ Semantic tokens available for status (existing, no new hues): `--color-success` 
 | Prune — intro | `Removes old records permanently. Pick a category and an age, then preview exactly what would be deleted before anything is removed.` |
 | Prune — labels | `Category` · `Older than` (+ unit `days`, or a `.queue-sort` inline number) |
 | Prune — CTA | `Preview deletion` |
-| Prune — preview panel | `This will delete 42 runs, 118 artifacts, 3.1 GB.` (counts from the dry run; the numbers are the point) |
+| Prune — preview panel | `This will delete 42 runs, 118 artifacts, 3.1 GB.` (counts from the dry run; the numbers are the point). When any selected path could not be measured, the sentence continues `· N paths not measured` (e.g. `This will delete 4 artifacts · 0 B · 4 paths not measured.`), so the size never reads as complete when part of it was not measured. |
 | Prune — protected line | `Kept regardless: the last 50 runs, the LLM call ledger, CVs attached to an application, and each listing's newest verified CV.` |
 | Prune — preview empty | `Nothing matches this threshold — nothing would be deleted.` |
 | Prune — confirm CTA | `Delete permanently` (danger-painted by `.danger-card`) |
@@ -325,6 +325,9 @@ the existing `#danger-zone` card — plan's choice — with H3 `Prune history`. 
   **`.capability-warnings`** panel containing the `.settings-counts` list
   (`42 runs · 118 artifacts · 3.1 GB`) and the **protected line** naming the D-165 guards (last N
   runs, the `llm_calls` ledger, application-linked artifacts, and each listing's newest `ok` artifact).
+  When any selected path could not be measured, the same list carries the unmeasurable count
+  (`· N paths not measured`) beside the counts and the size, so the total is only ever a partial
+  measurement when the clause is present.
   The panel must read as a **caution before destruction**, never as an error.
 - **Confirm (step 2)** — the same panel holds a second plain form with the `Delete permanently`
   submit; inside the danger zone it is painted `--color-danger` by the existing `.danger-card` rule.
@@ -378,7 +381,7 @@ Applicable state considerations resolved: **17 covered, 1 backstop, 0 unresolved
 | overflow | admin tables (merges/runs/factor) | ✅ covered | Wrapped in `.table-scroll` with `role="region" tabindex="0" aria-label` so the table scrolls horizontally and stays keyboard-reachable; the table markup itself is unchanged (D-160). |
 | overflow | long source names / paths / fill-rate chips | 🧪 backstop | A long unbroken source name, an absolute CV path, or a long fill-rate chip list must wrap inside its card rather than force the page wider; the reflow's `display:block` cells plus `overflow-wrap:anywhere` on the value must hold — a held-out UI-state test asserts a long source name and a deep CV path do not widen the phone page. |
 | long-text | promotion verdict + schedule countdown | ✅ covered | The verdict renders the recorded evidence string (`Indeed hedge: 2/3 blocked runs — condition not met`, one line per board) as escaped text on one `.ranking-strip` line; when no verdict is recorded it reads `no verdict recorded yet` — never a fabricated number. |
-| zero-one-many | prune preview counts | ✅ covered | The preview pluralises by count (`1 run` / `42 runs`, `1 artifact` / `118 artifacts`) and renders the size in the same line; a single non-zero member still renders the full line. |
+| zero-one-many | prune preview counts | ✅ covered | The preview pluralises by count (`1 run` / `42 runs`, `1 artifact` / `118 artifacts`) and renders the size in the same line; a single non-zero member still renders the full line. The unmeasured clause pluralises by count the same way (`1 path not measured` / `3 paths not measured`). |
 
 <!-- Status vocabulary (locked by probe-core): ✅ covered → a plain truth string lifted into
      must_haves.truths; 🧪 backstop → a flat scalar { statement, verification: backstop } (no explicit
