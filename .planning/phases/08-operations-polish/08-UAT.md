@@ -1,21 +1,16 @@
 ---
-status: testing
+status: complete
 phase: 08-operations-polish
 source: [08-VERIFICATION.md]
 started: 2026-10-14T22:28:03Z
-updated: 2026-10-15T01:30:00Z
+updated: 2026-10-15T02:00:00Z
 ---
 
 <!-- Presentation preference (user): every UAT checkpoint MUST be shown with exact, step-by-step instructions (setup + numbered actions + what to observe + how to reply). Never present the bare expected-behavior line alone. -->
 
 ## Current Test
 
-number: 1
-name: Operator responsive walk (320/375/768 px)
-expected: |
-  Card reflow below the breakpoint; admin tables inside labelled keyboard-reachable scroll
-  regions at/above it; 44px tap floor holds; no horizontal scroll.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -26,14 +21,16 @@ expected: |
   Card reflow below the breakpoint; admin tables inside labelled keyboard-reachable scroll
   regions at/above it; 44px tap floor holds; no horizontal scroll.
 why_human: rendered-pixel claim — no browser and no Docker in the executor sandbox (WINDOWS #15).
-result: [pending]
+result: pass
+reported: "pass" (2026-10-15) — operator ran the walk in the live stack.
 
 ### 2. Docker build tz proof
 expected: |
   `docker compose build` — the Dockerfile's build-time `ZoneInfo('Europe/Dublin')` assertion
   runs and passes. Build succeeds (tzdata is the documented remedy if it fails).
 why_human: Docker absent from the executor sandbox (WINDOWS #14).
-result: [pending]
+result: pass
+reported: "pass" (2026-10-15) — `docker compose build` succeeded in the live stack.
 
 ### 3. PLAT-06 compose-restart persistence (operator half)
 expected: |
@@ -41,7 +38,8 @@ expected: |
   run with `trigger='schedule'` fires — never two, never an overlap.
 why_human: the hermetic test proves the persisted job survives a fresh scheduler with a past-due
   fire time; the `docker compose restart` path itself is operator-only (WINDOWS #16).
-result: [pending]
+result: pass
+reported: "pass" (2026-10-15) — schedule survived the restart; exactly one scheduled run fired.
 
 ### 4. Prune history browser walk
 expected: |
@@ -71,14 +69,15 @@ expected: |
   `08-VERIFICATION.md` — confirm none is violated in the shipped code.
 why_human: judgment-tier; the LLM-judge verdict of "not violated" is recorded as
   NON-AUTHORITATIVE and needs explicit human resolution per item.
-result: [pending]
+result: pass
+reported: "pass" (2026-10-15) — operator reviewed the 13 prohibitions; none violated.
 
 ## Summary
 
 total: 5
-passed: 1
+passed: 5
 issues: 0
-pending: 4
+pending: 0
 skipped: 0
 blocked: 0
 
