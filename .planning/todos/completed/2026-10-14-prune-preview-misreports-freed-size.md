@@ -55,3 +55,7 @@ TBD. Candidate direction:
 3. Add a test with a **directory** and a **FIFO/special file** as stored `tex_path`/`pdf_path`
    values, asserting neither is counted, plus a test with a stubbed `st_size` beyond the disk
    total asserting it is clamped or reported, never printed as a fact.
+
+---
+
+Resolved by plan 08-06 (commits 2783c65, 1df348a): `_size_inside` is gated on `stat.S_ISREG`, unmeasurable paths increment `missing_files`, the preview appends `· N path(s) not measured`, and a structlog trail names every not-measured path. The operator re-walked the surface and accepted it (08-UAT.md item 4).
