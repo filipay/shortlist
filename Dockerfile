@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # heredocs are BuildKit-only, and `docker compose build` falls back to the classic
 # builder when buildx is absent, which would choke on the script body as if it
 # were Dockerfile instructions ("unknown instruction: ..."). Keep it a one-liner.
-ARG JOBSPY_SHA=fda080a373e8226f3fd60635323f5da9af9892b1
+ARG JOBSPY_SHA=1fffbcd4c1d822740157459fe527a916d3ce7a43
 RUN JOBSPY_SHA="$JOBSPY_SHA" python -c "import importlib.metadata as md, json, os; vcs = json.loads(md.distribution('python-jobspy').read_text('direct_url.json')).get('vcs_info', {}); assert vcs.get('vcs') == 'git', 'python-jobspy is not a VCS install: %r' % (vcs,); assert vcs.get('commit_id') == os.environ['JOBSPY_SHA'], 'wrong revision: %r != %r' % (vcs.get('commit_id'), os.environ['JOBSPY_SHA']); print('python-jobspy pinned at', os.environ['JOBSPY_SHA'])"
 
 # Prove the image's zoneinfo database resolves at BUILD time (T-08-03 / RESEARCH

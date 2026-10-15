@@ -89,7 +89,15 @@ async def test_ensure_registered_sources_inserts_the_registry_and_is_idempotent(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     expected = sorted(registry.all_adapters())
-    assert expected == ["indeed", "linkedin"], "the registry is the code-level truth"
+    assert expected == [
+        "arbeitnow",
+        "bayt",
+        "glassdoor",
+        "indeed",
+        "jobicy",
+        "linkedin",
+        "remotive",
+    ], "the registry is the code-level truth"
 
     async with session_factory() as session:
         inserted = await ensure_registered_sources(session)
@@ -124,7 +132,7 @@ async def test_enabled_source_names_returns_both_boards_after_seeding(
     async with session_factory() as session:
         names = await enabled_source_names(session)
 
-    assert names == ["indeed", "linkedin"]
+    assert names == ["arbeitnow", "bayt", "glassdoor", "indeed", "jobicy", "linkedin", "remotive"]
 
 
 async def test_startup_seeding_makes_health_report_both_boards(
@@ -147,7 +155,15 @@ async def test_startup_seeding_makes_health_report_both_boards(
 
     body = (await client.get("/health")).json()
 
-    assert set(body["sources"]) == {"indeed", "linkedin"}
+    assert set(body["sources"]) == {
+        "arbeitnow",
+        "bayt",
+        "glassdoor",
+        "indeed",
+        "jobicy",
+        "linkedin",
+        "remotive",
+    }
     assert all(entry["enabled"] is True for entry in body["sources"].values())
 
 
