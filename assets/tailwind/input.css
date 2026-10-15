@@ -536,6 +536,23 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     background-color: var(--color-paper);
+    /* Keep the horizontal scrollbar visible and slim: the table is tall, so a
+       default-width bar at the bottom edge is easy to miss (UI-06 follow-up). */
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) var(--color-surface-2);
+  }
+
+  .queue-table::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .queue-table::-webkit-scrollbar-track {
+    background-color: var(--color-surface-2);
+  }
+
+  .queue-table::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 5px;
   }
 
   .queue-table thead {
@@ -556,6 +573,9 @@
   .queue-table td {
     padding: 0.875rem 1rem;
     border-bottom: 1px solid var(--color-border);
+    /* Long titles/URLs must wrap inside the cell instead of inflating the
+       column min-width and forcing the whole table to overflow. */
+    overflow-wrap: anywhere;
   }
 
   .queue-table tbody tr:last-child td {
@@ -650,8 +670,39 @@
     font-size: 0.95rem;
   }
 
-  .listing-posted {
+  .listing-posted,
+  .listing-seen {
     color: var(--color-muted);
+  }
+
+  /* Desktop: pin the queue table to the container width with fixed column
+     shares so it can never overflow horizontally, however long a title,
+     company or location is — text wraps inside its cell instead. Shares sum to
+     ~92%, leaving slack for the optional "Excluded by" column (Show excluded). */
+  @media (min-width: 48rem) {
+    .queue-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+
+    .queue-table th:nth-child(1) { width: 19%; } /* Title */
+    .queue-table th:nth-child(2) { width: 11%; } /* Signals */
+    .queue-table th:nth-child(3) { width: 13%; } /* Company */
+    .queue-table th:nth-child(4) { width: 15%; } /* Location */
+    .queue-table th:nth-child(5) { width: 8%; }  /* Source */
+    .queue-table th:nth-child(6) { width: 9%; }  /* Posted */
+    .queue-table th:nth-child(7) { width: 8%; }  /* Added */
+    .queue-table th:nth-child(8) { width: 9%; }  /* Actions */
+
+    .queue-table td.listing-actions button {
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    .queue-table td.listing-posted,
+    .queue-table td.listing-seen {
+      font-size: 0.85rem;
+    }
   }
 
   .listing-exclusion {
