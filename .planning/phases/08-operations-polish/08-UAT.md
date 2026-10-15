@@ -3,7 +3,7 @@ status: testing
 phase: 08-operations-polish
 source: [08-VERIFICATION.md]
 started: 2026-10-14T22:28:03Z
-updated: 2026-10-15T01:00:00Z
+updated: 2026-10-15T01:30:00Z
 ---
 
 <!-- Presentation preference (user): every UAT checkpoint MUST be shown with exact, step-by-step instructions (setup + numbered actions + what to observe + how to reply). Never present the bare expected-behavior line alone. -->
@@ -50,7 +50,8 @@ expected: |
   delete; the audit line names the category/age/count; no protected row is removed.
 why_human: Docker and a browser are absent; automated coverage exists (`test_retention_repo.py`,
   `test_settings_prune.py`) but the rendered walk is unrun (WINDOWS #17).
-result: [pending]
+result: pass
+reported: "okay looks good" (2026-10-15) — the operator re-walked the prune preview after the 08-06 fix and accepted it.
 retest: the defect below is fixed by 08-06 (`2783c65`, `1df348a`); re-walk the preview and
   confirm a sane figure — and, if anything could not be measured, the `· N path(s) not measured`
   clause. A live re-walk is still unrun (WINDOWS #18).
@@ -75,9 +76,9 @@ result: [pending]
 ## Summary
 
 total: 5
-passed: 0
+passed: 1
 issues: 0
-pending: 5
+pending: 4
 skipped: 0
 blocked: 0
 
