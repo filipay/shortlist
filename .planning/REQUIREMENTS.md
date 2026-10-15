@@ -91,9 +91,9 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **RUN-02**: Runs execute in the background without freezing the UI
 - [x] **RUN-03**: Every run records what it did, what it found, and — when the queue is empty — why
 - [x] **RUN-04**: User can see run history
-- [ ] **RUN-05**: User can schedule recurring runs
-- [ ] **RUN-06**: User can see when the next scheduled run will happen
-- [ ] **RUN-07**: User can check system and source health from a health endpoint surfaced in the UI
+- [x] **RUN-05**: User can schedule recurring runs
+- [x] **RUN-06**: User can see when the next scheduled run will happen
+- [x] **RUN-07**: User can check system and source health from a health endpoint surfaced in the UI
 
 ### Web UI (UI)
 
@@ -102,7 +102,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **UI-03**: User can edit search criteria and ranking weights
 - [x] **UI-04**: User can view and manage the application tracker
 - [x] **UI-05**: User can preview and download the tailored CV PDF
-- [ ] **UI-06**: The UI is usable from both a laptop and a phone browser
+- [x] **UI-06**: The UI is usable from both a laptop and a phone browser
 - [x] **UI-07**: All UI assets are vendored locally with no CDN dependency
 
 ### Platform (PLAT)
@@ -112,7 +112,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PLAT-03**: Every API route carries an auth seam so Authentik OIDC can be added later without rewriting routes
 - [x] **PLAT-04**: Limits, thresholds, and the LaTeX engine are configuration, not hard-coded constants
 - [x] **PLAT-05**: The opencode structured-output contract is covered by a test that fails loudly on an upgrade
-- [ ] **PLAT-06**: Scheduled runs are single-worker safe and persist across restarts
+- [x] **PLAT-06**: Scheduled runs are single-worker safe and persist across restarts
 
 ## v2 Requirements
 
@@ -231,22 +231,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUN-02 | Phase 1 | Complete |
 | RUN-03 | Phase 2 | Complete |
 | RUN-04 | Phase 2 | Complete |
-| RUN-05 | Phase 8 | Pending |
-| RUN-06 | Phase 8 | Pending |
-| RUN-07 | Phase 8 | Pending |
+| RUN-05 | Phase 8 | Complete |
+| RUN-06 | Phase 8 | Complete |
+| RUN-07 | Phase 8 | Complete |
 | UI-01 | Phase 5 | Complete |
 | UI-02 | Phase 5 | Complete |
 | UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 7 | Complete |
 | UI-05 | Phase 6 | Complete |
-| UI-06 | Phase 8 | Pending |
+| UI-06 | Phase 8 | Complete |
 | UI-07 | Phase 1 | Complete |
 | PLAT-01 | Phase 1 | Complete |
 | PLAT-02 | Phase 3 | Complete |
 | PLAT-03 | Phase 1 | Complete |
 | PLAT-04 | Phase 1 | Complete |
 | PLAT-05 | Phase 3 | Complete |
-| PLAT-06 | Phase 8 | Pending |
+| PLAT-06 | Phase 8 | Complete |
 
 **Coverage:**
 

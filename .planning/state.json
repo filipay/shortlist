@@ -41,13 +41,13 @@
     {
       "number": "8",
       "name": "Operations + Polish",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 08 of 9 · 11% · executing"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-14T16:58:26.962Z"
+  "updated_at": "2026-10-15T10:19:34.153Z"
 }
