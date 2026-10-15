@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -193,6 +194,12 @@ def build_tailoring_parts(
     ]
 
 
+@dataclass(frozen=True)
+class TailoringOutcome:
+    patch: TailoringPatch
+    requested_model: str | None
+
+
 async def tailor_listing(
     backend: LLMBackend,
     session: AsyncSession,
@@ -201,7 +208,7 @@ async def tailor_listing(
     facts: CvFacts,
     requirements: Sequence[Mapping[str, Any]],
     now: datetime,
-) -> TailoringPatch | None:
+) -> TailoringOutcome | None:
     """Make exactly ONE structured call and write exactly one audit row per ATTEMPT.
 
     Commits the read-only preamble before the model call so no read transaction
@@ -210,9 +217,9 @@ async def tailor_listing(
     values. Every ATTEMPTED call writes exactly one row: a completed call records
     `result.status`, while a raised `complete_structured` records `status="error"`
     with the exception CLASS NAME only (never its message — T-06-07 forbids a
-    redaction-hostile field). Returns the patch, or `None` when the call did not
-    produce a valid `TailoringPatch`, the rolling-24h ceiling refused it, or the
-    transport raised.
+    redaction-hostile field). Returns the patch with generation provenance, or
+    `None` when the call did not produce a valid `TailoringPatch`, the rolling-24h
+    ceiling refused it, or the transport raised.
 
     The spend guard runs BEFORE the request (RANK-08's shape, D-119): a refusal
     writes one `budget_exceeded` row and returns without calling. It reserves through
@@ -284,7 +291,7 @@ async def tailor_listing(
 
     if not result.ok or not isinstance(result.data, TailoringPatch):
         return None
-    return result.data
+    return TailoringOutcome(patch=result.data, requested_model=result.model)
 
 
 async def compile_tailored(
@@ -297,6 +304,7 @@ async def compile_tailored(
     engine: LatexEngine,
     artifacts_dir: Path,
     now: datetime,
+    requested_model: str | None = None,
 ) -> CvArtifactRecord:
     """Prove the end-to-end path at thin depth: re-ground, verify L1, render, compile.
 
@@ -339,6 +347,7 @@ async def compile_tailored(
                 "fact_store_hash": store_hash,
             },
             page_count=None,
+            model=requested_model,
             now=now,
         )
 
@@ -362,6 +371,7 @@ async def compile_tailored(
             compile_status="blocked",
             verification_json=verification_json,
             page_count=None,
+            model=requested_model,
             now=now,
         )
 
@@ -444,7 +454,7 @@ async def compile_tailored(
             tex_hash=compile_result.tex_hash or tex_hash,
             compile_log=compile_result.compile_log,
             backend="opencode_server",
-            model=settings.opencode_model,
+            model=requested_model,
             now=now,
         )
 
@@ -467,7 +477,7 @@ async def compile_tailored(
             tex_hash=compile_result.tex_hash or tex_hash,
             compile_log=compile_result.compile_log,
             backend="opencode_server",
-            model=settings.opencode_model,
+            model=requested_model,
             now=now,
         )
 
@@ -513,7 +523,7 @@ async def compile_tailored(
             pdf_hash=compile_result.pdf_hash,
             compile_log=compile_result.compile_log,
             backend="opencode_server",
-            model=settings.opencode_model,
+            model=requested_model,
             now=now,
         )
 
@@ -538,7 +548,7 @@ async def compile_tailored(
         pdf_hash=compile_result.pdf_hash,
         compile_log=compile_result.compile_log,
         backend="opencode_server",
-        model=settings.opencode_model,
+        model=requested_model,
         ats_checks_json=ats_checks_json,
         now=now,
     )

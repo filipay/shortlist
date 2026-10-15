@@ -200,6 +200,93 @@ def _hidden_fields(body: str) -> dict[str, str]:
     return {match.group(1): html.unescape(match.group(2)) for match in HIDDEN_RE.finditer(body)}
 
 
+@pytest.mark.parametrize("outcome", ["ok", "engine_failed", "extract_failed", "layer1", "layer2"])
+async def test_compile_uses_generating_model_after_configuration_changes(
+    tailoring_client, session_factory, monkeypatch, outcome
+):
+    listing_id = await _seed_scored_listing(session_factory)
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    assert response.status_code == 200
+    drafts = await _draft_rows(session_factory)
+    assert drafts[0].requested_model == "minimax-m3"
+    from tests.llm.test_model_selection import save_pair
+    await save_pair(session_factory, "other-provider", "new-Y")
+    monkeypatch.setattr(settings, "opencode_model", "different-environment")
+    if outcome == "engine_failed":
+        monkeypatch.setattr(_ENGINE, "_ok", False)
+    elif outcome == "extract_failed":
+        def unreadable(path):
+            raise ValueError("bad pdf")
+        monkeypatch.setattr(tailor_module, "extract_pdf_text", unreadable)
+    elif outcome == "layer1":
+        from app.verify import VerificationResult
+        monkeypatch.setattr(
+            tailor_module, "verify_plan", lambda *a, **kw: VerificationResult(passed=False)
+        )
+    elif outcome == "layer2":
+        monkeypatch.setattr(tailor_module, "extract_pdf_text", lambda path: "fabricated empty PDF")
+    fields = _hidden_fields(response.text)
+    fields["requested_model"] = "browser-forgery"
+    compiled = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+    assert compiled.status_code == 200
+    rows = await _artifact_rows(session_factory)
+    assert len(rows) == 1
+    assert rows[0].model == "minimax-m3"
+    assert rows[0].compile_status == ("ok" if outcome == "ok" else
+        "failed" if outcome in {"engine_failed", "extract_failed"} else "blocked")
+
+
+@pytest.mark.parametrize("mismatch", ["patch", "version", "hash", "missing", "legacy"])
+async def test_unmatched_server_draft_never_invents_compile_provenance(
+    tailoring_client, session_factory, mismatch
+):
+    from app.db.repositories import cv_draft_repo, cv_repo
+    listing_id = await _seed_scored_listing(session_factory)
+    async with session_factory() as session:
+        await cv_repo.snapshot_version(session, facts_json={}, schema_version=1, source="hand")
+        await session.commit()
+    response = await tailoring_client.post(f"/listings/{listing_id}/cv/generate")
+    fields = _hidden_fields(response.text)
+    async with session_factory() as session:
+        row = await session.scalar(select(CvDraft))
+        if mismatch == "missing":
+            await cv_draft_repo.delete_draft(session, listing_id)
+        elif mismatch == "patch":
+            row.patch_json = TailoringPatch(listing_id=listing_id).model_dump(mode="json")
+        elif mismatch == "version":
+            row.base_cv_version_id = None
+        elif mismatch == "legacy":
+            row.requested_model = None
+        else:
+            row.fact_store_hash = "0" * 64
+        await session.commit()
+    fields["model"] = "forged"
+    compiled = await tailoring_client.post(f"/listings/{listing_id}/cv/compile", data=fields)
+    assert compiled.status_code == 200
+    assert (await _artifact_rows(session_factory))[0].model is None
+
+
+async def test_regrounding_refusal_keeps_captured_model(tailoring_client, session_factory):
+    from datetime import UTC, datetime
+
+    from app.db.models import Listing
+    from app.domain.cv import DropBullet
+
+    listing_id = await _seed_scored_listing(session_factory)
+    facts = load_facts(Path(settings.cv_dir) / "cv.yaml")
+    async with session_factory() as session:
+        record = await tailor_module.compile_tailored(
+            session, listing=await session.get(Listing, listing_id), facts=facts,
+            patch=TailoringPatch(listing_id=listing_id, ops=[
+                DropBullet(op="drop_bullet", bullet_id="unknown-id", reason="not relevant")
+            ]), base_cv_version_id=None, engine=_ENGINE,
+            artifacts_dir=Path(settings.artifacts_dir), now=datetime.now(UTC),
+            requested_model="saved-X",
+        )
+    assert record.compile_status == "blocked" and record.model == "saved-X"
+    assert not _ENGINE.calls
+
+
 # --- truth 2: the unscored page offers no generate control ---------------------
 
 

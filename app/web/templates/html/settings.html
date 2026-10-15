@@ -28,8 +28,46 @@
 
 <section class="settings-card" id="llm-backend">
   <h3>LLM backend</h3>
+  <p class="settings-note" id="llm-model-current">
+    <strong>Saved choice:</strong> {{ llm_model_current_label }}.
+    This is the requested configuration, not confirmation of which model served a call.
+  </p>
+  <p class="settings-note" id="llm-model-help">
+    One global choice for ranking, tailoring, screening drafts, CV extraction and
+    the backend test. Choose and save the environment default to
+    clear the saved provider and model. Loading models and saving do not spend tokens.
+  </p>
+  <form method="post" action="/settings/llm-model" id="llm-model-form">
+    <div class="field">
+      <label class="field-label" for="llm-model-selection">Provider and model</label>
+      <select id="llm-model-selection" name="model_selection" aria-describedby="llm-model-help llm-model-discovery">
+        {% for option in llm_model_options %}
+        <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="submit" id="llm-model-save">Save model</button>
+    </div>
+  </form>
+  <form method="get" action="/settings/llm-models">
+    <div class="form-actions">
+      <button type="submit" id="llm-model-refresh">Load available models</button>
+    </div>
+  </form>
+  <p class="settings-note" id="llm-model-discovery" role="status" aria-live="polite" data-status="{{ llm_model_discovery_status }}">
+    {% if llm_model_discovery_message %}
+    {{ llm_model_discovery_message }}
+    {% elif llm_model_discovery_status == 'ok' %}
+    Available models loaded. The saved choice has not changed.
+    {% else %}
+    Available models have not been loaded. The saved choice is shown without confirming availability.
+    {% endif %}
+  </p>
   <p class="settings-note">
-    One schema-constrained call through your own opencode server. It records a
+    Test LLM backend tests the <strong>saved choice</strong>, not unsaved dropdown
+    changes. Save first to test a new choice. This makes one schema-constrained call
+    through your own opencode server and spends tokens. It records a
     single audit row and creates no run. The user turn below is canned
     instruction-like test content — the system prompt stays constant.
   </p>

@@ -72,6 +72,7 @@ async def test_upsert_read_delete_round_trip(
             base_cv_version_id=None,
             patch_json={"listing_id": 1, "ops": []},
             fact_store_hash="a" * 64,
+            requested_model="saved-X",
             now=NOW,
         )
         await session.commit()
@@ -80,6 +81,7 @@ async def test_upsert_read_delete_round_trip(
     assert written.listing_id == 1
     assert written.patch_json == {"listing_id": 1, "ops": []}
     assert written.fact_store_hash == "a" * 64
+    assert written.requested_model == "saved-X"
 
     async with session_factory() as session:
         read = await read_draft(session, 1)
@@ -89,6 +91,7 @@ async def test_upsert_read_delete_round_trip(
     assert read.listing_id == written.listing_id
     assert read.patch_json == written.patch_json
     assert read.fact_store_hash == written.fact_store_hash
+    assert read.requested_model == "saved-X"
     assert read.base_cv_version_id == written.base_cv_version_id
     assert read.created_at.replace(tzinfo=None) == written.created_at.replace(tzinfo=None)
 

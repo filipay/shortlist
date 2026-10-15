@@ -292,7 +292,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     finally:
         connection.close()
 
-    assert versions == ["0008"], "expected exactly one recorded revision: 0008"
+    assert versions == ["0009"], "expected exactly one recorded revision: 0009"
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -303,7 +303,7 @@ def test_alembic_at_latest_revision(migrated_db: Path) -> None:
     )
     head_lines = [line for line in completed.stdout.splitlines() if "(head)" in line]
     assert len(head_lines) == 1, f"expected a single Alembic head, saw {head_lines}"
-    assert head_lines[0].startswith("0008"), head_lines[0]
+    assert head_lines[0].startswith("0009"), head_lines[0]
 
     dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "alembic upgrade head" in dockerfile, (
@@ -779,7 +779,7 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
             row["version_num"]
             for row in connection.execute("SELECT version_num FROM alembic_version")
         ]
-        assert versions == ["0008"], f"expected exactly 0008, saw {versions}"
+        assert versions == ["0009"], f"expected exactly 0009, saw {versions}"
 
         # 2. No data loss: every seeded row count is preserved.
         for table, expected in seeded_counts.items():
@@ -832,3 +832,57 @@ def test_upgrade_populated_0001_to_head(populated_0001: tuple[Path, dict[str, in
     finally:
         connection.close()
 
+
+def test_llm_selection_constraint_and_legacy_nullable_provenance(migrated_db: Path) -> None:
+    with _connect(migrated_db) as connection:
+        assert _table_info(connection, "cv_drafts")["requested_model"]["notnull"] == 0
+        for provider, model in [(None, "X"), ("B", None), ("", "X"), ("B", "")]:
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    "INSERT INTO operations_config "
+                    "(id,schedule_json,retention_json,updated_at,llm_provider_id,llm_model_id) "
+                    "VALUES (1,'{}','{}','2026-10-15',?,?)", (provider, model)
+                )
+        connection.execute(
+            "INSERT INTO operations_config "
+            "(id,schedule_json,retention_json,updated_at,llm_provider_id,llm_model_id) "
+            "VALUES (1,'{}','{}','2026-10-15','B','X')"
+        )
+        table_sql = _master(connection, "table", "operations_config")["sql"]
+        assert "ck_operations_config_llm_selection" in table_sql
+
+
+def test_0009_upgrade_and_downgrade_preserve_existing_data(tmp_path: Path) -> None:
+    path = tmp_path / "selection-upgrade.db"
+    _alembic_upgrade(path, "0008")
+    with _connect(path) as connection:
+        listing_id = _insert_listing(connection)
+        connection.execute(
+            "INSERT INTO cv_drafts (listing_id,patch_json,created_at) VALUES (?,'{}','2026-10-15')",
+            (listing_id,),
+        )
+        connection.execute(
+            "INSERT INTO operations_config "
+            "(id,schedule_json,retention_json,last_schedule_skip_json,updated_at) "
+            "VALUES (1,'{\"hour\":9}','{\"runs\":37}','{\"reason\":\"busy\"}','2026-10-15')"
+        )
+    _alembic_upgrade(path)
+    with _connect(path) as connection:
+        assert connection.execute("SELECT requested_model FROM cv_drafts").fetchone()[0] is None
+        row = connection.execute("SELECT * FROM operations_config").fetchone()
+        assert row["schedule_json"] == '{"hour":9}'
+        assert row["retention_json"] == '{"runs":37}'
+        assert row["llm_model_id"] is None
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", "0008"], cwd=PROJECT_ROOT,
+        env={**os.environ, "DATABASE_URL_SYNC": f"sqlite:///{path}"},
+        check=True, capture_output=True,
+    )
+    with _connect(path) as connection:
+        assert "requested_model" not in _table_info(connection, "cv_drafts")
+        assert "llm_model_id" not in _table_info(connection, "operations_config")
+        assert connection.execute("SELECT count(*) FROM cv_drafts").fetchone()[0] == 1
+        notice = connection.execute(
+            "SELECT last_schedule_skip_json FROM operations_config"
+        ).fetchone()[0]
+        assert notice == '{"reason":"busy"}'

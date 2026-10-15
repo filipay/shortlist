@@ -41,6 +41,7 @@ import httpx
 import structlog
 from pydantic import TypeAdapter, ValidationError, WrapValidator
 from pydantic_core import from_json
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.llm.base import (
@@ -303,7 +304,9 @@ class OpenCodeServerBackend:
         timeout: float | None = None,
         completion_timeout: float | None = None,
         discovery_timeout: float | None = None,
+        selection_session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        self._selection_session_factory = selection_session_factory
         self._base_url = base_url if base_url is not None else settings.opencode_base_url
         self._password = (
             password if password is not None else settings.opencode_server_password
@@ -514,29 +517,32 @@ class OpenCodeServerBackend:
         )
 
     async def _resolve_model(
-        self, model: str | None = None
+        self, model: str | None = None, *, selection: ProviderModel | None = None
     ) -> tuple[str, str] | StructuredCallResult:
-        """Resolve a bare model id to `(provider_id, model_id)` via discovery.
+        """Resolve an exact saved pair, or a legacy bare model id, via discovery.
 
         `OPENCODE_MODEL` is a bare model id (e.g. ``deepseek-v4.1-flash``) while
         the V2 session body's `Model.Ref` needs an OBJECT carrying `providerID`, so
         the provider is **derived from the server's own discovery response**, never
         hard-coded (Assumptions Log A5's mitigation). Ambiguity — one model id
         offered under two providers — resolves deterministically by sorted provider
-        id.
+        id. An explicit selection requires both identifiers to match and never
+        substitutes another provider offering the same model id.
 
         **Fail loud.** On a miss, or when discovery is unreachable, this returns an
         `ok=False` result naming the offending model id rather than silently
         omitting `model` — otherwise a wrong `OPENCODE_MODEL` would be
         indistinguishable from a call that worked.
         """
-        wanted = model if model is not None else settings.opencode_model
+        wanted = selection.model_id if selection else (
+            model if model is not None else settings.opencode_model
+        )
         discovery = await self.discover_models()
         if not discovery.reachable:
             return StructuredCallResult(
                 ok=False,
                 status="error",
-                error=discovery.error or "model discovery failed",
+                error="Model discovery is unavailable.",
                 error_kind=discovery.error_kind or ERROR_KIND_UNREACHABLE,
             )
         if discovery.error_kind == ERROR_KIND_MODELS_WARMING:
@@ -546,13 +552,14 @@ class OpenCodeServerBackend:
             return StructuredCallResult(
                 ok=False,
                 status="error",
-                error=discovery.error or "server is still warming its model registry",
+                error="The server is still warming its model registry.",
                 error_kind=ERROR_KIND_MODELS_WARMING,
             )
         matches = sorted(
             (entry.provider_id, entry.model_id)
             for entry in discovery.providers
             if entry.model_id == wanted
+            and (selection is None or entry.provider_id == selection.provider_id)
         )
         if not matches:
             return StructuredCallResult(
@@ -658,7 +665,20 @@ class OpenCodeServerBackend:
         """
         started = time.perf_counter()
         try:
-            resolved = await self._resolve_model(model)
+            selection = None
+            if self._selection_session_factory is not None:
+                from app.db.repositories import llm_config_repo
+
+                try:
+                    async with self._selection_session_factory() as selection_session:
+                        selection = await llm_config_repo.read_selection(selection_session)
+                except Exception:  # noqa: BLE001 — never fall back after a failed read
+                    return _failure(
+                        status="error", error_kind="selection_unavailable",
+                        error="The saved model selection could not be read.",
+                        attempts=0, started=started,
+                    )
+            resolved = await self._resolve_model(model, selection=selection)
             if isinstance(resolved, StructuredCallResult):
                 return resolved
             provider_id, model_id = resolved
