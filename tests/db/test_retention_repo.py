@@ -18,6 +18,8 @@ implemented as an error path would surface only at the operator's confirm step.
 
 from __future__ import annotations
 
+import os
+import socket
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -338,6 +340,124 @@ async def test_a_stored_path_outside_the_artifacts_directory_is_not_measured(
     assert result.size_bytes == 0
     assert result.missing_files == 1
     assert outside.read_bytes() == b"x" * 4096
+
+
+def _make_non_regular(root: Path, kind: str, name: str) -> Path:
+    """Create a non-regular entry INSIDE `root` of the named kind, and return its path."""
+    path = root / name
+    if kind == "directory":
+        path.mkdir()
+    elif kind == "fifo":
+        os.mkfifo(path)
+    elif kind == "socket":
+        # A bound AF_UNIX socket leaves its filesystem entry behind once closed.
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.bind(str(path))
+        sock.close()
+    elif kind == "symlink_to_dir":
+        # The target is INSIDE the root, so containment passes and it is the
+        # `S_ISREG` gate — not containment — that refuses to measure it.
+        target = root / (name + "-target")
+        target.mkdir()
+        path.symlink_to(target)
+    else:  # pragma: no cover — a typo in the parametrisation, not a runtime path
+        raise AssertionError("unknown non-regular kind: " + kind)
+    return path
+
+
+@pytest.mark.parametrize("kind", ["directory", "fifo", "socket", "symlink_to_dir"])
+async def test_a_not_regular_stored_path_is_never_measured(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path, kind: str
+) -> None:
+    """The failure CLASS, not one instance (CONVENTIONS rule 4).
+
+    Literal repro: `This will delete 4 artifacts · 117043.0 GB.` — an impossible
+    `117043.0 GB` for four CVs. The only `st_size` site accepted ANY path that
+    resolved inside the artifacts root, so a directory, a FIFO, a socket or a
+    symlink to a directory was summed as though it were a CV's size. Each kind must
+    now contribute 0 and be reported as unmeasured.
+    """
+    listing = await _seed_listing(session_factory)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
+    entry = _make_non_regular(artifacts_root, kind, "not-a-file-" + kind)
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, tex_path=None, pdf_path=str(entry)
+    )
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="artifacts", age_days=30, artifacts_root=artifacts_root
+        )
+
+    assert result.count == 1
+    assert result.size_bytes == 0
+    assert result.missing_files == 1
+    assert result.size_display == "0 B"
+    assert "117043.0 GB" not in result.size_display
+
+
+async def test_a_directory_stored_as_an_artifact_path_is_not_summed(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """The sharp single instance. Literal repro: `This will delete 4 artifacts · 117043.0 GB.`
+
+    The reported figure was `117043.0 GB` for four artifacts. A directory's own
+    `st_size` is a number that means nothing for a freed-size figure, so the preview
+    must report `0` and count the path — never the directory's `st_size`.
+    """
+    listing = await _seed_listing(session_factory)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
+    directory = artifacts_root / "a-directory-not-a-cv"
+    directory.mkdir()
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, tex_path=None, pdf_path=str(directory)
+    )
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="artifacts", age_days=30, artifacts_root=artifacts_root
+        )
+
+    directory_size = directory.stat().st_size
+    assert result.size_bytes == 0
+    assert result.missing_files == 1
+    if directory_size:
+        # The directory's own st_size is never the freed-size figure the preview shows.
+        assert result.size_bytes != directory_size
+
+
+async def test_a_large_regular_file_is_measured_at_its_exact_size(
+    session_factory: async_sessionmaker[AsyncSession], artifacts_root: Path
+) -> None:
+    """CONVENTIONS rule 7 — "does it accept valid input?": no size cap was introduced.
+
+    A genuinely large REGULAR file must still be reported at its exact size, so the
+    `S_ISREG` gate cannot have become a hidden plausibility bound. A sparse file of
+    logical size `1 << 34` is used where the filesystem allows it; where it refuses a
+    sparse file of that logical size, a written 4 MiB file stands in and its exact size
+    is asserted — the assertion is never weakened silently.
+    """
+    listing = await _seed_listing(session_factory)
+    await _insert_artifact(session_factory, listing_id=listing, created_at=NOW)
+    big = artifacts_root / "big.pdf"
+    big.touch()
+    try:
+        os.truncate(big, 1 << 34)
+        expected = 1 << 34
+    except OSError:
+        big.write_bytes(b"x" * (4 * 1024 * 1024))
+        expected = 4 * 1024 * 1024
+    await _insert_artifact(
+        session_factory, listing_id=listing, created_at=OLD, tex_path=None, pdf_path=str(big)
+    )
+
+    async with session_factory() as session:
+        result = await preview(
+            session, category="artifacts", age_days=30, artifacts_root=artifacts_root
+        )
+
+    assert result.size_bytes == expected
+    assert result.missing_files == 0
 
 
 # --- validation happens before any SQL ----------------------------------------

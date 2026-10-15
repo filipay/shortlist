@@ -48,6 +48,7 @@ slip, per research C2).
 
 from __future__ import annotations
 
+import stat
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -55,6 +56,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+import structlog
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +78,8 @@ from app.db.models import (
     SourceRequestLog,
 )
 from app.db.repositories import run_repo
+
+log = structlog.get_logger(__name__)
 
 #: D-163 — every category the routes may be asked to prune. The allow-list: a
 #: category arriving from the browser is validated against this before any SQL.
@@ -109,8 +113,12 @@ class PrunePreview:
     size_bytes: int
     noun_singular: str
     noun_plural: str
-    #: Stored paths that were missing, or that resolved outside the artifacts
-    #: directory and were therefore not measured (T-08-23). Reported, never fatal.
+    #: Stored paths that could not be measured: a path that is missing or could not be
+    #: resolved, a path that resolved outside the artifacts directory, or a path that
+    #: resolved inside the root but is not a regular file (a directory, a device, a
+    #: FIFO or a socket). Each is reported here rather than summed into `size_bytes`,
+    #: so the total never reads as complete when part of it was not measured (T-08-23).
+    #: Reported, never fatal.
     missing_files: int = 0
 
     @property
@@ -430,23 +438,51 @@ _CATEGORIES: Mapping[str, _Category] = MappingProxyType(
 
 
 def _size_inside(raw: str, root: Path) -> int | None:
-    """Bytes for a stored path that resolves INSIDE `root`, or `None`.
+    """Bytes for a stored path that resolves INSIDE `root` and IS a regular file, or `None`.
 
     Containment is applied here as well as at the unlink (T-08-23): a `stat()` on an
     arbitrary path would otherwise leak file existence into the audit line, and a
-    legacy or hand-edited row could point anywhere. A missing file returns `None`
-    too — the caller reports the count rather than raising.
+    legacy or hand-edited row could point anywhere. A path that fails containment is
+    logged with no `stat` at all, so this cannot disclose whether an outside path exists.
+
+    The measurement is gated on `stat.S_ISREG`: a regular file's `st_size` is the size
+    the unlink will free, whereas a directory, a device, a FIFO or a socket reports a
+    number that means nothing for this preview, and a bind mount can report an `st_size`
+    that is not the file's. A non-regular entry is therefore not measurable and returns
+    `None`, exactly like a missing file — the caller counts it through `missing_files`
+    instead of summing a meaningless number.
+
+    There is deliberately NO plausibility bound. A cap is a second guess layered on a
+    guess and would silently rewrite a genuinely large regular file's true size, so a
+    large regular file is reported at its exact `st_size`. The DEBUG event below is what
+    makes a bogus size (a bind mount reporting one) identifiable on a live walk.
+
+    One event per outcome: a measured file logs DEBUG; a not-measurable path logs WARNING
+    with a reason; an outside-root path logs WARNING and is never `stat`ed.
     """
     try:
         resolved = Path(raw).resolve()
     except (OSError, ValueError):
+        log.warning("prune.size_not_measured", path=str(raw), reason="unresolvable")
         return None
     if resolved != root and root not in resolved.parents:
+        log.warning("prune.size_outside_artifacts_dir", path=str(raw))
         return None
     try:
-        return resolved.stat().st_size
+        st = resolved.stat()
     except OSError:
+        log.warning("prune.size_not_measured", path=str(resolved), reason="missing")
         return None
+    if not stat.S_ISREG(st.st_mode):
+        log.warning(
+            "prune.size_not_measured",
+            path=str(resolved),
+            mode=st.st_mode,
+            reason="not_regular",
+        )
+        return None
+    log.debug("prune.size_measured", path=str(resolved), mode=st.st_mode, size=st.st_size)
+    return st.st_size
 
 
 async def _select_ids(session: AsyncSession, category: str, cutoff: datetime) -> list[int]:
