@@ -34,4 +34,4 @@ apscheduler==3.11.3
 # Note: the distribution is named `python-jobspy`, NOT `jobspy` (the PyPI `jobspy`
 # name is an unrelated project). Naming the wrong distribution makes pip report a
 # misleading "(unavailable)" error after discarding the metadata-inconsistent sdist.
-python-jobspy @ git+https://github.com/speedyapply/JobSpy.git@fda080a373e8226f3fd60635323f5da9af9892b1
+python-jobspy @ git+https://github.com/speedyapply/JobSpy.git@1fffbcd4c1d822740157459fe527a916d3ce7a43
